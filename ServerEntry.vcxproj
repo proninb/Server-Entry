@@ -79,6 +79,8 @@
     <ClCompile Include="server_entry\main.cpp" />
     <ClCompile Include="server_entry\server_context.cpp" />
     <ClCompile Include="server_entry\project\project_context.cpp" />
+    <ClCompile Include="server_entry\project\project_configuration_loader.cpp" />
+    <ClCompile Include="server_entry\project\project_composition_resolver.cpp" />
     <ClCompile Include="server_entry\project\runtime\runtime.cpp" />
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp" />
     <ClCompile Include="server_entry\project\source\source_manager.cpp" />
@@ -88,6 +90,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="server_entry\operation.hpp" />
+    <ClInclude Include="server_entry\source_id.hpp" />
     <ClInclude Include="server_entry\status.hpp" />
     <ClInclude Include="server_entry\diagnostics\diagnostic.hpp" />
     <ClInclude Include="server_entry\diagnostics\diagnostic_buffer.hpp" />
@@ -115,11 +118,14 @@
     <ClInclude Include="server_entry\json\json_writer.hpp" />
     <ClInclude Include="server_entry\server_context.hpp" />
     <ClInclude Include="server_entry\project\project_context.hpp" />
+    <ClInclude Include="server_entry\project\project_configuration.hpp" />
+    <ClInclude Include="server_entry\project\project_configuration_loader.hpp" />
+    <ClInclude Include="server_entry\project\project_composition.hpp" />
+    <ClInclude Include="server_entry\project\project_composition_resolver.hpp" />
     <ClInclude Include="server_entry\project\graph\graph.hpp" />
     <ClInclude Include="server_entry\project\runtime\runtime.hpp" />
     <ClInclude Include="server_entry\project\shm\shared_memory.hpp" />
     <ClInclude Include="server_entry\project\source\source_manager.hpp" />
-    <ClInclude Include="server_entry\project\source\source_id.hpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />

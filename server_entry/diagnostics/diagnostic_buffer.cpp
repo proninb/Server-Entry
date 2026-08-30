@@ -1,6 +1,7 @@
 #include "diagnostic_buffer.hpp"
 
 #include <algorithm>
+#include <string_view>
 #include <tuple>
 #include <utility>
 
@@ -44,7 +45,8 @@ void diagnostic_buffer::sort_deterministic()
 {
     std::ranges::sort(records_, {}, [](const diagnostic_record& record) {
         return std::tuple{record.location.source.value(), record.location.offset,
-                          record.id.value(), record.severity, record.detail};
+                          record.location.length, record.id.value(), record.severity,
+                          record.operation.value(), std::string_view{record.detail}};
     });
 }
 

@@ -14,6 +14,10 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "JsonCoreTests", "JsonCoreTe
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ServerConfigurationTests", "ServerConfigurationTests.vcxproj", "{7B623B9E-867D-4923-95CB-9392E911981F}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ProjectConfigurationTests", "ProjectConfigurationTests.vcxproj", "{31C0E82E-71D1-4B10-BE1D-ABEF872CFC81}"
+EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "ProjectCompositionTests", "ProjectCompositionTests.vcxproj", "{96A1969C-BD40-488A-A2B3-7DBB35065929}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|x64 = Debug|x64
@@ -44,6 +48,14 @@ Global
 		{7B623B9E-867D-4923-95CB-9392E911981F}.Debug|x64.Build.0 = Debug|x64
 		{7B623B9E-867D-4923-95CB-9392E911981F}.Release|x64.ActiveCfg = Release|x64
 		{7B623B9E-867D-4923-95CB-9392E911981F}.Release|x64.Build.0 = Release|x64
+		{31C0E82E-71D1-4B10-BE1D-ABEF872CFC81}.Debug|x64.ActiveCfg = Debug|x64
+		{31C0E82E-71D1-4B10-BE1D-ABEF872CFC81}.Debug|x64.Build.0 = Debug|x64
+		{31C0E82E-71D1-4B10-BE1D-ABEF872CFC81}.Release|x64.ActiveCfg = Release|x64
+		{31C0E82E-71D1-4B10-BE1D-ABEF872CFC81}.Release|x64.Build.0 = Release|x64
+		{96A1969C-BD40-488A-A2B3-7DBB35065929}.Debug|x64.ActiveCfg = Debug|x64
+		{96A1969C-BD40-488A-A2B3-7DBB35065929}.Debug|x64.Build.0 = Debug|x64
+		{96A1969C-BD40-488A-A2B3-7DBB35065929}.Release|x64.ActiveCfg = Release|x64
+		{96A1969C-BD40-488A-A2B3-7DBB35065929}.Release|x64.Build.0 = Release|x64
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

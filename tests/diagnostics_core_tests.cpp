@@ -59,9 +59,31 @@ bool test_buffer()
     return buffer.records().size() == 1 && buffer.records()[0].detail == "reused";
 }
 
+bool test_full_deterministic_key()
+{
+    using namespace cw::server;
+
+    diagnostic_buffer buffer;
+    buffer.emit({diagnostic_id{5}, diagnostic_severity::warning, operation_id{1},
+                 {source_id{3}, 10, 2}, "length-two"});
+    buffer.emit({diagnostic_id{5}, diagnostic_severity::warning, operation_id{2},
+                 {source_id{3}, 10, 1}, "detail-a"});
+    buffer.emit({diagnostic_id{5}, diagnostic_severity::warning, operation_id{1},
+                 {source_id{3}, 10, 1}, "detail-z"});
+
+    buffer.sort_deterministic();
+    const auto records = buffer.records();
+    return records[0].location.length == 1 && records[0].operation == operation_id{1} &&
+           records[1].location.length == 1 && records[1].operation == operation_id{2} &&
+           records[2].location.length == 2;
+}
+
 } // namespace
 
 int main()
 {
-    return test_operation_ids() && test_registry() && test_buffer() ? 0 : 1;
+    return test_operation_ids() && test_registry() && test_buffer() &&
+                   test_full_deterministic_key()
+               ? 0
+               : 1;
 }

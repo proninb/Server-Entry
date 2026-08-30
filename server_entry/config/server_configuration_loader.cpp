@@ -4,6 +4,7 @@
 #include "../json/json_parser.hpp"
 
 #include <array>
+#include <cstring>
 #include <fstream>
 #include <limits>
 #include <iterator>
@@ -76,6 +77,16 @@ struct schema_error
 
 constexpr std::string_view failure_detail(const schema_error& error) noexcept
 {
+    switch (error.code)
+    {
+    case schema_failure::wrong_root_type: return "server configuration root must be an object";
+    case schema_failure::unknown_property: return "configuration contains an unknown property";
+    case schema_failure::duplicate_property: return "configuration contains a duplicate property";
+    case schema_failure::duplicate_endpoint_name: return "endpoint names must be unique";
+    case schema_failure::nesting_too_deep: return "configuration nesting is too deep";
+    default: break;
+    }
+
     if (error.owner == context::endpoint)
     {
         switch (error.member)
@@ -95,16 +106,16 @@ constexpr std::string_view failure_detail(const schema_error& error) noexcept
 
     switch (error.code)
     {
-    case schema_failure::wrong_root_type: return "server configuration root must be an object";
-    case schema_failure::unknown_property: return "configuration contains an unknown property";
-    case schema_failure::duplicate_property: return "configuration contains a duplicate property";
     case schema_failure::wrong_field_type: return "configuration field has the wrong JSON type";
     case schema_failure::missing_required_field: return "configuration is missing a required field";
     case schema_failure::invalid_endpoint: return "endpoint configuration is invalid";
-    case schema_failure::duplicate_endpoint_name: return "endpoint names must be unique";
     case schema_failure::invalid_log_level: return "logging.level is not supported";
     case schema_failure::invalid_project_path: return "project.path must not be empty";
-    case schema_failure::nesting_too_deep: return "configuration nesting is too deep";
+    case schema_failure::wrong_root_type:
+    case schema_failure::unknown_property:
+    case schema_failure::duplicate_property:
+    case schema_failure::duplicate_endpoint_name:
+    case schema_failure::nesting_too_deep:
     case schema_failure::none: return {};
     }
     return {};
@@ -117,6 +128,7 @@ public:
 
     void object_begin() noexcept override
     {
+        if (stopped()) return;
         if (depth_ == 0)
         {
             push(context::root);
@@ -125,88 +137,130 @@ public:
         }
 
         const auto next = object_context();
+        if (next == context::invalid)
+        {
+            fail(schema_failure::wrong_field_type, pending_);
+            return;
+        }
         consume_pending();
         push(next);
+        if (stopped()) return;
         if (next == context::endpoint)
         {
             endpoint_ = {};
             endpoint_seen_ = 0;
+            endpoint_name_offset_ = 0;
         }
-        if (next == context::invalid) fail(schema_failure::wrong_field_type);
     }
 
     void object_end() noexcept override
     {
+        if (stopped()) return;
         if (depth_ == 0) { fail(schema_failure::wrong_field_type); return; }
         const auto ending = current();
         validate_required(ending);
+        if (stopped()) return;
         if (ending == context::endpoint) finish_endpoint();
+        if (stopped()) return;
         pop();
     }
 
     void array_begin() noexcept override
     {
+        if (stopped()) return;
+        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
         context next = context::invalid;
         if (depth_ > 0 && current() == context::communication && pending_ == field::endpoints)
             next = context::endpoints;
+        if (next == context::invalid)
+        {
+            fail(schema_failure::wrong_field_type, pending_);
+            return;
+        }
         consume_pending();
         push(next);
-        if (next == context::invalid) fail(schema_failure::wrong_field_type);
+        if (stopped()) return;
     }
 
     void array_end() noexcept override
     {
-        if (depth_ == 0 || current() != context::endpoints) fail(schema_failure::wrong_field_type);
+        if (stopped()) return;
+        if (depth_ == 0 || current() != context::endpoints)
+        {
+            fail(schema_failure::wrong_field_type);
+            return;
+        }
         pop();
     }
 
     void key(std::string_view value) noexcept override
     {
+        if (stopped()) return;
         if (depth_ == 0) { fail(schema_failure::wrong_field_type); return; }
         pending_ = identify(current(), value);
         if (pending_ == field::unknown) { fail(schema_failure::unknown_property); return; }
 
         const auto bit = field_bit(pending_);
         auto& seen = seen_mask(current());
-        if ((seen & bit) != 0) fail(schema_failure::duplicate_property);
+        if ((seen & bit) != 0) { fail(schema_failure::duplicate_property); return; }
         seen |= bit;
     }
 
     void string(std::string_view value) noexcept override
     {
+        if (stopped()) return;
+        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
         try
         {
             if (current() == context::endpoint)
             {
-                if (pending_ == field::name) endpoint_.name.assign(value);
-                else if (pending_ == field::address) endpoint_.address.assign(value);
+                if (pending_ == field::name)
+                {
+                    endpoint_name_offset_ = current_offset_;
+                    if (value.empty()) fail(schema_failure::invalid_endpoint, field::name);
+                    else endpoint_.name.assign(value);
+                }
+                else if (pending_ == field::address)
+                {
+                    if (value.empty()) fail(schema_failure::invalid_endpoint, field::address);
+                    else endpoint_.address.assign(value);
+                }
                 else if (pending_ == field::transport)
                 {
-                    if (value != "tcp") fail(schema_failure::invalid_endpoint);
+                    if (value != "tcp") { fail(schema_failure::invalid_endpoint); return; }
                     endpoint_.transport = transport_kind::tcp;
                 }
                 else if (pending_ == field::protocol)
                 {
-                    if (value != "json") fail(schema_failure::invalid_endpoint);
+                    if (value != "json") { fail(schema_failure::invalid_endpoint); return; }
                     endpoint_.protocol = protocol_kind::json;
                 }
-                else fail(schema_failure::wrong_field_type);
+                else { fail(schema_failure::wrong_field_type); return; }
             }
             else if (current() == context::logging && pending_ == field::level)
             {
                 if (!parse_level(value, candidate_.logging.minimum_level))
+                {
                     fail(schema_failure::invalid_log_level);
+                    return;
+                }
             }
             else if (current() == context::project && pending_ == field::path)
-                project_path_.assign(value);
-            else fail(schema_failure::wrong_field_type);
+            {
+                if (value.empty()) fail(schema_failure::invalid_project_path, field::path);
+                else project_path_.assign(value);
+            }
+            else { fail(schema_failure::wrong_field_type); return; }
         }
         catch (const std::bad_alloc&) { internal_failure_ = true; }
-        consume_pending();
+        catch (const std::length_error&) { internal_failure_ = true; }
+        if (!stopped()) consume_pending();
     }
 
     void integer(std::int64_t value) noexcept override
     {
+        if (stopped()) return;
+        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
         if (current() == context::root && pending_ == field::version)
         {
             if (value < 0 || value > std::numeric_limits<std::uint32_t>::max())
@@ -219,11 +273,13 @@ public:
             else endpoint_.port = static_cast<std::uint16_t>(value);
         }
         else fail(schema_failure::wrong_field_type);
-        consume_pending();
+        if (!stopped()) consume_pending();
     }
 
     void boolean(bool value) noexcept override
     {
+        if (stopped()) return;
+        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
         if (current() == context::communication && pending_ == field::console)
             candidate_.communication.console = value;
         else if (current() == context::logging && pending_ == field::console)
@@ -231,11 +287,21 @@ public:
         else if (current() == context::telemetry && pending_ == field::metrics)
             candidate_.telemetry.metrics = value;
         else fail(schema_failure::wrong_field_type);
-        consume_pending();
+        if (!stopped()) consume_pending();
     }
 
-    void number(double) noexcept override { reject_scalar(); }
-    void null() noexcept override { reject_scalar(); }
+    void number(double) noexcept override
+    {
+        if (stopped()) return;
+        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
+        reject_scalar();
+    }
+    void null() noexcept override
+    {
+        if (stopped()) return;
+        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
+        reject_scalar();
+    }
 
     [[nodiscard]] bool valid() const noexcept
     {
@@ -370,19 +436,25 @@ private:
 
     void finish_endpoint() noexcept
     {
-        if (endpoint_.name.empty()) fail(schema_failure::invalid_endpoint, field::name);
-        if (endpoint_.address.empty()) fail(schema_failure::invalid_endpoint, field::address);
-        if (endpoint_.port == 0) fail(schema_failure::invalid_endpoint, field::port);
         for (const auto& existing : candidate_.communication.endpoints)
             if (existing.name == endpoint_.name)
-                fail(schema_failure::duplicate_endpoint_name, field::name);
+            {
+                fail(schema_failure::duplicate_endpoint_name, field::name,
+                     context::endpoint, endpoint_name_offset_);
+                return;
+            }
         try { candidate_.communication.endpoints.push_back(std::move(endpoint_)); }
         catch (const std::bad_alloc&) { internal_failure_ = true; }
+        catch (const std::length_error&) { internal_failure_ = true; }
     }
 
-    void reject_scalar() noexcept { fail(schema_failure::wrong_field_type); consume_pending(); }
+    void reject_scalar() noexcept { fail(schema_failure::wrong_field_type); }
     void consume_pending() noexcept { pending_ = field::none; }
     context current() const noexcept { return depth_ == 0 ? context::invalid : stack_[depth_ - 1]; }
+    [[nodiscard]] bool stopped() const noexcept
+    {
+        return error_.code != schema_failure::none || internal_failure_;
+    }
 
     void push(context value) noexcept
     {
@@ -391,13 +463,14 @@ private:
     }
     void pop() noexcept { if (depth_ > 0) --depth_; }
     void fail(schema_failure value, field member = field::none,
-              context owner = context::invalid) noexcept
+              context owner = context::invalid,
+              std::size_t offset = std::numeric_limits<std::size_t>::max()) noexcept
     {
         if (error_.code != schema_failure::none) return;
         error_ = {value,
                   owner == context::invalid ? current() : owner,
                   member == field::none ? pending_ : member,
-                  current_offset_};
+                  offset == std::numeric_limits<std::size_t>::max() ? current_offset_ : offset};
     }
 
     server_configuration candidate_;
@@ -408,6 +481,7 @@ private:
     field pending_ = field::none;
     schema_error error_;
     std::size_t current_offset_ = 0;
+    std::size_t endpoint_name_offset_ = 0;
     bool internal_failure_ = false;
     bool root_object_ = false;
     std::uint32_t root_seen_ = 0;
@@ -436,8 +510,12 @@ bool try_emit(diagnostic_buffer& diagnostics, const diagnostic_descriptor& descr
 std::filesystem::path filesystem_path_from_utf8(std::string_view value)
 {
 #ifdef _WIN32
-    const auto* begin = reinterpret_cast<const char8_t*>(value.data());
-    return std::filesystem::path{std::u8string{begin, begin + value.size()}};
+    std::u8string utf8(value.size(), u8'\0');
+    if (!value.empty())
+    {
+        std::memcpy(utf8.data(), value.data(), value.size());
+    }
+    return std::filesystem::path{utf8};
 #else
     return std::filesystem::path{value};
 #endif
@@ -483,27 +561,20 @@ status load_server_configuration(std::string_view text,
         if (candidate.version != current_server_configuration_version)
         {
             try_emit(diagnostics, diagnostics::server_unsupported_configuration_version,
-                     operation, "only server configuration version 1 is supported");
-            return {status_code::configuration_failed};
-        }
-        if (handler.project_path().empty())
-        {
-            const schema_error error{schema_failure::invalid_project_path,
-                                     context::project, field::path, 0};
-            try_emit(diagnostics, diagnostics::server_invalid_configuration, operation,
-                     failure_detail(error));
+                     operation);
             return {status_code::configuration_failed};
         }
 
         std::error_code filesystem_error;
-        const auto absolute_configuration =
-            std::filesystem::absolute(configuration_path, filesystem_error).lexically_normal();
+        auto absolute_configuration =
+            std::filesystem::absolute(configuration_path, filesystem_error);
         if (filesystem_error)
         {
             try_emit(diagnostics, diagnostics::server_configuration_read_failed, operation,
                      "server configuration path could not be resolved");
             return {status_code::configuration_failed};
         }
+        absolute_configuration = absolute_configuration.lexically_normal();
 
         const auto configured_project = filesystem_path_from_utf8(handler.project_path());
         candidate.project.path = configured_project.is_absolute()
@@ -517,6 +588,19 @@ status load_server_configuration(std::string_view text,
     {
         try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
         return {status_code::initialization_failed};
+    }
+    catch (const std::length_error&)
+    {
+        try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
+        return {status_code::initialization_failed};
+    }
+    catch (const std::filesystem::filesystem_error&)
+    {
+        const schema_error error{schema_failure::invalid_project_path,
+                                 context::project, field::path, 0};
+        try_emit(diagnostics, diagnostics::server_invalid_configuration, operation,
+                 failure_detail(error));
+        return {status_code::configuration_failed};
     }
 }
 

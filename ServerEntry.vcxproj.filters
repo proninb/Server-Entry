@@ -24,17 +24,23 @@
     <ClCompile Include="server_entry\main.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\server_context.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\project\project_context.cpp"><Filter>server_entry\project</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\project_configuration_loader.cpp"><Filter>server_entry\project</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\project_composition_resolver.cpp"><Filter>server_entry\project</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
     <ClCompile Include="server_entry\project\runtime\runtime.cpp"><Filter>server_entry\project\runtime</Filter></ClCompile>
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp"><Filter>server_entry\project\shm</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="server_entry\operation.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\source_id.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\status.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\server_context.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_context.hpp"><Filter>server_entry\project</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\project_configuration.hpp"><Filter>server_entry\project</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\project_configuration_loader.hpp"><Filter>server_entry\project</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\project_composition.hpp"><Filter>server_entry\project</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\project_composition_resolver.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\source\source_manager.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
-    <ClInclude Include="server_entry\project\source\source_id.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
     <ClInclude Include="server_entry\diagnostics\diagnostic.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
     <ClInclude Include="server_entry\diagnostics\diagnostic_buffer.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
     <ClInclude Include="server_entry\diagnostics\diagnostic_descriptor.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>

@@ -197,6 +197,49 @@ bool test_structured_schema_diagnostic_and_utf8_path()
     return output.project.path == expected.lexically_normal();
 }
 
+bool test_root_type_and_value_offsets()
+{
+    constexpr std::array<std::string_view, 5> non_objects{"[]", "123", "\"abc\"", "null", "true"};
+    for (const auto text : non_objects)
+    {
+        server_configuration output;
+        diagnostic_buffer diagnostics;
+        if (load(text, output, diagnostics) || diagnostics.empty() ||
+            diagnostics.records()[0].detail != "server configuration root must be an object")
+            return false;
+    }
+
+    constexpr std::string_view empty_project = R"({"version":1,"server":{"endpoints":[],"console":true},"logging":{"level":"info","console":true},"telemetry":{"metrics":true},"project":{"path":""}})";
+    server_configuration output;
+    diagnostic_buffer diagnostics;
+    if (load(empty_project, output, diagnostics) || diagnostics.empty() ||
+        diagnostics.records()[0].location.offset != empty_project.find("\"\""))
+        return false;
+
+    constexpr std::string_view duplicate_name = R"({"version":1,"server":{"endpoints":[{"name":"a","transport":"tcp","protocol":"json","address":"x","port":1},{"name":"a","transport":"tcp","protocol":"json","address":"y","port":2}],"console":true},"logging":{"level":"info","console":true},"telemetry":{"metrics":true},"project":{"path":"p.json"}})";
+    diagnostics.clear();
+    const auto second_name = duplicate_name.find("\"a\"", duplicate_name.find("\"a\"") + 1);
+    return !load(duplicate_name, output, diagnostics) && !diagnostics.empty() &&
+           diagnostics.records()[0].location.offset == second_name;
+}
+
+bool test_schema_diagnostic_precedence_and_container_member()
+{
+    server_configuration output;
+    diagnostic_buffer diagnostics;
+
+    constexpr std::string_view duplicate_level = R"({"version":1,"server":{"endpoints":[],"console":true},"logging":{"level":"info","level":"debug","console":true},"telemetry":{"metrics":true},"project":{"path":"p.json"}})";
+    if (load(duplicate_level, output, diagnostics) || diagnostics.empty() ||
+        diagnostics.records()[0].detail != "configuration contains a duplicate property")
+        return false;
+
+    constexpr std::string_view wrong_transport_container = R"({"version":1,"server":{"endpoints":[{"name":"a","transport":{},"protocol":"json","address":"x","port":1}],"console":true},"logging":{"level":"info","console":true},"telemetry":{"metrics":true},"project":{"path":"p.json"}})";
+    diagnostics.clear();
+    return !load(wrong_transport_container, output, diagnostics) && !diagnostics.empty() &&
+           diagnostics.records()[0].detail ==
+               "server.endpoints[].transport: expected \"tcp\"";
+}
+
 } // namespace
 
 int main()
@@ -205,7 +248,9 @@ int main()
                    test_syntax_version_and_required() && test_missing_nested_fields() &&
                    test_duplicates() && test_unknown_properties() && test_endpoints() &&
                    test_project_and_transaction() &&
-                   test_structured_schema_diagnostic_and_utf8_path()
+                   test_structured_schema_diagnostic_and_utf8_path() &&
+                   test_root_type_and_value_offsets() &&
+                   test_schema_diagnostic_precedence_and_container_member()
                ? 0
                : 1;
 }
