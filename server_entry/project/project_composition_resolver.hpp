@@ -1,6 +1,8 @@
 #pragma once
 
 #include "project_composition.hpp"
+#include "project_configuration.hpp"
+#include "project_root.hpp"
 #include "../diagnostics/diagnostic_buffer.hpp"
 #include "../operation.hpp"
 #include "../status.hpp"
@@ -16,7 +18,7 @@ namespace cw::server
     const project_configuration& root_configuration,
     operation_id operation, diagnostic_buffer& diagnostics,
     metrics_store& metrics,
-    resolved_project_composition& output,
+    project_root_sink& roots,
     project_composition_statistics* statistics = nullptr) noexcept;
 
 } // namespace cw::server

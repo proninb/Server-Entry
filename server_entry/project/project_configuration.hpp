@@ -1,5 +1,7 @@
 #pragma once
 
+#include "project_root.hpp"
+
 #include <cstdint>
 #include <filesystem>
 #include <string>
@@ -7,8 +9,6 @@
 
 namespace cw::server
 {
-
-enum class project_item_role : std::uint8_t { type, source, project };
 
 struct project_item_configuration
 {

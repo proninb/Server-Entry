@@ -119,6 +119,7 @@
     <ClInclude Include="server_entry\server_context.hpp" />
     <ClInclude Include="server_entry\project\project_context.hpp" />
     <ClInclude Include="server_entry\project\project_configuration.hpp" />
+    <ClInclude Include="server_entry\project\project_root.hpp" />
     <ClInclude Include="server_entry\project\project_configuration_loader.hpp" />
     <ClInclude Include="server_entry\project\project_composition.hpp" />
     <ClInclude Include="server_entry\project\project_composition_resolver.hpp" />

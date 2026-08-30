@@ -1,26 +1,9 @@
 #pragma once
 
-#include "project_configuration.hpp"
-
-#include <filesystem>
-#include <vector>
+#include <cstddef>
 
 namespace cw::server
 {
-
-// Project references are graph edges and are not published as effective items.
-// Each reachable project contributes its type/source items once, in first DFS
-// encounter order following declaration order.
-struct resolved_project_item
-{
-    std::filesystem::path path;
-    project_item_role role = project_item_role::source;
-};
-
-struct resolved_project_composition
-{
-    std::vector<resolved_project_item> items;
-};
 
 struct project_composition_statistics
 {

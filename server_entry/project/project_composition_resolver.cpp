@@ -55,7 +55,7 @@ status resolve_project_composition(
     const std::filesystem::path& root_configuration_path,
     const project_configuration& root_configuration, operation_id operation,
     diagnostic_buffer& diagnostics, metrics_store& metrics,
-    resolved_project_composition& output,
+    project_root_sink& roots,
     project_composition_statistics* statistics) noexcept
 {
     metrics.increment(metric_id::project_composition_resolve_count);
@@ -213,7 +213,6 @@ status resolve_project_composition(
 
         std::unordered_map<std::filesystem::path, visit_state> states;
         std::vector<visit_frame> stack;
-        resolved_project_composition candidate;
 
         const auto root = cache.find(root_path);
         if (root == cache.end() || !root->second->loaded)
@@ -237,7 +236,16 @@ status resolve_project_composition(
             const auto& item = frame.configuration->project[frame.next_item++];
             if (item.role != project_item_role::project)
             {
-                candidate.items.push_back({item.path, item.role});
+                const auto published = roots.add(item.path, item.role);
+                if (!published.ok())
+                {
+                    try_emit(diagnostics,
+                        published.code == status_code::initialization_failed
+                            ? diagnostics::project_initialization_failed
+                            : diagnostics::project_composition_failed,
+                        operation);
+                    return published;
+                }
                 continue;
             }
 
@@ -259,7 +267,6 @@ status resolve_project_composition(
             state_position->second = visit_state::visiting;
             stack.push_back({item.path, &child->second->configuration, 0});
         }
-        output = std::move(candidate);
         return {};
     }
     catch (const std::bad_alloc&)

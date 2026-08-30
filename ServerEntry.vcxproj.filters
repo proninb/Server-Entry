@@ -37,6 +37,7 @@
     <ClInclude Include="server_entry\server_context.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_context.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_configuration.hpp"><Filter>server_entry\project</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\project_root.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_configuration_loader.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_composition.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_composition_resolver.hpp"><Filter>server_entry\project</Filter></ClInclude>
