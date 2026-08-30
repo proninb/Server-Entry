@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="server_entry"><UniqueIdentifier>{9D1E9266-4244-45CF-AE43-01A2B94B15B1}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project"><UniqueIdentifier>{C3BDB040-686C-44BC-879E-BC95A840781D}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\source"><UniqueIdentifier>{891BE75A-A40E-4E8A-8F1B-26E4D4514844}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\graph"><UniqueIdentifier>{E63817B2-EA17-416C-8110-C18015040BD7}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\runtime"><UniqueIdentifier>{84B10D9E-26C7-4FE8-8133-034038D7D551}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\shm"><UniqueIdentifier>{2CFA304C-CE02-44FD-9645-2B2536D3522A}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\diagnostics"><UniqueIdentifier>{794FFED6-2E47-4529-B1A9-BDF66C5D1458}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\logging"><UniqueIdentifier>{51408A95-D644-4AE1-AEC6-A72368F5A683}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\metrics"><UniqueIdentifier>{B79D8DC5-3AD7-45B1-A4A0-BB842E104619}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\config"><UniqueIdentifier>{2C569E0E-0BE8-4634-9CA6-7D8D57E2B22D}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\json"><UniqueIdentifier>{8BC24684-3932-48D0-9C5D-96C163003A73}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="server_entry\diagnostics\diagnostic_buffer.cpp"><Filter>server_entry\diagnostics</Filter></ClCompile>
+    <ClCompile Include="server_entry\logging\console_log_sink.cpp"><Filter>server_entry\logging</Filter></ClCompile>
+    <ClCompile Include="server_entry\logging\logger.cpp"><Filter>server_entry\logging</Filter></ClCompile>
+    <ClCompile Include="server_entry\metrics\metrics_store.cpp"><Filter>server_entry\metrics</Filter></ClCompile>
+    <ClCompile Include="server_entry\config\server_configuration_loader.cpp"><Filter>server_entry\config</Filter></ClCompile>
+    <ClCompile Include="server_entry\json\json_parser.cpp"><Filter>server_entry\json</Filter></ClCompile>
+    <ClCompile Include="server_entry\json\json_writer.cpp"><Filter>server_entry\json</Filter></ClCompile>
+    <ClCompile Include="server_entry\main.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\server_context.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\project_context.cpp"><Filter>server_entry\project</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\runtime\runtime.cpp"><Filter>server_entry\project\runtime</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\shm\shared_memory.cpp"><Filter>server_entry\project\shm</Filter></ClCompile>
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="server_entry\operation.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\status.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\server_context.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\project_context.hpp"><Filter>server_entry\project</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\source\source_manager.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\source\source_id.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
+    <ClInclude Include="server_entry\diagnostics\diagnostic.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
+    <ClInclude Include="server_entry\diagnostics\diagnostic_buffer.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
+    <ClInclude Include="server_entry\diagnostics\diagnostic_descriptor.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
+    <ClInclude Include="server_entry\diagnostics\diagnostic_registry.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
+    <ClInclude Include="server_entry\logging\console_log_sink.hpp"><Filter>server_entry\logging</Filter></ClInclude>
+    <ClInclude Include="server_entry\logging\log.hpp"><Filter>server_entry\logging</Filter></ClInclude>
+    <ClInclude Include="server_entry\logging\logger.hpp"><Filter>server_entry\logging</Filter></ClInclude>
+    <ClInclude Include="server_entry\logging\log_record.hpp"><Filter>server_entry\logging</Filter></ClInclude>
+    <ClInclude Include="server_entry\logging\log_sink.hpp"><Filter>server_entry\logging</Filter></ClInclude>
+    <ClInclude Include="server_entry\metrics\metric.hpp"><Filter>server_entry\metrics</Filter></ClInclude>
+    <ClInclude Include="server_entry\metrics\metric_descriptor.hpp"><Filter>server_entry\metrics</Filter></ClInclude>
+    <ClInclude Include="server_entry\metrics\metric_registry.hpp"><Filter>server_entry\metrics</Filter></ClInclude>
+    <ClInclude Include="server_entry\metrics\metrics_snapshot.hpp"><Filter>server_entry\metrics</Filter></ClInclude>
+    <ClInclude Include="server_entry\metrics\metrics_store.hpp"><Filter>server_entry\metrics</Filter></ClInclude>
+    <ClInclude Include="server_entry\metrics\scoped_timer.hpp"><Filter>server_entry\metrics</Filter></ClInclude>
+    <ClInclude Include="server_entry\config\server_configuration.hpp"><Filter>server_entry\config</Filter></ClInclude>
+    <ClInclude Include="server_entry\config\server_configuration_loader.hpp"><Filter>server_entry\config</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_ascii.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_buffer.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_error.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_escape.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_parser.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_unicode.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\json\json_writer.hpp"><Filter>server_entry\json</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\graph\graph.hpp"><Filter>server_entry\project\graph</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\runtime\runtime.hpp"><Filter>server_entry\project\runtime</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\shm\shared_memory.hpp"><Filter>server_entry\project\shm</Filter></ClInclude>
+  </ItemGroup>
+</Project>

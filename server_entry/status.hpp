@@ -1,0 +1,27 @@
+#pragma once
+
+#include <cstdint>
+
+namespace cw::server
+{
+
+enum class status_code : std::uint32_t
+{
+    ok = 0,
+    initialization_failed,
+    configuration_failed,
+    invalid_state,
+};
+
+struct status
+{
+    status_code code = status_code::ok;
+
+    [[nodiscard]]
+    constexpr bool ok() const noexcept
+    {
+        return code == status_code::ok;
+    }
+};
+
+} // namespace cw::server

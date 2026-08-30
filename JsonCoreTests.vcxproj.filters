@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="tests"><UniqueIdentifier>{DF21BC36-0D8B-47CA-8570-DAD2E84AA63C}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry"><UniqueIdentifier>{1AA82BB8-E4A7-4EDF-9884-575833189FFB}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="tests\json_core_tests.cpp"><Filter>tests</Filter></ClCompile>
+    <ClCompile Include="server_entry\json\json_parser.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\json\json_writer.cpp"><Filter>server_entry</Filter></ClCompile>
+  </ItemGroup>
+</Project>

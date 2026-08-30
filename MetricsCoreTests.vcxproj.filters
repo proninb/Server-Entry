@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="tests"><UniqueIdentifier>{57A0D7AA-5DB4-40BE-BE94-26BC36D6F9F1}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\metrics"><UniqueIdentifier>{E1C6408F-457D-491A-86CA-9730C285821D}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="tests\metrics_core_tests.cpp"><Filter>tests</Filter></ClCompile>
+    <ClCompile Include="server_entry\metrics\metrics_store.cpp"><Filter>server_entry\metrics</Filter></ClCompile>
+  </ItemGroup>
+</Project>

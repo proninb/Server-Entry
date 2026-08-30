@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="tests"><UniqueIdentifier>{14B76971-BCC9-4E2D-8503-3C6D2C36A99F}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\logging"><UniqueIdentifier>{26C3FF64-A3AC-4BFB-B3C5-61FA9F70E9C3}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="tests\logging_core_tests.cpp"><Filter>tests</Filter></ClCompile>
+    <ClCompile Include="server_entry\logging\console_log_sink.cpp"><Filter>server_entry\logging</Filter></ClCompile>
+    <ClCompile Include="server_entry\logging\logger.cpp"><Filter>server_entry\logging</Filter></ClCompile>
+  </ItemGroup>
+</Project>

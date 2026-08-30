@@ -1,0 +1,41 @@
+# IDE state
+.vs/
+.vscode/
+.idea/
+
+# Build directories
+build/
+out/
+bin/
+obj/
+Debug/
+Release/
+x64/
+x86/
+
+# CMake-generated files
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+Testing/
+
+# Visual Studio user and database files
+*.user
+*.suo
+*.VC.db
+*.VC.opendb
+
+# Compiled artifacts
+*.obj
+*.pdb
+*.ilk
+*.exe
+*.dll
+*.lib
+*.exp
+
+# Temporary output
+*.log
+*.tmp
+*.cache

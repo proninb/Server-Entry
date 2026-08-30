@@ -1,0 +1,126 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64">
+      <Configuration>Debug</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64">
+      <Configuration>Release</Configuration>
+      <Platform>x64</Platform>
+    </ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals">
+    <VCProjectVersion>18.0</VCProjectVersion>
+    <Keyword>Win32Proj</Keyword>
+    <ProjectGuid>{5010619C-59EC-44E9-B8A1-592603BA9CD6}</ProjectGuid>
+    <RootNamespace>ServerEntry</RootNamespace>
+    <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>true</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'" Label="Configuration">
+    <ConfigurationType>Application</ConfigurationType>
+    <UseDebugLibraries>false</UseDebugLibraries>
+    <PlatformToolset>v145</PlatformToolset>
+    <WholeProgramOptimization>true</WholeProgramOptimization>
+    <CharacterSet>Unicode</CharacterSet>
+  </PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <ImportGroup Label="ExtensionSettings" />
+  <ImportGroup Label="Shared" />
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <ImportGroup Label="PropertySheets" Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <Import Project="$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props" Condition="exists('$(UserRootDir)\Microsoft.Cpp.$(Platform).user.props')" Label="LocalAppDataPlatform" />
+  </ImportGroup>
+  <PropertyGroup Label="UserMacros" />
+  <PropertyGroup>
+    <OutDir>$(SolutionDir)out\$(Configuration)\</OutDir>
+    <IntDir>$(SolutionDir)out\obj\$(Configuration)\</IntDir>
+    <TargetName>server_entry</TargetName>
+  </PropertyGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+  </ItemDefinitionGroup>
+  <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <ClCompile>
+      <WarningLevel>Level4</WarningLevel>
+      <FunctionLevelLinking>true</FunctionLevelLinking>
+      <IntrinsicFunctions>true</IntrinsicFunctions>
+      <SDLCheck>true</SDLCheck>
+      <ConformanceMode>true</ConformanceMode>
+      <LanguageStandard>stdcpp20</LanguageStandard>
+    </ClCompile>
+    <Link>
+      <EnableCOMDATFolding>true</EnableCOMDATFolding>
+      <OptimizeReferences>true</OptimizeReferences>
+    </Link>
+  </ItemDefinitionGroup>
+  <ItemGroup>
+    <ClCompile Include="server_entry\diagnostics\diagnostic_buffer.cpp" />
+    <ClCompile Include="server_entry\logging\console_log_sink.cpp" />
+    <ClCompile Include="server_entry\logging\logger.cpp" />
+    <ClCompile Include="server_entry\metrics\metrics_store.cpp" />
+    <ClCompile Include="server_entry\config\server_configuration_loader.cpp" />
+    <ClCompile Include="server_entry\json\json_parser.cpp" />
+    <ClCompile Include="server_entry\json\json_writer.cpp" />
+    <ClCompile Include="server_entry\main.cpp" />
+    <ClCompile Include="server_entry\server_context.cpp" />
+    <ClCompile Include="server_entry\project\project_context.cpp" />
+    <ClCompile Include="server_entry\project\runtime\runtime.cpp" />
+    <ClCompile Include="server_entry\project\shm\shared_memory.cpp" />
+    <ClCompile Include="server_entry\project\source\source_manager.cpp" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="server.json" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClInclude Include="server_entry\operation.hpp" />
+    <ClInclude Include="server_entry\status.hpp" />
+    <ClInclude Include="server_entry\diagnostics\diagnostic.hpp" />
+    <ClInclude Include="server_entry\diagnostics\diagnostic_buffer.hpp" />
+    <ClInclude Include="server_entry\diagnostics\diagnostic_descriptor.hpp" />
+    <ClInclude Include="server_entry\diagnostics\diagnostic_registry.hpp" />
+    <ClInclude Include="server_entry\logging\console_log_sink.hpp" />
+    <ClInclude Include="server_entry\logging\log.hpp" />
+    <ClInclude Include="server_entry\logging\logger.hpp" />
+    <ClInclude Include="server_entry\logging\log_record.hpp" />
+    <ClInclude Include="server_entry\logging\log_sink.hpp" />
+    <ClInclude Include="server_entry\metrics\metric.hpp" />
+    <ClInclude Include="server_entry\metrics\metric_descriptor.hpp" />
+    <ClInclude Include="server_entry\metrics\metric_registry.hpp" />
+    <ClInclude Include="server_entry\metrics\metrics_snapshot.hpp" />
+    <ClInclude Include="server_entry\metrics\metrics_store.hpp" />
+    <ClInclude Include="server_entry\metrics\scoped_timer.hpp" />
+    <ClInclude Include="server_entry\config\server_configuration.hpp" />
+    <ClInclude Include="server_entry\config\server_configuration_loader.hpp" />
+    <ClInclude Include="server_entry\json\json_ascii.hpp" />
+    <ClInclude Include="server_entry\json\json_buffer.hpp" />
+    <ClInclude Include="server_entry\json\json_error.hpp" />
+    <ClInclude Include="server_entry\json\json_escape.hpp" />
+    <ClInclude Include="server_entry\json\json_parser.hpp" />
+    <ClInclude Include="server_entry\json\json_unicode.hpp" />
+    <ClInclude Include="server_entry\json\json_writer.hpp" />
+    <ClInclude Include="server_entry\server_context.hpp" />
+    <ClInclude Include="server_entry\project\project_context.hpp" />
+    <ClInclude Include="server_entry\project\graph\graph.hpp" />
+    <ClInclude Include="server_entry\project\runtime\runtime.hpp" />
+    <ClInclude Include="server_entry\project\shm\shared_memory.hpp" />
+    <ClInclude Include="server_entry\project\source\source_manager.hpp" />
+    <ClInclude Include="server_entry\project\source\source_id.hpp" />
+  </ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <ImportGroup Label="ExtensionTargets" />
+</Project>

@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup>
+    <Filter Include="tests"><UniqueIdentifier>{C67DA95A-B885-4A19-B87F-16532748892B}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry"><UniqueIdentifier>{F5F5B9E9-E284-460C-A408-F85DB6815993}</UniqueIdentifier></Filter>
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="tests\diagnostics_core_tests.cpp"><Filter>tests</Filter></ClCompile>
+    <ClCompile Include="server_entry\diagnostics\diagnostic_buffer.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\logging\console_log_sink.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\logging\logger.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\metrics\metrics_store.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\server_context.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\project_context.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\runtime\runtime.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\shm\shared_memory.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry</Filter></ClCompile>
+  </ItemGroup>
+</Project>
