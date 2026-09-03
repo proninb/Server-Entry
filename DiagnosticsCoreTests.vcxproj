@@ -48,10 +48,19 @@
     <ClCompile Include="server_entry\metrics\metrics_store.cpp" />
     <ClCompile Include="server_entry\server_context.cpp" />
     <ClCompile Include="server_entry\project\project_context.cpp" />
+    <ClCompile Include="server_entry\project\graph\graph_manager.cpp" />
+    <ClCompile Include="server_entry\project\graph\graph_build_transaction.cpp" />
+    <ClCompile Include="server_entry\project\graph\graph.cpp" />
+    <ClCompile Include="server_entry\project\graph\builtin_type.cpp" />
+    <ClCompile Include="server_entry\project\string\string_registry.cpp" />
     <ClCompile Include="server_entry\project\runtime\runtime.cpp" />
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp" />
     <ClCompile Include="server_entry\project\source\source_manager.cpp" />
+    <ClCompile Include="server_entry\project\source\source_hash.cpp" />
+    <ClCompile Include="server_entry\core\hash\sha256.cpp" />
+    <ClCompile Include="server_entry\core\filesystem\file_snapshot.cpp" />
   </ItemGroup>
+  <ItemGroup><ClCompile Include="server_entry\project\source\source_manager_persistence.cpp" /><ClCompile Include="server_entry\project\graph\compiled_persistence.cpp" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

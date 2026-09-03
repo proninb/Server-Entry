@@ -5,6 +5,10 @@
     <Filter Include="server_entry\project"><UniqueIdentifier>{C3BDB040-686C-44BC-879E-BC95A840781D}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\source"><UniqueIdentifier>{891BE75A-A40E-4E8A-8F1B-26E4D4514844}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\graph"><UniqueIdentifier>{E63817B2-EA17-416C-8110-C18015040BD7}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\string"><UniqueIdentifier>{D3F095C0-C717-4F9D-B4A5-E79910488509}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\builder"><UniqueIdentifier>{A9680832-D98A-47DD-A953-6319263437B8}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\parser"><UniqueIdentifier>{98AE8E08-5C3E-4892-95DE-9AD7C82ED18F}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\construction"><UniqueIdentifier>{85E2E8A7-1CFB-49DA-9031-CC08176AA469}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\runtime"><UniqueIdentifier>{84B10D9E-26C7-4FE8-8133-034038D7D551}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\shm"><UniqueIdentifier>{2CFA304C-CE02-44FD-9645-2B2536D3522A}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\diagnostics"><UniqueIdentifier>{794FFED6-2E47-4529-B1A9-BDF66C5D1458}</UniqueIdentifier></Filter>
@@ -12,6 +16,9 @@
     <Filter Include="server_entry\metrics"><UniqueIdentifier>{B79D8DC5-3AD7-45B1-A4A0-BB842E104619}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\config"><UniqueIdentifier>{2C569E0E-0BE8-4634-9CA6-7D8D57E2B22D}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\json"><UniqueIdentifier>{8BC24684-3932-48D0-9C5D-96C163003A73}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\core"><UniqueIdentifier>{B2926951-CB76-411F-98B8-03DB8F5C4C50}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\core\hash"><UniqueIdentifier>{E6753CD7-8A22-4D40-96F4-A1738115BB83}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\core\filesystem"><UniqueIdentifier>{388E0FEA-099E-4F82-BEED-F9E0540BE813}</UniqueIdentifier></Filter>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="server_entry\diagnostics\diagnostic_buffer.cpp"><Filter>server_entry\diagnostics</Filter></ClCompile>
@@ -26,13 +33,30 @@
     <ClCompile Include="server_entry\project\project_context.cpp"><Filter>server_entry\project</Filter></ClCompile>
     <ClCompile Include="server_entry\project\project_configuration_loader.cpp"><Filter>server_entry\project</Filter></ClCompile>
     <ClCompile Include="server_entry\project\project_composition_resolver.cpp"><Filter>server_entry\project</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\graph\graph_manager.cpp"><Filter>server_entry\project\graph</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\graph\graph_build_transaction.cpp"><Filter>server_entry\project\graph</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\graph\graph.cpp"><Filter>server_entry\project\graph</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\graph\builtin_type.cpp"><Filter>server_entry\project\graph</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\string\string_registry.cpp"><Filter>server_entry\project\string</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\builder\project_builder.cpp"><Filter>server_entry\project\builder</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\parser\source_context.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\parser\parser.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\parser\source_environment.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\construction\source_publisher.cpp"><Filter>server_entry\project\construction</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\source\source_manager_persistence.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\source\source_hash.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
+    <ClCompile Include="server_entry\core\hash\sha256.cpp"><Filter>server_entry\core\hash</Filter></ClCompile>
+    <ClCompile Include="server_entry\core\filesystem\file_snapshot.cpp"><Filter>server_entry\core\filesystem</Filter></ClCompile>
     <ClCompile Include="server_entry\project\runtime\runtime.cpp"><Filter>server_entry\project\runtime</Filter></ClCompile>
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp"><Filter>server_entry\project\shm</Filter></ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="server_entry\operation.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\source_id.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\string_id.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\stable_id.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\type_handle.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\status.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\server_context.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_context.hpp"><Filter>server_entry\project</Filter></ClInclude>
@@ -42,6 +66,10 @@
     <ClInclude Include="server_entry\project\project_composition.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\project_composition_resolver.hpp"><Filter>server_entry\project</Filter></ClInclude>
     <ClInclude Include="server_entry\project\source\source_manager.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\source\source_manager_persistence.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\source\source_hash.hpp"><Filter>server_entry\project\source</Filter></ClInclude>
+    <ClInclude Include="server_entry\core\hash\sha256.hpp"><Filter>server_entry\core\hash</Filter></ClInclude>
+    <ClInclude Include="server_entry\core\filesystem\file_snapshot.hpp"><Filter>server_entry\core\filesystem</Filter></ClInclude>
     <ClInclude Include="server_entry\diagnostics\diagnostic.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
     <ClInclude Include="server_entry\diagnostics\diagnostic_buffer.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
     <ClInclude Include="server_entry\diagnostics\diagnostic_descriptor.hpp"><Filter>server_entry\diagnostics</Filter></ClInclude>
@@ -67,6 +95,19 @@
     <ClInclude Include="server_entry\json\json_unicode.hpp"><Filter>server_entry\json</Filter></ClInclude>
     <ClInclude Include="server_entry\json\json_writer.hpp"><Filter>server_entry\json</Filter></ClInclude>
     <ClInclude Include="server_entry\project\graph\graph.hpp"><Filter>server_entry\project\graph</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\graph\graph_manager.hpp"><Filter>server_entry\project\graph</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\graph\graph_build_transaction.hpp"><Filter>server_entry\project\graph</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\graph\builtin_type.hpp"><Filter>server_entry\project\graph</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\graph\type_ref.hpp"><Filter>server_entry\project\graph</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\string\string_registry.hpp"><Filter>server_entry\project\string</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\builder\canonical_source_facts.hpp"><Filter>server_entry\project\builder</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\builder\project_builder.hpp"><Filter>server_entry\project\builder</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\parser\source_facts.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\parser\source_context.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\parser\token.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\parser\parser.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\parser\source_environment.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\construction\source_publisher.hpp"><Filter>server_entry\project\construction</Filter></ClInclude>
     <ClInclude Include="server_entry\project\runtime\runtime.hpp"><Filter>server_entry\project\runtime</Filter></ClInclude>
     <ClInclude Include="server_entry\project\shm\shared_memory.hpp"><Filter>server_entry\project\shm</Filter></ClInclude>
   </ItemGroup>

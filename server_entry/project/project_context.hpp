@@ -5,10 +5,11 @@
 #include "../metrics/metrics_store.hpp"
 #include "../operation.hpp"
 #include "../status.hpp"
-#include "graph/graph.hpp"
+#include "graph/graph_manager.hpp"
 #include "runtime/runtime.hpp"
 #include "shm/shared_memory.hpp"
-#include "source/source_manager.hpp"
+
+#include <filesystem>
 
 namespace cw::server
 {
@@ -21,11 +22,15 @@ public:
     void shutdown() noexcept;
 
     [[nodiscard]] const diagnostic_buffer& diagnostics() const noexcept;
+    [[nodiscard]] project_state state() const noexcept;
+    [[nodiscard]] status runtime_access(const runtime*& output) const noexcept;
+    [[nodiscard]] status load_source_checkpoint(
+        const std::filesystem::path& path) noexcept;
+    [[nodiscard]] status load_compiled_checkpoint(const std::filesystem::path&, metrics_store&) noexcept;
 
 private:
     diagnostic_buffer diagnostics_;
-    source_manager source_manager_;
-    graph graph_;
+    graph_manager graph_manager_;
     runtime runtime_;
     shared_memory shared_memory_;
 };

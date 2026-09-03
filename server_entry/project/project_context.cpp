@@ -14,28 +14,13 @@ status project_context::initialize(operation_id operation, logger& log,
     diagnostics_.clear();
     log.info(log_component::project, operation, "project initialization started");
 
-    auto result = source_manager_.initialize();
+    auto result = graph_manager_.initialize();
     if (!result.ok())
     {
         diagnostics_.emit({diagnostics::source_initialization_failed.id,
                            diagnostics::source_initialization_failed.default_severity,
                            operation, {}, "while initializing the project"});
         log.error(log_component::source, operation, "source manager initialization failed");
-        log.error(log_component::project, operation, "project initialization failed");
-        return result;
-    }
-
-    metrics.increment(metric_id::runtime_attach_count);
-    {
-        scoped_timer runtime_timer{metrics, metric_id::runtime_attach_duration};
-        result = runtime_.attach(graph_);
-    }
-    if (!result.ok())
-    {
-        diagnostics_.emit({diagnostics::runtime_attach_failed.id,
-                           diagnostics::runtime_attach_failed.default_severity,
-                           operation, {}, "while initializing the project"});
-        log.error(log_component::runtime, operation, "runtime attach failed");
         log.error(log_component::project, operation, "project initialization failed");
         return result;
     }
@@ -59,6 +44,11 @@ status project_context::initialize(operation_id operation, logger& log,
     return result;
 }
 
+status project_context::load_compiled_checkpoint(const std::filesystem::path& path, metrics_store& metrics) noexcept
+{
+ auto result=graph_manager_.load_compiled_checkpoint(path,&metrics);if(!result.ok())return result;result=runtime_.attach(graph_manager_.compiled_graph());if(!result.ok())return result;return{};
+}
+
 void project_context::shutdown() noexcept
 {
 }
@@ -66,6 +56,29 @@ void project_context::shutdown() noexcept
 const diagnostic_buffer& project_context::diagnostics() const noexcept
 {
     return diagnostics_;
+}
+
+project_state project_context::state() const noexcept
+{
+    return graph_manager_.state();
+}
+
+status project_context::runtime_access(const runtime*& output) const noexcept
+{
+    output = nullptr;
+    const graph* runnable = nullptr;
+    const auto result = graph_manager_.runnable_graph(runnable);
+    if (!result.ok()) return result;
+    output = &runtime_;
+    return {};
+}
+
+status project_context::load_source_checkpoint(
+    const std::filesystem::path& path) noexcept
+{
+    // Source Manager persistence does not include canonical G. Graph Manager
+    // deliberately remains ERROR after a successful Source-only LOAD.
+    return graph_manager_.load_source_checkpoint(path);
 }
 
 } // namespace cw::server

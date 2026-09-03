@@ -81,9 +81,25 @@
     <ClCompile Include="server_entry\project\project_context.cpp" />
     <ClCompile Include="server_entry\project\project_configuration_loader.cpp" />
     <ClCompile Include="server_entry\project\project_composition_resolver.cpp" />
+    <ClCompile Include="server_entry\project\builder\project_builder.cpp" />
+    <ClCompile Include="server_entry\project\parser\source_context.cpp" />
+    <ClCompile Include="server_entry\project\parser\parser.cpp" />
+    <ClCompile Include="server_entry\project\parser\lexer.cpp" />
+    <ClCompile Include="server_entry\project\parser\source_environment.cpp" />
+    <ClCompile Include="server_entry\project\construction\source_publisher.cpp" />
+    <ClCompile Include="server_entry\project\construction\source_frontend_generation.cpp" />
+    <ClCompile Include="server_entry\project\graph\graph_manager.cpp" />
+    <ClCompile Include="server_entry\project\graph\graph_build_transaction.cpp" />
+    <ClCompile Include="server_entry\project\graph\graph.cpp" />
+    <ClCompile Include="server_entry\project\graph\compiled_persistence.cpp" />
+    <ClCompile Include="server_entry\project\graph\builtin_type.cpp" />
+    <ClCompile Include="server_entry\project\string\string_registry.cpp" />
     <ClCompile Include="server_entry\project\runtime\runtime.cpp" />
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp" />
     <ClCompile Include="server_entry\project\source\source_manager.cpp" />
+    <ClCompile Include="server_entry\project\source\source_hash.cpp" />
+    <ClCompile Include="server_entry\core\hash\sha256.cpp" />
+    <ClCompile Include="server_entry\core\filesystem\file_snapshot.cpp" />
   </ItemGroup>
   <ItemGroup>
     <None Include="server.json" />
@@ -91,6 +107,9 @@
   <ItemGroup>
     <ClInclude Include="server_entry\operation.hpp" />
     <ClInclude Include="server_entry\source_id.hpp" />
+    <ClInclude Include="server_entry\string_id.hpp" />
+    <ClInclude Include="server_entry\stable_id.hpp" />
+    <ClInclude Include="server_entry\type_handle.hpp" />
     <ClInclude Include="server_entry\status.hpp" />
     <ClInclude Include="server_entry\diagnostics\diagnostic.hpp" />
     <ClInclude Include="server_entry\diagnostics\diagnostic_buffer.hpp" />
@@ -123,11 +142,30 @@
     <ClInclude Include="server_entry\project\project_configuration_loader.hpp" />
     <ClInclude Include="server_entry\project\project_composition.hpp" />
     <ClInclude Include="server_entry\project\project_composition_resolver.hpp" />
+    <ClInclude Include="server_entry\project\builder\canonical_source_facts.hpp" />
+    <ClInclude Include="server_entry\project\builder\project_builder.hpp" />
+    <ClInclude Include="server_entry\project\parser\source_facts.hpp" />
+    <ClInclude Include="server_entry\project\parser\source_context.hpp" />
+    <ClInclude Include="server_entry\project\parser\token.hpp" />
+    <ClInclude Include="server_entry\project\parser\parser.hpp" />
+    <ClInclude Include="server_entry\project\parser\source_environment.hpp" />
+    <ClInclude Include="server_entry\project\construction\source_publisher.hpp" />
+    <ClInclude Include="server_entry\project\language\enum_semantics.hpp" />
     <ClInclude Include="server_entry\project\graph\graph.hpp" />
+    <ClInclude Include="server_entry\project\graph\graph_manager.hpp" />
+    <ClInclude Include="server_entry\project\graph\graph_build_transaction.hpp" />
+    <ClInclude Include="server_entry\project\graph\builtin_type.hpp" />
+    <ClInclude Include="server_entry\project\graph\type_ref.hpp" />
+    <ClInclude Include="server_entry\project\string\string_registry.hpp" />
     <ClInclude Include="server_entry\project\runtime\runtime.hpp" />
     <ClInclude Include="server_entry\project\shm\shared_memory.hpp" />
     <ClInclude Include="server_entry\project\source\source_manager.hpp" />
+    <ClInclude Include="server_entry\project\source\source_manager_persistence.hpp" />
+    <ClInclude Include="server_entry\project\source\source_hash.hpp" />
+    <ClInclude Include="server_entry\core\hash\sha256.hpp" />
+    <ClInclude Include="server_entry\core\filesystem\file_snapshot.hpp" />
   </ItemGroup>
+  <ItemGroup><ClCompile Include="server_entry\project\source\source_manager_persistence.cpp" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets" />
 </Project>

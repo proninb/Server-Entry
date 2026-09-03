@@ -14,6 +14,8 @@ server_context::server_context() : server_context(server_configuration{})
 server_context::server_context(server_configuration configuration)
     : config_(std::move(configuration))
 {
+    metrics_.set_mode(config_.telemetry.metrics ? metrics_mode::basic
+                                                : metrics_mode::off);
     logger_.set_minimum_level(config_.logging.minimum_level);
     if (config_.logging.console)
     {

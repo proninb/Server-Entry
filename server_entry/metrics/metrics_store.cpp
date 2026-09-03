@@ -31,6 +31,7 @@ void update_max(std::atomic<std::uint64_t>& target, std::uint64_t value) noexcep
 
 void metrics_store::increment(metric_id id, std::uint64_t amount) noexcept
 {
+    if (mode_ == metrics_mode::off) return;
     assert(descriptor(id).kind == metric_kind::counter);
     if (descriptor(id).kind != metric_kind::counter)
     {
@@ -41,6 +42,7 @@ void metrics_store::increment(metric_id id, std::uint64_t amount) noexcept
 
 void metrics_store::set(metric_id id, std::int64_t value) noexcept
 {
+    if (mode_ == metrics_mode::off) return;
     assert(descriptor(id).kind == metric_kind::gauge);
     if (descriptor(id).kind != metric_kind::gauge)
     {
@@ -51,6 +53,7 @@ void metrics_store::set(metric_id id, std::int64_t value) noexcept
 
 void metrics_store::add(metric_id id, std::int64_t delta) noexcept
 {
+    if (mode_ == metrics_mode::off) return;
     assert(descriptor(id).kind == metric_kind::gauge);
     if (descriptor(id).kind != metric_kind::gauge)
     {
@@ -61,6 +64,7 @@ void metrics_store::add(metric_id id, std::int64_t delta) noexcept
 
 void metrics_store::record_duration(metric_id id, std::chrono::nanoseconds duration) noexcept
 {
+    if (mode_ == metrics_mode::off) return;
     assert(descriptor(id).kind == metric_kind::duration);
     assert(duration.count() >= 0);
     if (descriptor(id).kind != metric_kind::duration || duration.count() < 0)
@@ -69,11 +73,24 @@ void metrics_store::record_duration(metric_id id, std::chrono::nanoseconds durat
     }
 
     const auto value = static_cast<std::uint64_t>(duration.count());
+    merge_duration(id, 1, value, value, value);
+}
+
+void metrics_store::merge_duration(metric_id id, std::uint64_t count,
+                                   std::uint64_t total_ns, std::uint64_t min_ns,
+                                   std::uint64_t max_ns) noexcept
+{
+    if (mode_ == metrics_mode::off) return;
+    assert(descriptor(id).kind == metric_kind::duration);
+    assert(count != 0);
+    assert(min_ns <= max_ns);
+    if (descriptor(id).kind != metric_kind::duration || count == 0 || min_ns > max_ns)
+        return;
     auto& target = values_[metric_index(id)].duration;
-    target.count.fetch_add(1, std::memory_order_relaxed);
-    target.total_ns.fetch_add(value, std::memory_order_relaxed);
-    update_min(target.min_ns, value);
-    update_max(target.max_ns, value);
+    target.count.fetch_add(count, std::memory_order_relaxed);
+    target.total_ns.fetch_add(total_ns, std::memory_order_relaxed);
+    update_min(target.min_ns, min_ns);
+    update_max(target.max_ns, max_ns);
 }
 
 metrics_snapshot metrics_store::snapshot() const noexcept

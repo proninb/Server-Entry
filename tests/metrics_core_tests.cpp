@@ -1,4 +1,5 @@
 #include "../server_entry/metrics/metric_registry.hpp"
+#include "../server_entry/metrics/source_acquisition_telemetry.hpp"
 #include "../server_entry/metrics/scoped_timer.hpp"
 
 #include <chrono>
@@ -23,6 +24,24 @@ bool test_counter_and_gauge()
            snapshot.gauge(metric_id::server_active_projects).value == -2;
 }
 
+bool test_metrics_modes()
+{
+    using namespace cw::server;
+    metrics_store metrics;
+    if (metrics.mode() != metrics_mode::basic) return false;
+    metrics.set_mode(metrics_mode::off);
+    metrics.increment(metric_id::server_initializations);
+    metrics.record_duration(metric_id::server_initialization_duration,
+                            std::chrono::nanoseconds{1});
+    {
+        scoped_timer timer{metrics, metric_id::project_initialization_duration};
+    }
+    const auto snapshot = metrics.snapshot();
+    return snapshot.counter(metric_id::server_initializations).value == 0 &&
+           snapshot.duration(metric_id::server_initialization_duration).count == 0 &&
+           snapshot.duration(metric_id::project_initialization_duration).count == 0;
+}
+
 bool test_duration_and_timer()
 {
     using namespace std::chrono_literals;
@@ -43,6 +62,30 @@ bool test_duration_and_timer()
         scoped_timer timer{metrics, metric_id::project_initialization_duration};
     }
     return metrics.snapshot().duration(metric_id::project_initialization_duration).count == 1;
+}
+
+bool test_accumulator_flush()
+{
+    using namespace std::chrono_literals;
+    using namespace cw::server;
+    source_acquisition_telemetry accumulator{metrics_mode::detailed};
+    metrics_store metrics;
+    accumulator.increment(metric_id::source_acquisition_count, 3);
+    accumulator.record_duration(metric_id::source_acquisition_duration, 30ns);
+    accumulator.record_duration(metric_id::source_acquisition_duration, 10ns);
+    accumulator.record_duration(metric_id::source_acquisition_duration, 20ns);
+    accumulator.flush_to(metrics);
+    auto snapshot = metrics.snapshot();
+    if (snapshot.counter(metric_id::source_acquisition_count).value != 3 ||
+        snapshot.duration(metric_id::source_acquisition_duration).count != 3 ||
+        snapshot.duration(metric_id::source_acquisition_duration).total_ns != 60 ||
+        snapshot.duration(metric_id::source_acquisition_duration).min_ns != 10 ||
+        snapshot.duration(metric_id::source_acquisition_duration).max_ns != 30)
+        return false;
+    accumulator.flush_to(metrics);
+    snapshot = metrics.snapshot();
+    return snapshot.counter(metric_id::source_acquisition_count).value == 3 &&
+           snapshot.duration(metric_id::source_acquisition_duration).count == 3;
 }
 
 bool test_registry()
@@ -94,7 +137,8 @@ bool performance_sanity()
 
 int main()
 {
-    return test_counter_and_gauge() && test_duration_and_timer() && test_registry() &&
+    return test_counter_and_gauge() && test_metrics_modes() && test_duration_and_timer() &&
+                   test_accumulator_flush() && test_registry() &&
                    test_concurrent_counter() && performance_sanity()
                ? 0
                : 1;
