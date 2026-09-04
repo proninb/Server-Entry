@@ -5,16 +5,17 @@
 #include <iostream>
 #include <utility>
 
-int main(int argc, char* argv[])
-{
+// Server process entry point.
+// Loads process configuration, creates the top-level server_context, and
+// delegates Server initialization and shutdown to it.
+int main(int argc, char* argv[]) {
     const std::filesystem::path configuration_path = argc > 1 ? argv[1] : "server.json";
     cw::server::server_configuration configuration;
     cw::server::diagnostic_buffer diagnostics;
 
     const auto configuration_result = cw::server::load_server_configuration_file(
         configuration_path, cw::server::operation_id{}, diagnostics, configuration);
-    if (!configuration_result.ok())
-    {
+    if (!configuration_result.ok()) {
         std::cerr << "Failed to load server configuration: " << configuration_path << '\n';
         return 1;
     }
@@ -22,8 +23,7 @@ int main(int argc, char* argv[])
     cw::server::server_context server{std::move(configuration)};
 
     const auto result = server.initialize();
-    if (!result.ok())
-    {
+    if (!result.ok()) {
         return 1;
     }
 

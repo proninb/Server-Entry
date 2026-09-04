@@ -7,23 +7,23 @@
 #include <string>
 #include <vector>
 
-namespace cw::server
-{
+namespace cw::server {
 
 inline constexpr std::uint32_t current_server_configuration_version = 1;
 
-enum class transport_kind : std::uint8_t
-{
+// Selects the transport used by a configured communication endpoint.
+enum class transport_kind : std::uint8_t {
     tcp,
 };
 
-enum class protocol_kind : std::uint8_t
-{
+// Selects the application protocol carried by a communication endpoint.
+enum class protocol_kind : std::uint8_t {
     json,
 };
 
-struct endpoint_configuration
-{
+// Describes one externally reachable Server communication endpoint.
+// The endpoint binds a named transport/protocol pair to a network address and port.
+struct endpoint_configuration {
     std::string name;
     transport_kind transport = transport_kind::tcp;
     protocol_kind protocol = protocol_kind::json;
@@ -31,34 +31,38 @@ struct endpoint_configuration
     std::uint16_t port = 0;
 };
 
-struct communication_configuration
-{
+// Defines the Server communication surface.
+// It owns endpoint configuration only; connection lifetime and protocol execution
+// belong to the communication runtime.
+struct communication_configuration {
     std::vector<endpoint_configuration> endpoints;
 
     // Local interactive command endpoint; unrelated to the console log sink.
     bool console = true;
 };
 
-struct logging_configuration
-{
+// Defines process-wide logging policy used when server_context configures logging.
+struct logging_configuration {
     log_level minimum_level = log_level::info;
 
     // Controls terminal log output; unrelated to the local command endpoint.
     bool console = true;
 };
 
-struct telemetry_configuration
-{
+// Defines optional process-wide telemetry facilities.
+struct telemetry_configuration {
     bool metrics = true;
 };
 
-struct project_reference
-{
+// Identifies the project that this Server process owns and loads.
+struct project_reference {
     std::filesystem::path path;
 };
 
-struct server_configuration
-{
+// Root configuration for one Server process.
+// It contains process-level communication, logging, telemetry, and the single
+// project reference consumed by server_context during Server startup.
+struct server_configuration {
     std::uint32_t version = 0;
     communication_configuration communication;
     logging_configuration logging;

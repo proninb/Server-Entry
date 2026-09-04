@@ -6,11 +6,12 @@
 #include <string_view>
 #include <vector>
 
-namespace cw::server
-{
+namespace cw::server {
 
-class json_writer
-{
+// Serializes one complete JSON document directly into a caller-owned json_buffer.
+// json_writer maintains container state, enforces valid object/array sequencing,
+// and enters a permanent invalid state after any structural or output failure.
+class json_writer {
 public:
     explicit json_writer(json_buffer& output) noexcept;
 
@@ -28,16 +29,24 @@ public:
     [[nodiscard]] bool complete() const noexcept;
 
 private:
-    enum class container { object, array };
-    struct frame { container type; bool first = true; bool awaiting_value = false; };
+    enum class container {
+        object,
+        array
+    };
+
+    struct frame {
+        container type;
+        bool first = true;
+        bool awaiting_value = false;
+    };
 
     bool before_value() noexcept;
     bool quoted(std::string_view value) noexcept;
 
-    json_buffer& output_;
-    std::vector<frame> stack_;
-    bool root_written_ = false;
-    bool valid_ = true;
+    json_buffer& output;
+    std::vector<frame> stack;
+    bool root_written = false;
+    bool valid = true;
 };
 
 } // namespace cw::server

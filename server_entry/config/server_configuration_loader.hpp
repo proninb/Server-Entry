@@ -8,9 +8,10 @@
 #include <filesystem>
 #include <string_view>
 
-namespace cw::server
-{
+namespace cw::server {
 
+// Parses and validates Server configuration from JSON text.
+// The output configuration is replaced only when the complete configuration is valid.
 [[nodiscard]] status load_server_configuration(
     std::string_view text,
     const std::filesystem::path& configuration_path,
@@ -18,6 +19,8 @@ namespace cw::server
     diagnostic_buffer& diagnostics,
     server_configuration& output) noexcept;
 
+// Loads Server configuration from a file and applies the same validation contract
+// as load_server_configuration().
 [[nodiscard]] status load_server_configuration_file(
     const std::filesystem::path& configuration_path,
     operation_id operation,

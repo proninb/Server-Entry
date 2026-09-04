@@ -14,13 +14,10 @@
 #include <stdexcept>
 #include <utility>
 
-namespace cw::server
-{
-namespace
-{
+namespace cw::server {
+namespace {
 
-enum class context : std::uint8_t
-{
+enum class context : std::uint8_t {
     root,
     communication,
     endpoints,
@@ -31,8 +28,7 @@ enum class context : std::uint8_t
     invalid,
 };
 
-enum class field : std::uint8_t
-{
+enum class field : std::uint8_t {
     none,
     version,
     server,
@@ -52,8 +48,7 @@ enum class field : std::uint8_t
     unknown,
 };
 
-enum class schema_failure : std::uint8_t
-{
+enum class schema_failure : std::uint8_t {
     none,
     wrong_root_type,
     unknown_property,
@@ -67,18 +62,15 @@ enum class schema_failure : std::uint8_t
     nesting_too_deep,
 };
 
-struct schema_error
-{
+struct schema_error {
     schema_failure code = schema_failure::none;
     context owner = context::invalid;
     field member = field::none;
     std::size_t offset = 0;
 };
 
-constexpr std::string_view failure_detail(const schema_error& error) noexcept
-{
-    switch (error.code)
-    {
+constexpr std::string_view failure_detail(const schema_error& error) noexcept {
+    switch (error.code) {
     case schema_failure::wrong_root_type: return "server configuration root must be an object";
     case schema_failure::unknown_property: return "configuration contains an unknown property";
     case schema_failure::duplicate_property: return "configuration contains a duplicate property";
@@ -87,10 +79,8 @@ constexpr std::string_view failure_detail(const schema_error& error) noexcept
     default: break;
     }
 
-    if (error.owner == context::endpoint)
-    {
-        switch (error.member)
-        {
+    if (error.owner == context::endpoint) {
+        switch (error.member) {
         case field::name: return "server.endpoints[].name: expected a non-empty unique string";
         case field::transport: return "server.endpoints[].transport: expected \"tcp\"";
         case field::protocol: return "server.endpoints[].protocol: expected \"json\"";
@@ -104,8 +94,7 @@ constexpr std::string_view failure_detail(const schema_error& error) noexcept
     if (error.owner == context::project && error.member == field::path)
         return "project.path: expected a non-empty UTF-8 path string";
 
-    switch (error.code)
-    {
+    switch (error.code) {
     case schema_failure::wrong_field_type: return "configuration field has the wrong JSON type";
     case schema_failure::missing_required_field: return "configuration is missing a required field";
     case schema_failure::invalid_endpoint: return "endpoint configuration is invalid";
@@ -121,42 +110,39 @@ constexpr std::string_view failure_detail(const schema_error& error) noexcept
     return {};
 }
 
-class server_configuration_handler final : public json_event_handler
-{
+// Streaming schema handler for server_configuration.
+// It validates JSON structure and schema while materializing the typed
+// configuration directly, without a separate DOM or adapter representation.
+class server_configuration_handler final : public json_event_handler {
 public:
-    void location(std::size_t offset) noexcept override { current_offset_ = offset; }
+    void location(std::size_t offset) noexcept override { current_offset = offset; }
 
-    void object_begin() noexcept override
-    {
+    void object_begin() noexcept override {
         if (stopped()) return;
-        if (depth_ == 0)
-        {
+        if (depth == 0) {
             push(context::root);
-            root_object_ = true;
+            root_object = true;
             return;
         }
 
         const auto next = object_context();
-        if (next == context::invalid)
-        {
-            fail(schema_failure::wrong_field_type, pending_);
+        if (next == context::invalid) {
+            fail(schema_failure::wrong_field_type, pending);
             return;
         }
         consume_pending();
         push(next);
         if (stopped()) return;
-        if (next == context::endpoint)
-        {
-            endpoint_ = {};
-            endpoint_seen_ = 0;
-            endpoint_name_offset_ = 0;
+        if (next == context::endpoint) {
+            endpoint = {};
+            endpoint_seen = 0;
+            endpoint_name_offset = 0;
         }
     }
 
-    void object_end() noexcept override
-    {
+    void object_end() noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_field_type); return; }
+        if (depth == 0) { fail(schema_failure::wrong_field_type); return; }
         const auto ending = current();
         validate_required(ending);
         if (stopped()) return;
@@ -165,16 +151,14 @@ public:
         pop();
     }
 
-    void array_begin() noexcept override
-    {
+    void array_begin() noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
+        if (depth == 0) { fail(schema_failure::wrong_root_type); return; }
         context next = context::invalid;
-        if (depth_ > 0 && current() == context::communication && pending_ == field::endpoints)
+        if (depth > 0 && current() == context::communication && pending == field::endpoints)
             next = context::endpoints;
-        if (next == context::invalid)
-        {
-            fail(schema_failure::wrong_field_type, pending_);
+        if (next == context::invalid) {
+            fail(schema_failure::wrong_field_type, pending);
             return;
         }
         consume_pending();
@@ -182,140 +166,119 @@ public:
         if (stopped()) return;
     }
 
-    void array_end() noexcept override
-    {
+    void array_end() noexcept override {
         if (stopped()) return;
-        if (depth_ == 0 || current() != context::endpoints)
-        {
+        if (depth == 0 || current() != context::endpoints) {
             fail(schema_failure::wrong_field_type);
             return;
         }
         pop();
     }
 
-    void key(std::string_view value) noexcept override
-    {
+    void key(std::string_view value) noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_field_type); return; }
-        pending_ = identify(current(), value);
-        if (pending_ == field::unknown) { fail(schema_failure::unknown_property); return; }
+        if (depth == 0) { fail(schema_failure::wrong_field_type); return; }
+        pending = identify(current(), value);
+        if (pending == field::unknown) { fail(schema_failure::unknown_property); return; }
 
-        const auto bit = field_bit(pending_);
+        const auto bit = field_bit(pending);
         auto& seen = seen_mask(current());
         if ((seen & bit) != 0) { fail(schema_failure::duplicate_property); return; }
         seen |= bit;
     }
 
-    void string(std::string_view value) noexcept override
-    {
+    void string(std::string_view value) noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
-        try
-        {
-            if (current() == context::endpoint)
-            {
-                if (pending_ == field::name)
-                {
-                    endpoint_name_offset_ = current_offset_;
+        if (depth == 0) { fail(schema_failure::wrong_root_type); return; }
+        try {
+            if (current() == context::endpoint) {
+                if (pending == field::name) {
+                    endpoint_name_offset = current_offset;
                     if (value.empty()) fail(schema_failure::invalid_endpoint, field::name);
-                    else endpoint_.name.assign(value);
+                    else endpoint.name.assign(value);
                 }
-                else if (pending_ == field::address)
-                {
+                else if (pending == field::address) {
                     if (value.empty()) fail(schema_failure::invalid_endpoint, field::address);
-                    else endpoint_.address.assign(value);
+                    else endpoint.address.assign(value);
                 }
-                else if (pending_ == field::transport)
-                {
+                else if (pending == field::transport) {
                     if (value != "tcp") { fail(schema_failure::invalid_endpoint); return; }
-                    endpoint_.transport = transport_kind::tcp;
+                    endpoint.transport = transport_kind::tcp;
                 }
-                else if (pending_ == field::protocol)
-                {
+                else if (pending == field::protocol) {
                     if (value != "json") { fail(schema_failure::invalid_endpoint); return; }
-                    endpoint_.protocol = protocol_kind::json;
+                    endpoint.protocol = protocol_kind::json;
                 }
                 else { fail(schema_failure::wrong_field_type); return; }
             }
-            else if (current() == context::logging && pending_ == field::level)
-            {
-                if (!parse_level(value, candidate_.logging.minimum_level))
-                {
+            else if (current() == context::logging && pending == field::level) {
+                if (!parse_level(value, candidate.logging.minimum_level)) {
                     fail(schema_failure::invalid_log_level);
                     return;
                 }
             }
-            else if (current() == context::project && pending_ == field::path)
-            {
+            else if (current() == context::project && pending == field::path) {
                 if (value.empty()) fail(schema_failure::invalid_project_path, field::path);
-                else project_path_.assign(value);
+                else project_path_value.assign(value);
             }
             else { fail(schema_failure::wrong_field_type); return; }
         }
-        catch (const std::bad_alloc&) { internal_failure_ = true; }
-        catch (const std::length_error&) { internal_failure_ = true; }
+        catch (const std::bad_alloc&) { internal_failure_flag = true; }
+        catch (const std::length_error&) { internal_failure_flag = true; }
         if (!stopped()) consume_pending();
     }
 
-    void integer(std::int64_t value) noexcept override
-    {
+    void integer(std::int64_t value) noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
-        if (current() == context::root && pending_ == field::version)
-        {
+        if (depth == 0) { fail(schema_failure::wrong_root_type); return; }
+        if (current() == context::root && pending == field::version) {
             if (value < 0 || value > std::numeric_limits<std::uint32_t>::max())
                 fail(schema_failure::wrong_field_type);
-            else candidate_.version = static_cast<std::uint32_t>(value);
+            else candidate.version = static_cast<std::uint32_t>(value);
         }
-        else if (current() == context::endpoint && pending_ == field::port)
-        {
+        else if (current() == context::endpoint && pending == field::port) {
             if (value < 1 || value > 65535) fail(schema_failure::invalid_endpoint);
-            else endpoint_.port = static_cast<std::uint16_t>(value);
+            else endpoint.port = static_cast<std::uint16_t>(value);
         }
         else fail(schema_failure::wrong_field_type);
         if (!stopped()) consume_pending();
     }
 
-    void boolean(bool value) noexcept override
-    {
+    void boolean(bool value) noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
-        if (current() == context::communication && pending_ == field::console)
-            candidate_.communication.console = value;
-        else if (current() == context::logging && pending_ == field::console)
-            candidate_.logging.console = value;
-        else if (current() == context::telemetry && pending_ == field::metrics)
-            candidate_.telemetry.metrics = value;
+        if (depth == 0) { fail(schema_failure::wrong_root_type); return; }
+        if (current() == context::communication && pending == field::console)
+            candidate.communication.console = value;
+        else if (current() == context::logging && pending == field::console)
+            candidate.logging.console = value;
+        else if (current() == context::telemetry && pending == field::metrics)
+            candidate.telemetry.metrics = value;
         else fail(schema_failure::wrong_field_type);
         if (!stopped()) consume_pending();
     }
 
-    void number(double) noexcept override
-    {
+    void number(double) noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
+        if (depth == 0) { fail(schema_failure::wrong_root_type); return; }
         reject_scalar();
     }
-    void null() noexcept override
-    {
+    void null() noexcept override {
         if (stopped()) return;
-        if (depth_ == 0) { fail(schema_failure::wrong_root_type); return; }
+        if (depth == 0) { fail(schema_failure::wrong_root_type); return; }
         reject_scalar();
     }
 
-    [[nodiscard]] bool valid() const noexcept
-    {
-        return root_object_ && error_.code == schema_failure::none && !internal_failure_ && depth_ == 0;
+    [[nodiscard]] bool valid() const noexcept {
+        return root_object && failure.code == schema_failure::none && !internal_failure_flag && depth == 0;
     }
 
-    [[nodiscard]] const schema_error& error() const noexcept { return error_; }
-    [[nodiscard]] bool internal_failure() const noexcept { return internal_failure_; }
-    [[nodiscard]] server_configuration take() { return std::move(candidate_); }
-    [[nodiscard]] const std::string& project_path() const noexcept { return project_path_; }
+    [[nodiscard]] const schema_error& error() const noexcept { return failure; }
+    [[nodiscard]] bool internal_failure() const noexcept { return internal_failure_flag; }
+    [[nodiscard]] server_configuration take() { return std::move(candidate); }
+    [[nodiscard]] const std::string& project_path() const noexcept { return project_path_value; }
 
 private:
-    static bool parse_level(std::string_view value, log_level& output) noexcept
-    {
+    static bool parse_level(std::string_view value, log_level& output) noexcept {
         if (value == "trace") output = log_level::trace;
         else if (value == "debug") output = log_level::debug;
         else if (value == "info") output = log_level::info;
@@ -326,44 +289,37 @@ private:
         return true;
     }
 
-    context object_context() const noexcept
-    {
-        if (current() == context::root)
-        {
-            if (pending_ == field::server) return context::communication;
-            if (pending_ == field::logging) return context::logging;
-            if (pending_ == field::telemetry) return context::telemetry;
-            if (pending_ == field::project) return context::project;
+    context object_context() const noexcept {
+        if (current() == context::root) {
+            if (pending == field::server) return context::communication;
+            if (pending == field::logging) return context::logging;
+            if (pending == field::telemetry) return context::telemetry;
+            if (pending == field::project) return context::project;
         }
         if (current() == context::endpoints) return context::endpoint;
         return context::invalid;
     }
 
-    static field identify(context owner, std::string_view value) noexcept
-    {
-        if (owner == context::root)
-        {
+    static field identify(context owner, std::string_view value) noexcept {
+        if (owner == context::root) {
             if (value == "version") return field::version;
             if (value == "server") return field::server;
             if (value == "logging") return field::logging;
             if (value == "telemetry") return field::telemetry;
             if (value == "project") return field::project;
         }
-        else if (owner == context::communication)
-        {
+        else if (owner == context::communication) {
             if (value == "endpoints") return field::endpoints;
             if (value == "console") return field::console;
         }
-        else if (owner == context::endpoint)
-        {
+        else if (owner == context::endpoint) {
             if (value == "name") return field::name;
             if (value == "transport") return field::transport;
             if (value == "protocol") return field::protocol;
             if (value == "address") return field::address;
             if (value == "port") return field::port;
         }
-        else if (owner == context::logging)
-        {
+        else if (owner == context::logging) {
             if (value == "level") return field::level;
             if (value == "console") return field::console;
         }
@@ -372,133 +328,122 @@ private:
         return field::unknown;
     }
 
-    static constexpr std::uint32_t field_bit(field value) noexcept
-    {
+    static constexpr std::uint32_t field_bit(field value) noexcept {
         return std::uint32_t{1} << static_cast<std::uint8_t>(value);
     }
 
-    std::uint32_t& seen_mask(context owner) noexcept
-    {
-        switch (owner)
-        {
-        case context::root: return root_seen_;
-        case context::communication: return communication_seen_;
-        case context::endpoint: return endpoint_seen_;
-        case context::logging: return logging_seen_;
-        case context::telemetry: return telemetry_seen_;
-        case context::project: return project_seen_;
-        default: return invalid_seen_;
+    std::uint32_t& seen_mask(context owner) noexcept {
+        switch (owner) {
+        case context::root: return root_seen;
+        case context::communication: return communication_seen;
+        case context::endpoint: return endpoint_seen;
+        case context::logging: return logging_seen;
+        case context::telemetry: return telemetry_seen;
+        case context::project: return project_seen;
+        default: return invalid_seen;
         }
     }
 
-    void validate_required(context owner) noexcept
-    {
+    void validate_required(context owner) noexcept {
         std::uint32_t actual = 0;
-        switch (owner)
-        {
+        switch (owner) {
         case context::root:
-            actual = root_seen_;
+            actual = root_seen;
             require(owner, actual, field::version); require(owner, actual, field::server);
             require(owner, actual, field::logging); require(owner, actual, field::telemetry);
             require(owner, actual, field::project);
             break;
         case context::communication:
-            actual = communication_seen_;
+            actual = communication_seen;
             require(owner, actual, field::endpoints); require(owner, actual, field::console);
             break;
         case context::endpoint:
-            actual = endpoint_seen_;
+            actual = endpoint_seen;
             require(owner, actual, field::name); require(owner, actual, field::transport);
             require(owner, actual, field::protocol); require(owner, actual, field::address);
             require(owner, actual, field::port);
             break;
         case context::logging:
-            actual = logging_seen_;
+            actual = logging_seen;
             require(owner, actual, field::level); require(owner, actual, field::console);
             break;
         case context::telemetry:
-            actual = telemetry_seen_;
+            actual = telemetry_seen;
             require(owner, actual, field::metrics);
             break;
         case context::project:
-            actual = project_seen_;
+            actual = project_seen;
             require(owner, actual, field::path);
             break;
         default: return;
         }
     }
 
-    void require(context owner, std::uint32_t actual, field member) noexcept
-    {
+    void require(context owner, std::uint32_t actual, field member) noexcept {
         if ((actual & field_bit(member)) == 0)
             fail(schema_failure::missing_required_field, member, owner);
     }
 
-    void finish_endpoint() noexcept
-    {
-        for (const auto& existing : candidate_.communication.endpoints)
-            if (existing.name == endpoint_.name)
-            {
+    void finish_endpoint() noexcept {
+        for (const auto& existing : candidate.communication.endpoints)
+            if (existing.name == endpoint.name) {
                 fail(schema_failure::duplicate_endpoint_name, field::name,
-                     context::endpoint, endpoint_name_offset_);
+                     context::endpoint, endpoint_name_offset);
                 return;
             }
-        try { candidate_.communication.endpoints.push_back(std::move(endpoint_)); }
-        catch (const std::bad_alloc&) { internal_failure_ = true; }
-        catch (const std::length_error&) { internal_failure_ = true; }
+        try { candidate.communication.endpoints.push_back(std::move(endpoint)); }
+        catch (const std::bad_alloc&) { internal_failure_flag = true; }
+        catch (const std::length_error&) { internal_failure_flag = true; }
     }
 
     void reject_scalar() noexcept { fail(schema_failure::wrong_field_type); }
-    void consume_pending() noexcept { pending_ = field::none; }
-    context current() const noexcept { return depth_ == 0 ? context::invalid : stack_[depth_ - 1]; }
-    [[nodiscard]] bool stopped() const noexcept
-    {
-        return error_.code != schema_failure::none || internal_failure_;
+    void consume_pending() noexcept { pending = field::none; }
+    context current() const noexcept { return depth == 0 ? context::invalid : stack[depth - 1]; }
+    [[nodiscard]] bool stopped() const noexcept {
+        return failure.code != schema_failure::none || internal_failure_flag;
     }
 
-    void push(context value) noexcept
-    {
-        if (depth_ == stack_.size()) { fail(schema_failure::nesting_too_deep); return; }
-        stack_[depth_++] = value;
+    void push(context value) noexcept {
+        if (depth == stack.size()) { fail(schema_failure::nesting_too_deep); return; }
+        stack[depth++] = value;
     }
-    void pop() noexcept { if (depth_ > 0) --depth_; }
+    void pop() noexcept { if (depth > 0) --depth; }
     void fail(schema_failure value, field member = field::none,
               context owner = context::invalid,
-              std::size_t offset = std::numeric_limits<std::size_t>::max()) noexcept
-    {
-        if (error_.code != schema_failure::none) return;
-        error_ = {value,
+              std::size_t offset = std::numeric_limits<std::size_t>::max()) noexcept {
+        if (failure.code != schema_failure::none) return;
+        failure = {value,
                   owner == context::invalid ? current() : owner,
-                  member == field::none ? pending_ : member,
-                  offset == std::numeric_limits<std::size_t>::max() ? current_offset_ : offset};
+                  member == field::none ? pending : member,
+                  offset == std::numeric_limits<std::size_t>::max() ? current_offset : offset};
     }
 
-    server_configuration candidate_;
-    endpoint_configuration endpoint_;
-    std::string project_path_;
-    std::array<context, 16> stack_{};
-    std::size_t depth_ = 0;
-    field pending_ = field::none;
-    schema_error error_;
-    std::size_t current_offset_ = 0;
-    std::size_t endpoint_name_offset_ = 0;
-    bool internal_failure_ = false;
-    bool root_object_ = false;
-    std::uint32_t root_seen_ = 0;
-    std::uint32_t communication_seen_ = 0;
-    std::uint32_t endpoint_seen_ = 0;
-    std::uint32_t logging_seen_ = 0;
-    std::uint32_t telemetry_seen_ = 0;
-    std::uint32_t project_seen_ = 0;
-    std::uint32_t invalid_seen_ = 0;
+    server_configuration candidate;
+    endpoint_configuration endpoint;
+    std::string project_path_value;
+    std::array<context, 16> stack{};
+    std::size_t depth = 0;
+    field pending = field::none;
+    schema_error failure;
+    std::size_t current_offset = 0;
+    std::size_t endpoint_name_offset = 0;
+    bool internal_failure_flag = false;
+    bool root_object = false;
+    std::uint32_t root_seen = 0;
+    std::uint32_t communication_seen = 0;
+    std::uint32_t endpoint_seen = 0;
+    std::uint32_t logging_seen = 0;
+    std::uint32_t telemetry_seen = 0;
+    std::uint32_t project_seen = 0;
+    std::uint32_t invalid_seen = 0;
 };
 
+// Emits diagnostics on a best-effort basis so reporting cannot replace the
+// original configuration failure with an allocation failure.
 bool try_emit(diagnostic_buffer& diagnostics, const diagnostic_descriptor& descriptor,
               operation_id operation, std::string_view detail = {},
-              std::size_t offset = 0) noexcept
-{
-    try
-    {
+              std::size_t offset = 0) noexcept {
+    try {
         diagnostics.emit({descriptor.id, descriptor.default_severity, operation,
                           {{}, static_cast<std::uint32_t>(offset), 0}, std::string{detail}});
         return true;
@@ -507,12 +452,11 @@ bool try_emit(diagnostic_buffer& diagnostics, const diagnostic_descriptor& descr
     catch (const std::length_error&) { return false; }
 }
 
-std::filesystem::path filesystem_path_from_utf8(std::string_view value)
-{
+// Converts the UTF-8 path stored in JSON to the platform filesystem path type.
+std::filesystem::path filesystem_path_from_utf8(std::string_view value) {
 #ifdef _WIN32
     std::u8string utf8(value.size(), u8'\0');
-    if (!value.empty())
-    {
+    if (!value.empty()) {
         std::memcpy(utf8.data(), value.data(), value.size());
     }
     return std::filesystem::path{utf8};
@@ -523,21 +467,20 @@ std::filesystem::path filesystem_path_from_utf8(std::string_view value)
 
 } // namespace
 
+// Parses and validates a complete Server configuration transactionally.
+// output is replaced only after syntax, schema, version, and project-path
+// resolution have all succeeded.
 status load_server_configuration(std::string_view text,
                                  const std::filesystem::path& configuration_path,
                                  operation_id operation,
                                  diagnostic_buffer& diagnostics,
-                                 server_configuration& output) noexcept
-{
-    try
-    {
+                                 server_configuration& output) noexcept {
+    try {
         server_configuration_handler handler;
         json_error json_failure;
         json_parser parser{text};
-        if (!parser.parse(handler, json_failure))
-        {
-            if (json_failure.code == json_error_code::allocation_failed)
-            {
+        if (!parser.parse(handler, json_failure)) {
+            if (json_failure.code == json_error_code::allocation_failed) {
                 try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
                 return {status_code::initialization_failed};
             }
@@ -545,21 +488,18 @@ status load_server_configuration(std::string_view text,
                      "server.json contains invalid JSON", json_failure.offset);
             return {status_code::configuration_failed};
         }
-        if (handler.internal_failure())
-        {
+        if (handler.internal_failure()) {
             try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
             return {status_code::initialization_failed};
         }
-        if (!handler.valid())
-        {
+        if (!handler.valid()) {
             try_emit(diagnostics, diagnostics::server_invalid_configuration, operation,
                      failure_detail(handler.error()), handler.error().offset);
             return {status_code::configuration_failed};
         }
 
         auto candidate = handler.take();
-        if (candidate.version != current_server_configuration_version)
-        {
+        if (candidate.version != current_server_configuration_version) {
             try_emit(diagnostics, diagnostics::server_unsupported_configuration_version,
                      operation);
             return {status_code::configuration_failed};
@@ -568,8 +508,7 @@ status load_server_configuration(std::string_view text,
         std::error_code filesystem_error;
         auto absolute_configuration =
             std::filesystem::absolute(configuration_path, filesystem_error);
-        if (filesystem_error)
-        {
+        if (filesystem_error) {
             try_emit(diagnostics, diagnostics::server_configuration_read_failed, operation,
                      "server configuration path could not be resolved");
             return {status_code::configuration_failed};
@@ -584,18 +523,15 @@ status load_server_configuration(std::string_view text,
         output = std::move(candidate);
         return {};
     }
-    catch (const std::bad_alloc&)
-    {
+    catch (const std::bad_alloc&) {
         try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
         return {status_code::initialization_failed};
     }
-    catch (const std::length_error&)
-    {
+    catch (const std::length_error&) {
         try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
         return {status_code::initialization_failed};
     }
-    catch (const std::filesystem::filesystem_error&)
-    {
+    catch (const std::filesystem::filesystem_error&) {
         const schema_error error{schema_failure::invalid_project_path,
                                  context::project, field::path, 0};
         try_emit(diagnostics, diagnostics::server_invalid_configuration, operation,
@@ -604,37 +540,33 @@ status load_server_configuration(std::string_view text,
     }
 }
 
+// Reads configuration text from disk and delegates validation and construction
+// to load_server_configuration().
 status load_server_configuration_file(const std::filesystem::path& configuration_path,
                                       operation_id operation,
                                       diagnostic_buffer& diagnostics,
-                                      server_configuration& output) noexcept
-{
-    try
-    {
+                                      server_configuration& output) noexcept {
+    try {
         std::ifstream input{configuration_path, std::ios::binary};
-        if (!input)
-        {
+        if (!input) {
             try_emit(diagnostics, diagnostics::server_configuration_read_failed, operation,
                      "server configuration file could not be opened");
             return {status_code::configuration_failed};
         }
 
         std::string text{std::istreambuf_iterator<char>{input}, std::istreambuf_iterator<char>{}};
-        if (input.bad())
-        {
+        if (input.bad()) {
             try_emit(diagnostics, diagnostics::server_configuration_read_failed, operation,
                      "server configuration file could not be read");
             return {status_code::configuration_failed};
         }
         return load_server_configuration(text, configuration_path, operation, diagnostics, output);
     }
-    catch (const std::bad_alloc&)
-    {
+    catch (const std::bad_alloc&) {
         try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
         return {status_code::initialization_failed};
     }
-    catch (const std::length_error&)
-    {
+    catch (const std::length_error&) {
         try_emit(diagnostics, diagnostics::server_initialization_failed, operation);
         return {status_code::initialization_failed};
     }

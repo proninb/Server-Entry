@@ -2,13 +2,15 @@
 
 #include "../../status.hpp"
 
-namespace cw::server
-{
+namespace cw::server {
 
 class graph;
 
-class runtime
-{
+// Owns the execution-facing Runtime state for one Project.
+// Runtime consumes an already committed canonical Graph and prepares the state
+// required for task execution; Graph construction and publication remain outside
+// this layer.
+class runtime {
 public:
     [[nodiscard]] status attach(const graph& graph) noexcept;
 };

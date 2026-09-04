@@ -5,34 +5,34 @@
 #include <array>
 #include <span>
 
-namespace cw::server
-{
+namespace cw::server {
 
-class diagnostic_registry_view
-{
+// Provides read-only lookup over the immutable diagnostic descriptor catalog.
+// The view does not own descriptor storage and is intended for lightweight
+// resolution of diagnostic_id to its catalog definition.
+class diagnostic_registry_view {
 public:
     constexpr explicit diagnostic_registry_view(
         std::span<const diagnostic_descriptor> descriptors) noexcept
-        : descriptors_(descriptors)
-    {
-    }
+        : descriptors(descriptors) {}
 
-    [[nodiscard]] constexpr const diagnostic_descriptor* find(diagnostic_id id) const noexcept
-    {
-        for (const auto& descriptor : descriptors_)
-        {
-            if (descriptor.id == id)
-            {
+    [[nodiscard]] constexpr const diagnostic_descriptor* find(diagnostic_id id) const noexcept {
+        for (const auto& descriptor : descriptors) {
+            if (descriptor.id == id) {
                 return &descriptor;
             }
         }
+
         return nullptr;
     }
 
 private:
-    std::span<const diagnostic_descriptor> descriptors_;
+    std::span<const diagnostic_descriptor> descriptors;
 };
 
+// Single compile-time registry of all diagnostics exposed by Server subsystems.
+// Keeping the catalog centralized allows identity and naming invariants to be
+// validated before the program is built.
 inline constexpr std::array diagnostic_descriptors{
     diagnostics::server_initialization_failed,
     diagnostics::server_invalid_json,
@@ -73,46 +73,38 @@ inline constexpr std::array diagnostic_descriptors{
 
 inline constexpr diagnostic_registry_view diagnostic_registry{diagnostic_descriptors};
 
-consteval bool diagnostic_ids_unique()
-{
-    for (std::size_t left = 0; left < diagnostic_descriptors.size(); ++left)
-    {
-        for (std::size_t right = left + 1; right < diagnostic_descriptors.size(); ++right)
-        {
-            if (diagnostic_descriptors[left].id == diagnostic_descriptors[right].id)
-            {
+consteval bool diagnostic_ids_unique() {
+    for (std::size_t left = 0; left < diagnostic_descriptors.size(); ++left) {
+        for (std::size_t right = left + 1; right < diagnostic_descriptors.size(); ++right) {
+            if (diagnostic_descriptors[left].id == diagnostic_descriptors[right].id) {
                 return false;
             }
         }
     }
+
     return true;
 }
 
-consteval bool diagnostic_names_unique()
-{
-    for (std::size_t left = 0; left < diagnostic_descriptors.size(); ++left)
-    {
-        for (std::size_t right = left + 1; right < diagnostic_descriptors.size(); ++right)
-        {
-            if (diagnostic_descriptors[left].name == diagnostic_descriptors[right].name)
-            {
+consteval bool diagnostic_names_unique() {
+    for (std::size_t left = 0; left < diagnostic_descriptors.size(); ++left) {
+        for (std::size_t right = left + 1; right < diagnostic_descriptors.size(); ++right) {
+            if (diagnostic_descriptors[left].name == diagnostic_descriptors[right].name) {
                 return false;
             }
         }
     }
+
     return true;
 }
 
-consteval bool diagnostic_descriptors_valid()
-{
-    for (const auto& descriptor : diagnostic_descriptors)
-    {
+consteval bool diagnostic_descriptors_valid() {
+    for (const auto& descriptor : diagnostic_descriptors) {
         if (!descriptor.id || descriptor.domain == diagnostic_domain::unknown ||
-            descriptor.name.empty() || descriptor.message.empty())
-        {
+            descriptor.name.empty() || descriptor.message.empty()) {
             return false;
         }
     }
+
     return true;
 }
 
