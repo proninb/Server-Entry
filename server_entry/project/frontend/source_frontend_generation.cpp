@@ -1,5 +1,6 @@
 #include "source_frontend_generation.hpp"
 
+#include "source_frontend_cache.hpp"
 #include "source_publisher.hpp"
 #include "../builder/project_builder.hpp"
 #include "../builder/source_build_entry.hpp"
@@ -602,6 +603,21 @@ status source_frontend_generation::discover(
             auto& dependency_state =
                 states[dependency.value() - 1];
 
+            // Incremental generations reuse an unchanged dependency interface
+            // directly from the committed COLD cache. A dependency already
+            // claimed for discovery belongs to the affected closure and must
+            // produce a new candidate interface instead.
+            if (!dependency_state.discovery_claimed &&
+                !dependency_state.published &&
+                cache != nullptr) {
+                dependency_state.cached_interface =
+                    cache->interface(dependency);
+
+                if (dependency_state.cached_interface != nullptr) {
+                    dependency_state.published = true;
+                }
+            }
+
             if (!dependency_state.published) {
                 ++states[source.value() - 1]
                       .remaining;
@@ -610,7 +626,8 @@ status source_frontend_generation::discover(
             dependency_state.dependents.push_back(
                 source);
 
-            if (!dependency_state.discovery_claimed) {
+            if (!dependency_state.discovery_claimed &&
+                !dependency_state.published) {
                 dependency_state.discovery_claimed = true;
                 discovery_queue.push_back(dependency);
                 discovery_condition.notify_one();
@@ -731,8 +748,13 @@ status source_frontend_generation::parse_and_capture(
             dependency_interfaces.reserve(state.dependencies.size());
 
             for (const auto dependency : state.dependencies) {
+                const auto& dependency_state =
+                    states[dependency.value() - 1];
+
                 const auto* dependency_interface =
-                    states[dependency.value() - 1].interface.get();
+                    dependency_state.interface
+                        ? dependency_state.interface.get()
+                        : dependency_state.cached_interface;
 
                 if (!dependency_interface) {
                     return {status_code::invalid_state};
@@ -744,8 +766,13 @@ status source_frontend_generation::parse_and_capture(
             visible_imports.reserve(state.visibility.size());
 
             for (const auto& item : state.visibility) {
+                const auto& dependency_state =
+                    states[item.dependency.value() - 1];
+
                 const auto* dependency_interface =
-                    states[item.dependency.value() - 1].interface.get();
+                    dependency_state.interface
+                        ? dependency_state.interface.get()
+                        : dependency_state.cached_interface;
 
                 if (!dependency_interface) {
                     return {status_code::invalid_state};
@@ -880,6 +907,8 @@ source_rebuild_result source_frontend_generation::rebuild(
     const std::filesystem::path& compiled_checkpoint) noexcept {
 
     try {
+        current_summary = {};
+
         for (const auto root :
              transaction->sources().roots()) {
             const auto result =
@@ -924,6 +953,10 @@ source_rebuild_result source_frontend_generation::rebuild(
             if (wave_sources.empty()) {
                 break;
             }
+
+            current_summary.checked +=
+                static_cast<std::uint32_t>(
+                    wave_sources.size());
 
             std::sort(
                 wave_sources.begin(),
@@ -1126,6 +1159,10 @@ source_rebuild_result source_frontend_generation::rebuild(
                 }
             }
 
+            current_summary.affected =
+                static_cast<std::uint32_t>(
+                    semantic_count);
+
             semantic_scheduler_active = true;
             semantic_remaining =
                 static_cast<std::uint32_t>(semantic_count);
@@ -1312,14 +1349,15 @@ source_rebuild_result source_frontend_generation::rebuild(
         result =
             transaction->commit();
 
+        source_rebuild_result completed;
+        completed.semantic = result;
+        completed.frontend = summary();
+
         if (!result.ok() ||
             (checkpoint.empty() &&
              compiled_checkpoint.empty())) {
-            return result;
+            return completed;
         }
-
-        source_rebuild_result completed;
-        completed.semantic = result;
 
         if (!checkpoint.empty()) {
             completed.checkpoint =
@@ -1365,6 +1403,25 @@ source_rebuild_result source_frontend_generation::rebuild(
     }
 }
 
+source_frontend_summary source_frontend_generation::summary() const noexcept {
+    std::lock_guard lock{mutex};
+
+    auto result = current_summary;
+
+    result.discovery = 0;
+    result.lex = 0;
+    result.parse = 0;
+    result.publish = 0;
+
+    for (const auto& state : states) {
+        result.discovery += state.counts.discovery;
+        result.lex += state.counts.lex;
+        result.parse += state.counts.parse;
+        result.publish += state.counts.publish;
+    }
+
+    return result;
+}
 source_frontend_counts source_frontend_generation::counts(
     source_id source) const noexcept {
 
@@ -1406,12 +1463,17 @@ source_frontend_generation::interface(
 
     std::lock_guard lock{mutex};
 
-    return
-        source &&
-        source.value() <= states.size()
-            ? states[source.value() - 1]
-                  .interface.get()
-            : nullptr;
+    if (!source ||
+        source.value() > states.size()) {
+        return nullptr;
+    }
+
+    const auto& state =
+        states[source.value() - 1];
+
+    return state.interface
+        ? state.interface.get()
+        : state.cached_interface;
 }
 
 bool source_frontend_generation::failed() const noexcept {

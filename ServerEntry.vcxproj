@@ -90,6 +90,8 @@
     <ClCompile Include="server_entry\project\parser\source_environment.cpp" />
     <ClCompile Include="server_entry\project\frontend\source_publisher.cpp" />
     <ClCompile Include="server_entry\project\frontend\source_frontend_generation.cpp" />
+    <ClCompile Include="server_entry\project\frontend\source_frontend_cache.cpp" />
+    <ClCompile Include="server_entry\project\frontend\source_frontend_incremental.cpp" />
     <ClCompile Include="server_entry\project\graph\graph_manager.cpp" />
     <ClCompile Include="server_entry\project\graph\graph_build_transaction.cpp" />
     <ClCompile Include="server_entry\project\graph\graph.cpp" />
@@ -99,6 +101,7 @@
     <ClCompile Include="server_entry\project\runtime\runtime.cpp" />
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp" />
     <ClCompile Include="server_entry\project\source\source_manager.cpp" />
+    <ClCompile Include="server_entry\project\source\source_change_tracker.cpp" />
     <ClCompile Include="server_entry\project\source\source_hash.cpp" />
     <ClCompile Include="server_entry\core\hash\sha256.cpp" />
     <ClCompile Include="server_entry\core\filesystem\file_snapshot.cpp" />
@@ -155,6 +158,7 @@
     <ClInclude Include="server_entry\project\parser\source_environment.hpp" />
     <ClInclude Include="server_entry\project\frontend\source_publisher.hpp" />
     <ClInclude Include="server_entry\project\frontend\source_frontend_generation.hpp" />
+    <ClInclude Include="server_entry\project\frontend\source_frontend_cache.hpp" />
     <ClInclude Include="server_entry\project\language\enum_semantics.hpp" />
     <ClInclude Include="server_entry\project\graph\graph.hpp" />
     <ClInclude Include="server_entry\project\graph\graph_manager.hpp" />
@@ -165,6 +169,7 @@
     <ClInclude Include="server_entry\project\runtime\runtime.hpp" />
     <ClInclude Include="server_entry\project\shm\shared_memory.hpp" />
     <ClInclude Include="server_entry\project\source\source_manager.hpp" />
+    <ClInclude Include="server_entry\project\source\source_change_tracker.hpp" />
     <ClInclude Include="server_entry\project\source\source_manager_persistence.hpp" />
     <ClInclude Include="server_entry\project\source\source_hash.hpp" />
     <ClInclude Include="server_entry\core\hash\sha256.hpp" />

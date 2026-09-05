@@ -18,6 +18,7 @@
     <ClCompile Include="server_entry\project\parser\source_environment.cpp" />
     <ClCompile Include="server_entry\project\frontend\source_publisher.cpp" />
     <ClCompile Include="server_entry\project\frontend\source_frontend_generation.cpp" />
+    <ClCompile Include="server_entry\project\frontend\source_frontend_cache.cpp" />
     <ClCompile Include="server_entry\project\graph\graph_manager.cpp" />
     <ClCompile Include="server_entry\project\graph\graph_build_transaction.cpp" />
     <ClCompile Include="server_entry\project\graph\graph.cpp" />

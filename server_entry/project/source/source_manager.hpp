@@ -200,6 +200,16 @@ public:
     [[nodiscard]] std::span<const source_change> changes() const noexcept;
     [[nodiscard]] std::span<const source_root> roots() const noexcept;
 
+    // Dense candidate Source universe used by incremental acquisition scans.
+    [[nodiscard]] std::size_t source_count() const noexcept;
+
+    // Collects transitive dependents from the committed dependency graph.
+    // This is intentionally evaluated before changed Sources replace includes,
+    // so every consumer of the previous interface is invalidated.
+    [[nodiscard]] status collect_dependents(
+        source_id source,
+        std::vector<source_id>& output) const noexcept;
+
     // Records the current net candidate classification at an orchestration
     // measurement boundary. This is telemetry only and is not publication.
     void record_candidate_metrics(metrics_store& metrics) const noexcept;

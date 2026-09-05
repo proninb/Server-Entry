@@ -179,6 +179,36 @@ std::span<const source_change> source_manager_update::changes() const noexcept {
 std::span<const source_root> source_manager_update::roots() const noexcept {
     return root_records;
 }
+std::size_t source_manager_update::source_count() const noexcept {
+    if (owner == nullptr ||
+        committed ||
+        prepared) {
+        return 0;
+    }
+
+    return
+        owner->source_records.size() +
+        added_sources.size();
+}
+
+status source_manager_update::collect_dependents(
+    source_id source,
+    std::vector<source_id>& output) const noexcept {
+
+    output.clear();
+
+    if (!contains_for_validation(source)) {
+        return {status_code::invalid_state};
+    }
+
+    if (owner->find(source) == nullptr) {
+        return {};
+    }
+
+    return owner->collect_dependents(
+        source,
+        output);
+}
 
 bool source_manager_update::contains_for_validation(
     source_id id) const noexcept {
@@ -813,41 +843,136 @@ status source_manager_update::set_includes(
 // Validates the complete candidate include graph before publication.
 // The iterative candidate overlay is authoritative for changed include lists.
 status source_manager_update::validate_source_graph(
-    operation_id operation, diagnostic_buffer& diagnostics) noexcept {
-    if (!failure.ok()) return failure;
-    try {
-        const auto count = owner->source_records.size() + added_sources.size();
-        std::vector<std::uint8_t> state(count + 1);
-        const auto visit = [&](auto&& self, source_id source) -> bool {
-            auto& value = state[source.value()];
-            if (value == 1) return false;
-            if (value == 2) return true;
-            value = 1;
-            for (const auto dependency : candidate_includes(source))
-                if (!self(self, dependency)) return false;
-            value = 2;
-            return true;
-        };
-        for (std::uint32_t value = 1; value <= count; ++value)
-            if (!visit(visit, source_id{value})) {
-                try {
-                    diagnostics.emit({diagnostics::source_include_cycle.id,
-                        diagnostics::source_include_cycle.default_severity,
-                        operation, {source_id{value}, 0, 0}, {}});
-                }
-                catch (...) {
-                    return failure = {status_code::initialization_failed};
-                }
-                return failure = {status_code::configuration_failed};
+    operation_id operation,
+    diagnostic_buffer& diagnostics) noexcept {
+
+    if (!failure.ok()) {
+        return failure;
+    }
+
+    if (owner == nullptr ||
+        committed ||
+        prepared) {
+        return {status_code::invalid_state};
+    }
+
+    const auto emit_cycle =
+        [&](source_id source) -> status {
+            try {
+                diagnostics.emit({
+                    diagnostics::source_include_cycle.id,
+                    diagnostics::source_include_cycle.default_severity,
+                    operation,
+                    {source, 0, 0},
+                    {}
+                });
             }
+            catch (...) {
+                return failure = {
+                    status_code::initialization_failed
+                };
+            }
+
+            return failure = {
+                status_code::configuration_failed
+            };
+        };
+
+    try {
+        const auto count =
+            owner->source_records.size() +
+            added_sources.size();
+
+        // G0 has no previously validated graph, so it must validate the full DAG.
+        if (owner->source_records.empty()) {
+            std::vector<std::uint8_t> state(
+                count + 1);
+
+            const auto visit =
+                [&](auto&& self, source_id source) -> bool {
+                    auto& value = state[source.value()];
+
+                    if (value == 1) {
+                        return false;
+                    }
+
+                    if (value == 2) {
+                        return true;
+                    }
+
+                    value = 1;
+
+                    for (const auto dependency :
+                         candidate_includes(source)) {
+                        if (!self(self, dependency)) {
+                            return false;
+                        }
+                    }
+
+                    value = 2;
+                    return true;
+                };
+
+            for (std::uint32_t value = 1;
+                 value <= count;
+                 ++value) {
+                if (!visit(
+                        visit,
+                        source_id{value})) {
+                    return emit_cycle(
+                        source_id{value});
+                }
+            }
+
+            graph_validated = true;
+            return {};
+        }
+
+        // Committed DAG is already valid. Only replacement include edges can
+        // introduce a new cycle. Check reachability from each replacement child
+        // back to its parent using the complete candidate overlay.
+        std::vector<source_id> stack;
+        std::unordered_set<std::uint32_t> visited;
+
+        for (const auto& [parent_value, replacement] :
+             include_delta) {
+            const source_id parent{parent_value};
+
+            for (const auto child : replacement) {
+                stack.clear();
+                visited.clear();
+                stack.push_back(child);
+
+                while (!stack.empty()) {
+                    const auto current = stack.back();
+                    stack.pop_back();
+
+                    if (current == parent) {
+                        return emit_cycle(parent);
+                    }
+
+                    if (!visited.insert(
+                            current.value()).second) {
+                        continue;
+                    }
+
+                    for (const auto dependency :
+                         candidate_includes(current)) {
+                        stack.push_back(dependency);
+                    }
+                }
+            }
+        }
+
         graph_validated = true;
         return {};
     }
     catch (...) {
-        return failure = {status_code::initialization_failed};
+        return failure = {
+            status_code::initialization_failed
+        };
     }
 }
-
 status source_manager_update::commit() noexcept {
     const auto result = prepare_publish();
     if (!result.ok()) return result;

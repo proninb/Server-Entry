@@ -63,6 +63,10 @@ public:
 
     [[nodiscard]] const string_registry& strings() const noexcept;
 
+    [[nodiscard]] const source_manager& sources() const noexcept {
+        return source_manager_state;
+    }
+
     [[nodiscard]] status save_source_checkpoint(
         const std::filesystem::path& path) const noexcept;
 

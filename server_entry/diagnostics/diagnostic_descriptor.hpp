@@ -79,7 +79,14 @@ inline constexpr diagnostic_descriptor source_acquisition_failed{
     "source.acquisition_failed", "Source file could not be acquired"};
 inline constexpr diagnostic_descriptor source_checkpoint_save_failed{
     diagnostic_id{3007}, diagnostic_domain::source, diagnostic_severity::error,
-    "source.checkpoint_save_failed", "Source checkpoint could not be saved"};
+    "source.checkpoint_save_failed", "Source checkpoint could not be saved"};inline constexpr diagnostic_descriptor source_change_tracking_failed{
+    diagnostic_id{3008}, diagnostic_domain::source, diagnostic_severity::warning,
+    "source.change_tracking_failed",
+    "Source change tracking failed; full reconciliation fallback is enabled"};
+inline constexpr diagnostic_descriptor source_change_tracking_rescan{
+    diagnostic_id{3009}, diagnostic_domain::source, diagnostic_severity::warning,
+    "source.change_tracking_rescan",
+    "Source change notification continuity was lost; full reconciliation is required"};
 
 inline constexpr diagnostic_descriptor builder_duplicate_source_replacement{
     diagnostic_id{5001}, diagnostic_domain::builder, diagnostic_severity::error,
