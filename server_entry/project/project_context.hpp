@@ -9,17 +9,23 @@
 #include "runtime/runtime.hpp"
 #include "shm/shared_memory.hpp"
 
+#include <atomic>
 #include <filesystem>
 
 namespace cw::server {
 
 // Owns the lifetime and major runtime-facing components of one Server project.
-// project_context coordinates Graph Manager, Runtime, Shared Memory, and project
-// diagnostics while delegating construction, graph state, runtime attachment,
-// and SHM behavior to their owning subsystems.
+// project_context orchestrates Project configuration/composition, Source frontend,
+// canonical Graph publication, Runtime attachment, and Shared Memory lifetime.
 class project_context {
 public:
     [[nodiscard]] status initialize(
+        operation_id operation,
+        logger& log,
+        metrics_store& metrics) noexcept;
+
+    [[nodiscard]] status load_project(
+        const std::filesystem::path& configuration_path,
         operation_id operation,
         logger& log,
         metrics_store& metrics) noexcept;
@@ -42,6 +48,7 @@ private:
     graph_manager graphs;
     runtime runtime_instance;
     shared_memory shared_memory_region;
+    std::atomic<bool> runtime_attached{false};
 };
 
 } // namespace cw::server

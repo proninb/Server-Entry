@@ -20,21 +20,52 @@ server_context::server_context(server_configuration configuration)
 
 status server_context::initialize() noexcept {
     metrics.increment(metric_id::server_initializations);
-    scoped_timer initialization_timer{metrics, metric_id::server_initialization_duration};
+    scoped_timer initialization_timer{
+        metrics,
+        metric_id::server_initialization_duration
+    };
 
     const auto operation = next_operation_id();
-    logger.info(log_component::server, operation, "server initialization started");
 
-    const auto result = project.initialize(operation, logger, metrics);
+    logger.info(
+        log_component::server,
+        operation,
+        "server initialization started");
+
+    auto result = project.initialize(
+        operation,
+        logger,
+        metrics);
+
     if (!result.ok()) {
-        logger.error(log_component::server, operation, "server initialization failed");
+        logger.error(
+            log_component::server,
+            operation,
+            "server initialization failed");
         return result;
     }
 
-    logger.info(log_component::server, operation, "server initialization completed");
-    metrics.set(metric_id::server_active_projects, 1);
+    result = project.load_project(
+        config.project.path,
+        operation,
+        logger,
+        metrics);
 
-    return result;
+    if (!result.ok()) {
+        logger.error(
+            log_component::server,
+            operation,
+            "server project load failed");
+        return result;
+    }
+
+    logger.info(
+        log_component::server,
+        operation,
+        "server initialization completed");
+
+    metrics.set(metric_id::server_active_projects, 1);
+    return {};
 }
 
 void server_context::shutdown() noexcept {
