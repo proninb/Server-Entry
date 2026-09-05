@@ -1,5 +1,6 @@
 #include "string_registry.hpp"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
 #include <new>
@@ -7,6 +8,28 @@
 #include <utility>
 
 namespace cw::server {
+namespace {
+
+constexpr std::size_t string_capacity_floor = 64;
+
+std::size_t string_sparse_capacity(
+    std::size_t required) noexcept {
+
+    if (required == 0) {
+        return 0;
+    }
+
+    const auto extra =
+        (std::max)(required / 8, string_capacity_floor);
+    const auto maximum =
+        (std::numeric_limits<std::size_t>::max)();
+
+    return required > maximum - extra
+        ? required
+        : required + extra;
+}
+
+} // namespace
 
 status string_registry::initialize() noexcept {
     lookup_index.clear();
@@ -357,11 +380,26 @@ status string_registry_update::prepare_publish() noexcept {
     }
 
     try {
-        owner->records.reserve(
-            owner->records.size() + added_records.size());
+        const auto record_required =
+            owner->records.size() + added_records.size();
 
-        owner->lookup_index.reserve(
-            owner->lookup_index.size() + added_lookup.size());
+        if (record_required > owner->records.capacity()) {
+            owner->records.reserve(
+                string_sparse_capacity(record_required));
+        }
+
+        const auto lookup_required =
+            owner->lookup_index.size() + added_lookup.size();
+
+        const auto lookup_capacity =
+            static_cast<std::size_t>(
+                owner->lookup_index.bucket_count() *
+                owner->lookup_index.max_load_factor());
+
+        if (lookup_required > lookup_capacity) {
+            owner->lookup_index.reserve(
+                string_sparse_capacity(lookup_required));
+        }
     }
     catch (const std::bad_alloc&) {
         return failure = {status_code::initialization_failed};
@@ -401,8 +439,11 @@ status string_registry_update::prepare_rebuild_compaction(
         rebuilt_records.clear();
         rebuilt_lookup.clear();
 
+        rebuilt_records.reserve(
+            string_sparse_capacity(candidate_size));
         rebuilt_records.resize(candidate_size);
-        rebuilt_lookup.reserve(candidate_size);
+        rebuilt_lookup.reserve(
+            string_sparse_capacity(candidate_size));
 
         for (std::size_t offset = 0;
              offset < candidate_size;

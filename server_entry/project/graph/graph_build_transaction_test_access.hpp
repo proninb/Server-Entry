@@ -1,95 +1,73 @@
 #pragma once
 
-#if !defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
-#error "graph_build_transaction_test_access requires CW_GRAPH_BUILD_TRANSACTION_TESTING"
-#endif
-
-#include "graph_build_transaction.hpp"
 #include "graph_manager.hpp"
+
+#if !defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+#error "graph_build_transaction_test_access.hpp is test-only"
+#endif
 
 namespace cw::server {
 
-// Exposes transaction injection points and Graph storage instrumentation only to
-// RC/benchmark builds. Production construction APIs remain unchanged.
+// Test/benchmark-only access to transaction preparation, publication, telemetry,
+// and storage snapshots. This surface is excluded from production builds.
 class graph_build_transaction_test_access final {
 public:
-    static void set_fail_source_prepare(
-        graph_build_transaction& transaction,
-        bool enabled = true) noexcept {
+    [[nodiscard]] static status prepare(
+        graph_build_transaction& transaction) noexcept {
 
-        transaction.fail_source_prepare = enabled;
-    }
-
-    static void set_fail_string_prepare(
-        graph_build_transaction& transaction,
-        bool enabled = true) noexcept {
-
-        transaction.fail_string_prepare = enabled;
-    }
-
-    static void set_fail_graph_prepare(
-        graph_build_transaction& transaction,
-        bool enabled = true) noexcept {
-
-        transaction.fail_graph_prepare = enabled;
-    }
-
-    static void set_fail_after_graph_prepare(
-        graph_build_transaction& transaction,
-        bool enabled = true) noexcept {
-
-        transaction.fail_after_graph_prepare = enabled;
-    }
-
-    [[nodiscard]] static status remove_named_entity(
-        graph_build_transaction& transaction,
-        stable_id id) noexcept {
-
-        return transaction.graph_update_state.remove_named_entity_for_testing(id);
-    }
-
-    [[nodiscard]] static status prepare(graph_build_transaction& transaction) noexcept {
         return transaction.prepare();
     }
 
-    static void publish_prepared(graph_build_transaction& transaction) noexcept {
+    static void publish(
+        graph_build_transaction& transaction) noexcept {
+
         transaction.publish_prepared();
     }
 
-    [[nodiscard]] static graph_build_transaction_state transaction_state(
+    [[nodiscard]] static graph_build_transaction_state state(
         const graph_build_transaction& transaction) noexcept {
 
         return transaction.state;
     }
 
-    [[nodiscard]] static const graph_storage_prepare_telemetry& storage_telemetry(
+    static void fail_after_graph_prepare(
+        graph_build_transaction& transaction) noexcept {
+
+        transaction.fail_after_graph_prepare = true;
+    }
+
+    [[nodiscard]] static const graph_storage_prepare_telemetry& graph_telemetry(
         const graph_build_transaction& transaction) noexcept {
 
-        return transaction.graph_update_state.storage_prepare_telemetry();
+        return transaction.graph_update_state.storage_telemetry;
     }
 
-    [[nodiscard]] static graph_storage_snapshot storage_snapshot(
-        const graph& value) noexcept {
-
-        return value.storage_snapshot_for_testing();
-    }
-
-    [[nodiscard]] static graph_storage_snapshot storage_snapshot(
+    [[nodiscard]] static graph_storage_snapshot graph_storage(
         const graph_manager& manager) noexcept {
 
         return manager.graph_state.storage_snapshot_for_testing();
     }
 
-    [[nodiscard]] static const graph& committed_graph(
+    [[nodiscard]] static source_contribution_storage_snapshot
+    contribution_storage(
         const graph_manager& manager) noexcept {
 
-        return manager.graph_state;
+        return manager.source_contribution_cache_state
+            .storage_snapshot_for_testing();
     }
 
-    [[nodiscard]] static project_state manager_state(
+    [[nodiscard]] static std::uint64_t graph_generation(
         const graph_manager& manager) noexcept {
 
-        return manager.current_state.load(std::memory_order_acquire);
+        return manager.graph_state.generation;
+    }
+
+    [[nodiscard]] static std::size_t contribution_count(
+        const graph_manager& manager,
+        source_id source) noexcept {
+
+        return manager.source_contribution_cache_state
+            .contribution_count(source);
     }
 };
 

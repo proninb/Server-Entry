@@ -1,10 +1,53 @@
 #include "source_contribution_cache.hpp"
 
 #include <algorithm>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 
 namespace cw::server {
+namespace {
+
+constexpr std::size_t contribution_capacity_floor = 64;
+
+std::size_t contribution_sparse_capacity(
+    std::size_t required) noexcept {
+
+    if (required == 0) {
+        return 0;
+    }
+
+    const auto extra =
+        (std::max)(
+            required / 8,
+            contribution_capacity_floor);
+
+    const auto maximum =
+        (std::numeric_limits<std::size_t>::max)();
+
+    return required > maximum - extra
+        ? required
+        : required + extra;
+}
+
+template <typename T>
+void grow_contribution_vector(
+    std::vector<T>& values,
+    std::size_t required) {
+
+    if (required <= values.size()) {
+        return;
+    }
+
+    if (required > values.capacity()) {
+        values.reserve(
+            contribution_sparse_capacity(required));
+    }
+
+    values.resize(required);
+}
+
+} // namespace
 
 status source_contribution_cache::initialize() noexcept {
     try {
@@ -47,6 +90,22 @@ void source_contribution_cache::invalidate() noexcept {
     next_candidate_generation = 1;
 }
 
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+
+source_contribution_storage_snapshot
+source_contribution_cache::storage_snapshot_for_testing() const noexcept {
+    return {
+        states.data(),
+        entity_states.data(),
+        states.size(),
+        entity_states.size(),
+        states.capacity(),
+        entity_states.capacity()
+    };
+}
+
+#endif
+
 source_contribution_cache_update::source_contribution_cache_update(
     source_contribution_cache& cache_owner,
     std::uint64_t update_generation,
@@ -63,7 +122,13 @@ source_contribution_cache_update::source_contribution_cache_update(source_contri
       full_reconstruction(other.full_reconstruction),
       prepared(other.prepared),
       committed_update(other.committed_update),
-      failure(other.failure) {}
+      prepared_states_size(other.prepared_states_size),
+      prepared_entity_states_size(other.prepared_entity_states_size),
+      prepared_owner_growth(other.prepared_owner_growth),
+      failure(other.failure) {
+
+    other.prepared_owner_growth = false;
+}
 
 bool source_contribution_cache_update::was_replaced(source_id source) const noexcept {
     if (!owner || !source || source.value() >= owner->candidates.size()) {
@@ -99,7 +164,7 @@ status source_contribution_cache_update::replace(
 
     try {
         if (owner->candidates.size() <= source.value()) {
-            owner->candidates.resize(static_cast<std::size_t>(source.value()) + 1);
+            grow_contribution_vector(owner->candidates, static_cast<std::size_t>(source.value()) + 1);
         }
 
         auto& slot = owner->candidates[source.value()];
@@ -145,7 +210,7 @@ canonical_entity_construction_state& source_contribution_cache_update::touch_ent
 
     const auto raw = static_cast<std::size_t>(entity.value());
     if (owner->candidate_entities.size() <= raw) {
-        owner->candidate_entities.resize(raw + 1);
+        grow_contribution_vector(owner->candidate_entities, static_cast<std::size_t>(raw) + 1);
     }
 
     auto& slot = owner->candidate_entities[raw];
@@ -198,7 +263,7 @@ status source_contribution_cache_update::remap_new_entities(
             }
 
             if (owner->candidate_entities.size() <= target) {
-                owner->candidate_entities.resize(static_cast<std::size_t>(target) + 1);
+                grow_contribution_vector(owner->candidate_entities, static_cast<std::size_t>(target) + 1);
             }
 
             owner->candidate_entities[target] = std::move(previous[offset]);
@@ -212,7 +277,7 @@ status source_contribution_cache_update::remap_new_entities(
         }
 
         changed_entities.erase(
-            std::remove(changed_entities.begin(), changed_entities.end(), 0),
+            std::remove(changed_entities.begin(), changed_entities.end(), std::uint32_t{0}),
             changed_entities.end());
 
         return {};
@@ -237,16 +302,25 @@ status source_contribution_cache_update::prepare_publish() noexcept {
             maximum = (std::max)(maximum, static_cast<std::size_t>(source));
         }
 
+        prepared_states_size = owner->states.size();
+        prepared_entity_states_size = owner->entity_states.size();
+        prepared_owner_growth = true;
+
         if (!changed.empty() && owner->states.size() <= maximum) {
-            owner->states.resize(maximum + 1);
+            grow_contribution_vector(
+                owner->states,
+                maximum + 1);
         }
 
         std::size_t maximum_entity = 0;
         for (auto entity : changed_entities) {
             maximum_entity = (std::max)(maximum_entity, static_cast<std::size_t>(entity));
         }
-        if (!changed_entities.empty() && owner->entity_states.size() <= maximum_entity) {
-            owner->entity_states.resize(maximum_entity + 1);
+        if (!changed_entities.empty() &&
+            owner->entity_states.size() <= maximum_entity) {
+            grow_contribution_vector(
+                owner->entity_states,
+                maximum_entity + 1);
         }
     }
     catch (...) {
@@ -285,12 +359,27 @@ void source_contribution_cache_update::publish_prepared() noexcept {
     }
 
     owner->provenance_complete = true;
+    prepared_owner_growth = false;
     committed_update = true;
 }
 
 void source_contribution_cache_update::cancel() noexcept {
     if (committed_update) {
         return;
+    }
+
+    if (owner && prepared_owner_growth) {
+        if (owner->states.size() > prepared_states_size) {
+            owner->states.resize(prepared_states_size);
+        }
+
+        if (owner->entity_states.size() >
+            prepared_entity_states_size) {
+            owner->entity_states.resize(
+                prepared_entity_states_size);
+        }
+
+        prepared_owner_growth = false;
     }
 
     prepared = true;

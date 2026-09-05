@@ -42,7 +42,7 @@
     <ClCompile Include="server_entry\project\parser\source_context.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
     <ClCompile Include="server_entry\project\parser\parser.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
     <ClCompile Include="server_entry\project\parser\source_environment.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
-    <ClCompile Include="server_entry\project\construction\source_publisher.cpp"><Filter>server_entry\project\construction</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\frontend\source_publisher.cpp"><Filter>server_entry\project\construction</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager_persistence.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_hash.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
@@ -107,7 +107,7 @@
     <ClInclude Include="server_entry\project\parser\token.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
     <ClInclude Include="server_entry\project\parser\parser.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
     <ClInclude Include="server_entry\project\parser\source_environment.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
-    <ClInclude Include="server_entry\project\construction\source_publisher.hpp"><Filter>server_entry\project\construction</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\frontend\source_publisher.hpp"><Filter>server_entry\project\construction</Filter></ClInclude>
     <ClInclude Include="server_entry\project\runtime\runtime.hpp"><Filter>server_entry\project\runtime</Filter></ClInclude>
     <ClInclude Include="server_entry\project\shm\shared_memory.hpp"><Filter>server_entry\project\shm</Filter></ClInclude>
   </ItemGroup>

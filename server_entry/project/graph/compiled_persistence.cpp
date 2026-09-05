@@ -751,7 +751,7 @@ status read_all(
 // Owns one native writable file handle used during transactional publication.
 #ifdef _WIN32
 using native_handle = HANDLE;
-constexpr native_handle invalid_native_handle = INVALID_HANDLE_VALUE;
+const native_handle invalid_native_handle = INVALID_HANDLE_VALUE;
 #else
 using native_handle = int;
 constexpr native_handle invalid_native_handle = -1;

@@ -483,6 +483,24 @@ status publish_source_facts(
     auto result = capture_source_facts(batch, entry);
 
     if (!result.ok()) {
+        try {
+            const auto& descriptor =
+                result.code == status_code::configuration_failed
+                    ? diagnostics::builder_invalid_source_fact
+                    : diagnostics::construction_initialization_failed;
+
+            diagnostics.emit({
+                descriptor.id,
+                descriptor.default_severity,
+                operation,
+                {batch.source, 0, 0},
+                {}
+            });
+        }
+        catch (...) {
+            result = {status_code::initialization_failed};
+        }
+
         transaction.fail(result);
         return result;
     }

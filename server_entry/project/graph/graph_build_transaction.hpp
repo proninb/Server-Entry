@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../../status.hpp"
+#include "../builder/source_contribution_cache.hpp"
 #include "../source/source_manager.hpp"
 #include "../string/string_registry.hpp"
 #include "graph.hpp"
@@ -20,6 +21,7 @@ class operation_id;
 class project_builder;
 class source_frontend_generation;
 struct parser_source_fact_batch;
+class source_build_entry;
 
 [[nodiscard]] status publish_source_facts(
     graph_build_transaction& transaction,
@@ -28,9 +30,17 @@ struct parser_source_fact_batch;
     operation_id operation,
     diagnostic_buffer& diagnostics) noexcept;
 
+
+[[nodiscard]] status publish_source_entry(
+    graph_build_transaction& transaction,
+    const source_build_entry& entry,
+    const project_builder& builder,
+    operation_id operation,
+    diagnostic_buffer& diagnostics) noexcept;
+
 // Describes the lifecycle of one coordinated Project build transaction.
-// A prepared transaction has completed every fallible operation required by
-// Source Manager, String Registry, and canonical Graph publication.
+// Only active transactions may be prepared; prepared transactions either publish
+// all three candidate layers or transition to failed.
 enum class graph_build_transaction_state : std::uint8_t {
     active,
     prepared,
@@ -38,9 +48,10 @@ enum class graph_build_transaction_state : std::uint8_t {
     failed
 };
 
-// Coordinates one fail-closed logical publication across Source Manager,
-// String Registry, and canonical Graph. All validation/allocation is completed
-// by prepare(); publish_prepared() is the fixed no-fail publication barrier.
+// Coordinates one atomic logical publication across Source Manager, String
+// Registry, and canonical Graph candidates. prepare() performs all validation and
+// allocation-sensitive work; publish_prepared() then transfers the prepared state
+// in a fixed no-fail publication order.
 class graph_build_transaction final {
 public:
     ~graph_build_transaction();
@@ -78,7 +89,15 @@ private:
         operation_id operation,
         diagnostic_buffer& diagnostics) noexcept;
 
-    explicit graph_build_transaction(graph_manager& owner) noexcept;
+
+    friend status publish_source_entry(
+        graph_build_transaction& transaction,
+        const source_build_entry& entry,
+        const project_builder& builder,
+        operation_id operation,
+        diagnostic_buffer& diagnostics) noexcept;
+
+    explicit graph_build_transaction(graph_manager& owner, graph_build_mode mode) noexcept;
 
     [[nodiscard]] status prepare() noexcept;
     void publish_prepared() noexcept;
@@ -94,18 +113,17 @@ private:
 
     source_manager_update source_update;
     string_registry_update string_update;
+    source_contribution_cache_update contribution_update;
     graph_update graph_update_state;
 
     graph_manager* owner = nullptr;
-    graph_build_transaction_state state = graph_build_transaction_state::active;
+    graph_build_transaction_state state =
+        graph_build_transaction_state::active;
 
-#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+#ifdef CW_GRAPH_BUILD_TRANSACTION_TESTING
     bool fail_source_prepare = false;
     bool fail_string_prepare = false;
     bool fail_graph_prepare = false;
-
-    // Injection point after Graph has completed all reserve/validation work but
-    // before any candidate layer crosses the publication barrier.
     bool fail_after_graph_prepare = false;
 #endif
 };

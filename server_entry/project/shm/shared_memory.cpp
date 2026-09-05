@@ -1,15 +1,11 @@
-#pragma once
-
-#include "../../status.hpp"
+#include "shared_memory.hpp"
 
 namespace cw::server {
 
-// Owns the Server-side Shared Memory publication boundary for one Project.
-// shared_memory is responsible for creating and managing the memory region used
-// to expose runtime state; Project and Graph construction remain outside this layer.
-class shared_memory {
-public:
-    [[nodiscard]] status initialize() noexcept;
-};
+status shared_memory::initialize() noexcept {
+    // Current SHM layer is only an architectural boundary. Mapping/configuration
+    // is not represented by shared_memory yet, so initialization is a no-op.
+    return {};
+}
 
-} // namespace cw::server
+}

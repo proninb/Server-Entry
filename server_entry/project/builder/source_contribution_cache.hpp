@@ -68,6 +68,19 @@ struct source_contribution_state {
 // The cache is never Runtime-visible and is intentionally excluded from G.
 class source_contribution_cache_update;
 
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+
+struct source_contribution_storage_snapshot {
+    const void* states_data = nullptr;
+    const void* entity_states_data = nullptr;
+    std::size_t states_size = 0;
+    std::size_t entity_states_size = 0;
+    std::size_t states_capacity = 0;
+    std::size_t entity_states_capacity = 0;
+};
+
+#endif
+
 class source_contribution_cache final {
 public:
     [[nodiscard]] status initialize() noexcept;
@@ -78,6 +91,11 @@ public:
 
     // Used after loading state that deliberately omits build provenance.
     void invalidate() noexcept;
+
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+    [[nodiscard]] source_contribution_storage_snapshot
+        storage_snapshot_for_testing() const noexcept;
+#endif
 
 private:
     friend class source_contribution_cache_update;
@@ -155,6 +173,9 @@ private:
     bool full_reconstruction = false;
     bool prepared = false;
     bool committed_update = false;
+    std::size_t prepared_states_size = 0;
+    std::size_t prepared_entity_states_size = 0;
+    bool prepared_owner_growth = false;
     status failure{};
 };
 

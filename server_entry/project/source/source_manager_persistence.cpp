@@ -188,7 +188,7 @@ std::uint64_t align_up(
 // Owns one native file or mapping handle.
 #ifdef _WIN32
 using native_handle = HANDLE;
-constexpr native_handle invalid_native_handle = INVALID_HANDLE_VALUE;
+const native_handle invalid_native_handle = INVALID_HANDLE_VALUE;
 #else
 using native_handle = int;
 constexpr native_handle invalid_native_handle = -1;
