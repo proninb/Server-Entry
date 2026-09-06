@@ -162,8 +162,6 @@ status graph_build_transaction::prepare() noexcept {
     const auto& graph_timing =
         graph_update_state.prepare_phase_telemetry();
 
-    timings.graph_stable_id_canonicalization_ns =
-        graph_timing.stable_id_canonicalization_ns;
     timings.graph_pending_member_resolution_ns =
         graph_timing.pending_member_resolution_ns;
     timings.graph_live_typeref_validation_ns =

@@ -27,7 +27,6 @@ class graph_build_transaction_test_access;
 class graph_update;
 
 struct graph_prepare_phase_telemetry {
-    std::uint64_t stable_id_canonicalization_ns = 0;
     std::uint64_t pending_member_resolution_ns = 0;
     std::uint64_t live_typeref_validation_ns = 0;
     std::uint64_t canonical_typeref_rebuild_ns = 0;

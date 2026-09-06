@@ -1771,8 +1771,6 @@ source_rebuild_result source_frontend_generation::rebuild(
         current_summary.g0_tx_graph_prepare_ns =
             transaction_timing.graph_prepare_ns;
 
-        current_summary.g0_graph_stable_id_canonicalization_ns =
-            transaction_timing.graph_stable_id_canonicalization_ns;
         current_summary.g0_graph_pending_member_resolution_ns =
             transaction_timing.graph_pending_member_resolution_ns;
         current_summary.g0_graph_live_typeref_validation_ns =

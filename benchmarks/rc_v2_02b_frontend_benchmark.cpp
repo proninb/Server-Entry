@@ -283,7 +283,6 @@ void print_row(
         << ns_to_ms(frontend.g0_tx_string_publish_ns) << ','
         << ns_to_ms(frontend.g0_tx_contribution_publish_ns) << ','
         << ns_to_ms(frontend.g0_tx_graph_publish_ns) << ','
-        << ns_to_ms(frontend.g0_graph_stable_id_canonicalization_ns) << ','
         << ns_to_ms(frontend.g0_graph_pending_member_resolution_ns) << ','
         << ns_to_ms(frontend.g0_graph_live_typeref_validation_ns) << ','
         << ns_to_ms(frontend.g0_graph_canonical_typeref_rebuild_ns) << ','
@@ -532,7 +531,6 @@ int main() {
         << "tx_contribution_prepare_ms,tx_source_publish_ms,"
         << "tx_string_publish_ms,tx_contribution_publish_ms,"
         << "tx_graph_publish_ms,"
-        << "graph_stable_id_canonicalization_ms,"
         << "graph_pending_member_resolution_ms,"
         << "graph_live_typeref_validation_ms,"
         << "graph_canonical_typeref_rebuild_ms,"

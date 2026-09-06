@@ -1,6 +1,7 @@
 #include "../server_entry/project/graph/graph_manager.hpp"
 #include "../server_entry/project/graph/graph_build_transaction.hpp"
 #include "../server_entry/project/graph/type_ref.hpp"
+#include "../server_entry/metrics/source_acquisition_telemetry.hpp"
 
 #include <array>
 #include <concepts>
@@ -131,15 +132,80 @@ const std::filesystem::path source_a = LR"(C:\graph-build\a.cpp)";
 const std::filesystem::path source_b = LR"(C:\graph-build\b.cpp)";
 const std::filesystem::path source_c = LR"(C:\graph-build\c.cpp)";
 
+std::filesystem::path physical_source_path(
+    const std::filesystem::path& logical) {
+
+    std::error_code error;
+
+    const auto root =
+        std::filesystem::temp_directory_path(error) /
+        L"cw_server_entry_graph_manager_tests";
+
+    if (error) {
+        return {};
+    }
+
+    std::filesystem::create_directories(root, error);
+
+    if (error) {
+        return {};
+    }
+
+    const auto physical =
+        root / logical.filename();
+
+    if (!std::filesystem::exists(physical, error)) {
+        if (error) {
+            return {};
+        }
+
+        std::ofstream output{
+            physical,
+            std::ios::binary | std::ios::trunc
+        };
+
+        if (!output) {
+            return {};
+        }
+    }
+
+    return physical;
+}
+
+bool resolve_source(
+    source_manager_update& sources,
+    const std::filesystem::path& path,
+    source_id& output) {
+
+    const auto physical =
+        physical_source_path(path);
+
+    if (physical.empty() ||
+        !sources.resolve(
+            physical,
+            project_item_role::source,
+            output).ok()) {
+        return false;
+    }
+
+    source_acquisition_telemetry telemetry{
+        metrics_mode::off
+    };
+
+    return sources.acquire(
+        output,
+        telemetry).ok();
+}
+
 bool resolve_source(
     graph_build_transaction& transaction,
     const std::filesystem::path& path,
     source_id& output) {
 
-    return transaction.sources().resolve(
+    return resolve_source(
+        transaction.sources(),
         path,
-        project_item_role::source,
-        output).ok();
+        output);
 }
 
 bool open_source(
@@ -315,9 +381,12 @@ bool test_stale_source_generation_is_atomic() {
     auto external =
         access::local_sources(manager);
 
-    if (!external.add(
+    source_id external_source;
+
+    if (!resolve_source(
+            external,
             source_b,
-            project_item_role::source).ok() ||
+            external_source) ||
         !external.commit().ok()) {
         return false;
     }
@@ -491,7 +560,7 @@ bool build_two_names(
         a_id != z_id;
 }
 
-bool test_deterministic_stable_ids() {
+bool test_stable_ids_follow_canonical_publication_order() {
     std::uint32_t a_forward = 0;
     std::uint32_t z_forward = 0;
     std::uint32_t a_reverse = 0;
@@ -506,9 +575,10 @@ bool test_deterministic_stable_ids() {
             true,
             a_reverse,
             z_reverse) &&
-        a_forward == a_reverse &&
-        z_forward == z_reverse &&
-        a_forward < z_forward;
+        a_forward < z_forward &&
+        z_reverse < a_reverse &&
+        a_forward == z_reverse &&
+        z_forward == a_reverse;
 }
 
 bool test_definition_range_and_external_contributions() {
@@ -1591,7 +1661,7 @@ int main() {
         {"discard/prepared rejection", test_discard_and_prepared_mutation_rejection},
         {"stale Source generation", test_stale_source_generation_is_atomic},
         {"forced prepare failures", test_forced_prepare_failures_are_atomic},
-        {"deterministic stable IDs", test_deterministic_stable_ids},
+        {"stable IDs follow canonical publication order", test_stable_ids_follow_canonical_publication_order},
         {"definition range/external contributions", test_definition_range_and_external_contributions},
         {"defined-empty/resurrection", test_defined_empty_range_and_identity_resurrection},
         {"aggregate modifiers", test_aggregate_members_and_modifier_order},

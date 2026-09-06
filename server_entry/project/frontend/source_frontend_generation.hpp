@@ -57,7 +57,6 @@ struct source_frontend_summary {
     std::uint64_t g0_tx_string_prepare_ns = 0;
     std::uint64_t g0_tx_graph_prepare_ns = 0;
 
-    std::uint64_t g0_graph_stable_id_canonicalization_ns = 0;
     std::uint64_t g0_graph_pending_member_resolution_ns = 0;
     std::uint64_t g0_graph_live_typeref_validation_ns = 0;
     std::uint64_t g0_graph_canonical_typeref_rebuild_ns = 0;

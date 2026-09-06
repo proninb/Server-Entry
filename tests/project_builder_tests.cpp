@@ -4,10 +4,12 @@
 #include "../server_entry/project/graph/graph_manager.hpp"
 #include "../server_entry/project/parser/source_context.hpp"
 #include "../server_entry/diagnostics/diagnostic_descriptor.hpp"
+#include "../server_entry/metrics/source_acquisition_telemetry.hpp"
 
 #include <array>
 #include <concepts>
 #include <filesystem>
+#include <fstream>
 #include <iostream>
 #include <span>
 #include <type_traits>
@@ -59,15 +61,69 @@ static_assert(!has_graph_contribution_count<graph>);
 const std::filesystem::path source_a = LR"(C:\builder\a.cpp)";
 const std::filesystem::path source_b = LR"(C:\builder\b.cpp)";
 
+std::filesystem::path physical_source_path(
+    const std::filesystem::path& logical) {
+
+    std::error_code error;
+
+    const auto root =
+        std::filesystem::temp_directory_path(error) /
+        L"cw_server_entry_project_builder_tests";
+
+    if (error) {
+        return {};
+    }
+
+    std::filesystem::create_directories(root, error);
+
+    if (error) {
+        return {};
+    }
+
+    const auto physical =
+        root / logical.filename();
+
+    if (!std::filesystem::exists(physical, error)) {
+        if (error) {
+            return {};
+        }
+
+        std::ofstream output{
+            physical,
+            std::ios::binary | std::ios::trunc
+        };
+
+        if (!output) {
+            return {};
+        }
+    }
+
+    return physical;
+}
+
 bool resolve_source(
     graph_build_transaction& transaction,
     const std::filesystem::path& path,
     source_id& output) {
 
-    return transaction.sources().resolve(
-        path,
-        project_item_role::source,
-        output).ok();
+    const auto physical =
+        physical_source_path(path);
+
+    if (physical.empty() ||
+        !transaction.sources().resolve(
+            physical,
+            project_item_role::source,
+            output).ok()) {
+        return false;
+    }
+
+    source_acquisition_telemetry telemetry{
+        metrics_mode::off
+    };
+
+    return transaction.sources().acquire(
+        output,
+        telemetry).ok();
 }
 
 bool intern(
@@ -100,7 +156,6 @@ bool test_named_enum_materialization() {
     diagnostic_buffer diagnostics;
 
     if (!manager.initialize().ok()) {
-        std::cerr << "NAMED_ENUM FAIL 1 initialize\n";
         return false;
     }
 
@@ -111,18 +166,9 @@ bool test_named_enum_materialization() {
     string_id enum_name;
     string_id value_name;
 
-    if (!resolve_source(transaction, source_a, source)) {
-        std::cerr << "NAMED_ENUM FAIL 2 resolve source\n";
-        return false;
-    }
-
-    if (!intern(transaction, "N::Mode", enum_name)) {
-        std::cerr << "NAMED_ENUM FAIL 3 intern enum name\n";
-        return false;
-    }
-
-    if (!intern(transaction, "Ready", value_name)) {
-        std::cerr << "NAMED_ENUM FAIL 4 intern value name\n";
+    if (!resolve_source(transaction, source_a, source) ||
+        !intern(transaction, "N::Mode", enum_name) ||
+        !intern(transaction, "Ready", value_name)) {
         return false;
     }
 
@@ -156,132 +202,43 @@ bool test_named_enum_materialization() {
             builder,
             transaction,
             batches,
-            diagnostics)) {
-        std::cerr << "NAMED_ENUM FAIL 5 build_batches\n";
-        return false;
-    }
-
-    const auto commit_result = transaction.commit();
-
-    if (!commit_result.ok()) {
-        std::cerr
-            << "NAMED_ENUM FAIL 6 commit code="
-            << static_cast<int>(commit_result.code)
-            << '\n';
+            diagnostics) ||
+        !transaction.commit().ok()) {
         return false;
     }
 
     const auto identity =
         manager.compiled_graph().find_id(enum_name);
 
-    if (!identity) {
-        std::cerr << "NAMED_ENUM FAIL 7 identity is zero\n";
-        return false;
-    }
-
     const auto* entity =
         manager.compiled_graph().find(identity);
 
-    if (!entity) {
-        std::cerr
-            << "NAMED_ENUM FAIL 8 entity missing id="
-            << identity.value()
-            << '\n';
-        return false;
-    }
-
-    if (entity->kind != entity_kind::enum_type) {
-        std::cerr << "NAMED_ENUM FAIL 9 entity kind\n";
-        return false;
-    }
-
     const auto* type =
-        manager.compiled_graph().find(entity->type);
-
-    if (!type) {
-        std::cerr
-            << "NAMED_ENUM FAIL 10 type missing handle="
-            << entity->type.value()
-            << '\n';
-        return false;
-    }
-
-    if (type->kind != user_type_kind::enumeration) {
-        std::cerr << "NAMED_ENUM FAIL 11 type kind\n";
-        return false;
-    }
-
-    if (!type->enumeration.scoped) {
-        std::cerr << "NAMED_ENUM FAIL 12 scoped=false\n";
-        return false;
-    }
-
-    if (!type->enumeration.fixed_underlying) {
-        std::cerr << "NAMED_ENUM FAIL 13 fixed=false\n";
-        return false;
-    }
-
-    if (type->enumeration.underlying != builtin_type::integer) {
-        std::cerr << "NAMED_ENUM FAIL 14 underlying\n";
-        return false;
-    }
-
-    if (!type->definition) {
-        std::cerr
-            << "NAMED_ENUM FAIL 15 no definition begin="
-            << type->definition.begin
-            << " count="
-            << type->definition.count
-            << '\n';
-        return false;
-    }
+        entity
+            ? manager.compiled_graph().find(entity->type)
+            : nullptr;
 
     const auto materialized =
-        manager.compiled_graph().enum_values(entity->type);
+        entity
+            ? manager.compiled_graph().enum_values(entity->type)
+            : std::span<const enum_value_record>{};
 
-    if (materialized.size() != 1) {
-        std::cerr
-            << "NAMED_ENUM FAIL 16 enum_values size="
-            << materialized.size()
-            << " begin="
-            << type->definition.begin
-            << " count="
-            << type->definition.count
-            << '\n';
-        return false;
-    }
-
-    if (materialized[0].name != value_name) {
-        std::cerr
-            << "NAMED_ENUM FAIL 17 value name expected="
-            << value_name.value()
-            << " actual="
-            << materialized[0].name.value()
-            << '\n';
-        return false;
-    }
-
-    if (materialized[0].bits != 7) {
-        std::cerr
-            << "NAMED_ENUM FAIL 18 bits="
-            << materialized[0].bits
-            << '\n';
-        return false;
-    }
-
-    const auto contributions =
-        access::contribution_count(manager, source);
-
-    if (contributions != 1) {
-        std::cerr
-            << "NAMED_ENUM FAIL 19 contribution_count="
-            << contributions
-            << '\n';
-        return false;
-    }
-
-    return true;
+    return
+        identity &&
+        entity &&
+        entity->kind == entity_kind::enum_type &&
+        type &&
+        type->kind == user_type_kind::enumeration &&
+        type->enumeration.scoped &&
+        type->enumeration.fixed_underlying &&
+        type->enumeration.underlying == builtin_type::integer &&
+        type->definition &&
+        materialized.size() == 1 &&
+        materialized[0].name == value_name &&
+        materialized[0].bits == 7 &&
+        access::contribution_count(manager, source) == 1;
 }
+
 bool test_duplicate_source_diagnostic_is_fail_closed() {
     graph_manager manager;
     project_builder builder;
@@ -1116,7 +1073,7 @@ bool build_identity_order(
         alpha != zeta;
 }
 
-bool test_deterministic_stable_ids() {
+bool test_stable_ids_follow_canonical_publication_order() {
     std::uint32_t alpha_forward = 0;
     std::uint32_t zeta_forward = 0;
     std::uint32_t alpha_reverse = 0;
@@ -1131,9 +1088,10 @@ bool test_deterministic_stable_ids() {
             true,
             alpha_reverse,
             zeta_reverse) &&
-        alpha_forward == alpha_reverse &&
-        zeta_forward == zeta_reverse &&
-        alpha_forward < zeta_forward;
+        alpha_forward < zeta_forward &&
+        zeta_reverse < alpha_reverse &&
+        alpha_forward == zeta_reverse &&
+        zeta_forward == alpha_reverse;
 }
 
 bool test_incremental_handle_and_typeref_preservation() {
@@ -1471,7 +1429,7 @@ int main() {
         {"aggregate builtin member", test_aggregate_builtin_member},
         {"aggregate user lvalue reference", test_aggregate_user_lvalue_reference},
         {"invalid aggregate fail-closed", test_invalid_aggregate_member_is_fail_closed},
-        {"deterministic stable IDs", test_deterministic_stable_ids},
+        {"stable IDs follow canonical publication order", test_stable_ids_follow_canonical_publication_order},
         {"incremental handle/TypeRef preservation", test_incremental_handle_and_typeref_preservation},
         {"Parser -> Publisher -> Builder boundary", test_parser_publisher_boundary},
         {"Publisher malformed diagnostic", test_parser_publisher_malformed_diagnostic}

@@ -51,7 +51,6 @@ struct graph_build_transaction_timing {
     std::uint64_t string_prepare_ns = 0;
     std::uint64_t graph_prepare_ns = 0;
 
-    std::uint64_t graph_stable_id_canonicalization_ns = 0;
     std::uint64_t graph_pending_member_resolution_ns = 0;
     std::uint64_t graph_live_typeref_validation_ns = 0;
     std::uint64_t graph_canonical_typeref_rebuild_ns = 0;
