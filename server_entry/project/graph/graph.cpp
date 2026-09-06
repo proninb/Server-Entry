@@ -1697,12 +1697,49 @@ status graph_update::materialize(stable_id id, string_id name) noexcept {
             return {};
         }
 
-        auto type = std::make_unique<graph::type_storage>();
         slot.entity.record.name = name;
         touch_identity(name.value()).value = id;
 
         if (aggregate.aggregate_declarations || aggregate.aggregate_definitions) {
             const bool defined = aggregate.aggregate_definitions != 0;
+
+            if (!defined &&
+                !full_reconstruction &&
+                slot.retained_type &&
+                id.value() < owner->entities.size()) {
+                const auto handle = slot.retained_type;
+                const auto& committed_entity =
+                    owner->entities[id.value()];
+
+                if (committed_entity.record.live() &&
+                    committed_entity.record.name == name &&
+                    committed_entity.record.kind ==
+                        entity_kind::aggregate_type &&
+                    committed_entity.record.type == handle &&
+                    handle.value() <= owner->types.size()) {
+                    const auto* committed_type =
+                        owner->types[handle.value() - 1].get();
+
+                    if (committed_type &&
+                        committed_type->record.kind ==
+                            user_type_kind::aggregate &&
+                        !committed_type->record.definition) {
+                        slot.entity = committed_entity;
+
+                        auto& candidate =
+                            touch_type(handle.value());
+
+                        candidate.kind =
+                            candidate_type_kind::unchanged;
+                        candidate.value.reset();
+                        candidate.build.reset();
+                        return {};
+                    }
+                }
+            }
+
+            auto type =
+                std::make_unique<graph::type_storage>();
 
             type->record.kind = user_type_kind::aggregate;
             type->record.definition = {};
@@ -1736,6 +1773,50 @@ status graph_update::materialize(stable_id id, string_id name) noexcept {
         const bool defined = aggregate.definitions != 0;
         const auto underlying =
             defined ? aggregate.definition->underlying : aggregate.active_type;
+
+        if (!defined &&
+            !full_reconstruction &&
+            slot.retained_type &&
+            id.value() < owner->entities.size()) {
+            const auto handle = slot.retained_type;
+            const auto& committed_entity =
+                owner->entities[id.value()];
+
+            if (committed_entity.record.live() &&
+                committed_entity.record.name == name &&
+                committed_entity.record.kind ==
+                    entity_kind::enum_type &&
+                committed_entity.record.type == handle &&
+                handle.value() <= owner->types.size()) {
+                const auto* committed_type =
+                    owner->types[handle.value() - 1].get();
+
+                if (committed_type &&
+                    committed_type->record.kind ==
+                        user_type_kind::enumeration &&
+                    !committed_type->record.definition &&
+                    committed_type->record.enumeration.scoped ==
+                        (aggregate.scoped != 0) &&
+                    committed_type->record.enumeration.fixed_underlying ==
+                        (aggregate.fixed != 0) &&
+                    committed_type->record.enumeration.underlying ==
+                        underlying) {
+                    slot.entity = committed_entity;
+
+                    auto& candidate =
+                        touch_type(handle.value());
+
+                    candidate.kind =
+                        candidate_type_kind::unchanged;
+                    candidate.value.reset();
+                    candidate.build.reset();
+                    return {};
+                }
+            }
+        }
+
+        auto type =
+            std::make_unique<graph::type_storage>();
 
         type->record.kind = user_type_kind::enumeration;
         type->record.enumeration = {

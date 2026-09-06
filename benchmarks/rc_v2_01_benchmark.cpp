@@ -1541,6 +1541,6 @@ int main() {
 
     run_locality_matrix();
 
-    std::cout << "RC-V2-03B LOCALITY PASS\n";
+    std::cout << "RC-V2-03D2 NOOP PREALLOCATION FAST PATH PASS\n";
     return 0;
 }
