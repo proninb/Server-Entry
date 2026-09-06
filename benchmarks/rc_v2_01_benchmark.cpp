@@ -825,6 +825,251 @@ void dependency_chain_gate() {
     access::publish(transaction);
 }
 
+void print_row(const row& value);
+
+constexpr std::size_t dependency_scaling_max_depth = 256;
+
+struct dependency_scaling_baseline {
+    std::vector<source_id> sources;
+};
+
+const char* dependency_scaling_scenario(
+    std::size_t depth) noexcept {
+
+    switch (depth) {
+    case 1:
+        return "dependency_d1";
+    case 4:
+        return "dependency_d4";
+    case 16:
+        return "dependency_d16";
+    case 64:
+        return "dependency_d64";
+    case 256:
+        return "dependency_d256";
+    default:
+        return "dependency_invalid";
+    }
+}
+
+dependency_scaling_baseline build_dependency_scaling_baseline(
+    graph_manager& manager,
+    std::size_t count) {
+
+    require(
+        count >= dependency_scaling_max_depth,
+        "RC-V2-04 N smaller than dependency chain");
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::rebuild);
+
+    auto sources =
+        prepare_physical_sources(
+            transaction,
+            count);
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(
+                count +
+                dependency_scaling_max_depth)
+            .ok(),
+        "RC-V2-04 G0 String reserve failed");
+
+    for (std::size_t index = 0;
+         index < count;
+         ++index) {
+        const auto name =
+            type_name(index);
+
+        if (index != 0 &&
+            index < dependency_scaling_max_depth) {
+            const auto dependency =
+                type_name(index - 1);
+
+            define_empty_aggregate(
+                transaction,
+                sources[index],
+                name,
+                dependency);
+        }
+        else {
+            define_empty_aggregate(
+                transaction,
+                sources[index],
+                name);
+        }
+    }
+
+    require(
+        transaction.commit().ok(),
+        "RC-V2-04 G0 dependency baseline failed");
+
+    require_g0_headroom(
+        manager,
+        count);
+
+    return {
+        std::move(sources)
+    };
+}
+
+row dependency_scaling_case(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t depth,
+    const dependency_scaling_baseline& baseline) {
+
+    require(
+        depth != 0 &&
+        depth <= dependency_scaling_max_depth,
+        "RC-V2-04 invalid dependency depth");
+
+    const auto root =
+        dependency_scaling_max_depth - depth;
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    const auto name =
+        type_name(root);
+
+    if (root == 0) {
+        define_empty_aggregate(
+            transaction,
+            baseline.sources[root],
+            name);
+    }
+    else {
+        const auto dependency =
+            type_name(root - 1);
+
+        define_empty_aggregate(
+            transaction,
+            baseline.sources[root],
+            name,
+            dependency);
+    }
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        dependency_scaling_scenario(depth),
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+void require_dependency_scaling_gates(
+    const row& value,
+    std::size_t depth) {
+
+    const auto& graph = value.graph;
+
+    require(
+        graph.changed_sources == 1,
+        "RC-V2-04 changed_sources != 1");
+
+    require(
+        graph.changed_entities == 1,
+        "RC-V2-04 changed_entities != 1");
+
+    require(
+        graph.changed_types == 1,
+        "RC-V2-04 changed_types != 1");
+
+    require(
+        graph.validation_visited_types == depth,
+        "RC-V2-04 validation closure != D");
+
+    require(
+        graph.validation_dependency_edges ==
+            depth - 1,
+        "RC-V2-04 dependency edges != D-1");
+
+    const auto expected_type_refs =
+        depth == dependency_scaling_max_depth
+            ? depth - 1
+            : depth;
+
+    require(
+        graph.validation_visited_type_refs ==
+            expected_type_refs,
+        "RC-V2-04 TypeRef visits do not match chain");
+
+    require(
+        !rc_v2_01a::graph_reallocated(graph),
+        "RC-V2-04 committed Graph storage reallocated");
+
+    require(
+        !value.contribution_reallocated,
+        "RC-V2-04 SourceContribution storage reallocated");
+
+    require(
+        value.strings_before.records_data ==
+            value.strings_after.records_data,
+        "RC-V2-04 String records relocated");
+
+    require(
+        value.strings_before.lookup_bucket_count ==
+            value.strings_after.lookup_bucket_count,
+        "RC-V2-04 String lookup rehashed");
+}
+
+void run_dependency_scaling_matrix() {
+
+    for (const auto count :
+         std::array<std::size_t, 2>{
+             8192,
+             32768}) {
+        graph_manager manager;
+
+        require(
+            manager.initialize().ok(),
+            "RC-V2-04 manager initialization failed");
+
+        const auto baseline =
+            build_dependency_scaling_baseline(
+                manager,
+                count);
+
+        for (const auto depth :
+             std::array<std::size_t, 5>{
+                 1,
+                 4,
+                 16,
+                 64,
+                 256}) {
+            const auto value =
+                dependency_scaling_case(
+                    manager,
+                    count,
+                    depth,
+                    baseline);
+
+            require_dependency_scaling_gates(
+                value,
+                depth);
+
+            print_row(value);
+        }
+    }
+}
+
 void print_header() {
     std::cout
         << "types,scenario,total_ms,setup_ms,prepare_ms,publish_ms,"
@@ -1552,7 +1797,17 @@ void run_matrix(std::size_t count) {
 
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
+    if (argc == 2 &&
+        std::string_view{argv[1]} == "--rc-v2-04") {
+        print_header();
+        run_dependency_scaling_matrix();
+
+        std::cout
+            << "RC-V2-04 DEPENDENCY CLOSURE SCALING PASS\n";
+        return 0;
+    }
+
     fail_closed_gate();
     dependency_chain_gate();
 
@@ -1586,7 +1841,9 @@ int main() {
     }
 
     run_locality_matrix();
+    run_dependency_scaling_matrix();
 
-    std::cout << "RC-V2-03G3 BARRIER-FREE RECONCILE PASS\n";
+    std::cout
+        << "RC-V2-04 DEPENDENCY CLOSURE SCALING PASS\n";
     return 0;
 }
