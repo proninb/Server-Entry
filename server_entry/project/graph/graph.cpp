@@ -277,6 +277,10 @@ struct graph::candidate_type_slot {
     candidate_type_kind kind = candidate_type_kind::unchanged;
     std::unique_ptr<type_storage> value;
     std::unique_ptr<type_build_state> build;
+
+    // G0 has a dense type_handle namespace; its named TypeRef is recovered
+    // directly from this generation-local slot, never through a hash lookup.
+    TypeRef named_ref{};
 };
 
 graph::graph() = default;
@@ -1204,6 +1208,7 @@ graph::candidate_type_slot& graph_update::touch_type(std::uint32_t handle) {
 
         slot.value.reset();
         slot.build.reset();
+        slot.named_ref = {};
 
         changed_types.push_back(handle);
     }
@@ -1243,7 +1248,25 @@ status graph_update::replace_source(source_id source, source_replacement& replac
 status graph_update::source_replacement::add_named_enum(string_id name, const enum_build_data& data,
     stable_id& entity, type_handle& type) noexcept {
 
-    return update ? update->declare_named_enum(name, source, data, entity, type)
+    return update ? update->declare_named_enum(name, source, data, entity, type, nullptr)
+        : status{status_code::invalid_state};
+}
+
+status graph_update::source_replacement::add_named_enum(
+    string_id name,
+    const enum_build_data& data,
+    stable_id& entity,
+    type_handle& type,
+    graph_named_enum_telemetry* telemetry) noexcept {
+
+    return update
+        ? update->declare_named_enum(
+              name,
+              source,
+              data,
+              entity,
+              type,
+              telemetry)
         : status{status_code::invalid_state};
 }
 
@@ -1367,7 +1390,11 @@ status graph_update::source_replacement::get_or_create_rvalue_reference(TypeRef 
         : status{status_code::invalid_state};
 }
 
-status graph_update::get_or_create_named_type_ref(type_handle handle, TypeRef& output) noexcept {
+template <bool Detailed>
+status graph_update::get_or_create_named_type_ref_impl(
+    type_handle handle,
+    TypeRef& output,
+    graph_named_enum_telemetry* telemetry) noexcept {
 
     output = {};
 
@@ -1375,45 +1402,160 @@ status graph_update::get_or_create_named_type_ref(type_handle handle, TypeRef& o
         return {status_code::configuration_failed};
     }
 
-    if (!full_reconstruction &&
-        handle.value() < owner->named_type_refs.size() &&
+    std::chrono::steady_clock::time_point phase_begin{};
+
+    const auto begin_phase = [&]() noexcept {
+        if constexpr (Detailed) {
+            phase_begin = std::chrono::steady_clock::now();
+        }
+    };
+
+    const auto end_phase = [&](std::uint64_t& target) noexcept {
+        if constexpr (Detailed) {
+            target += graph_prepare_elapsed_ns(phase_begin);
+        }
+    };
+
+    if (full_reconstruction) {
+        if (handle.value() >= owner->candidate_types.size()) {
+            return failure = {status_code::configuration_failed};
+        }
+
+        auto& candidate = owner->candidate_types[handle.value()];
+
+        if (candidate.generation != candidate_generation ||
+            candidate.kind != candidate_type_kind::replacement ||
+            !candidate.value) {
+            return failure = {status_code::configuration_failed};
+        }
+
+        if (candidate.named_ref) {
+            output = candidate.named_ref;
+            return {};
+        }
+
+        try {
+            const auto raw =
+                owner->canonical_types.size() +
+                added_canonical_types.size();
+
+            if (raw > (std::numeric_limits<std::uint32_t>::max)()) {
+                return failure = {status_code::initialization_failed};
+            }
+
+            output = TypeRef{static_cast<std::uint32_t>(raw)};
+
+            graph::canonical_type_record record;
+            record.kind = canonical_type_kind::named;
+            record.named = handle;
+
+            begin_phase();
+            added_canonical_types.push_back(record);
+            if constexpr (Detailed) {
+                end_phase(telemetry->named_type_ref_canonical_append_ns);
+            }
+
+            begin_phase();
+            added_named_type_refs.push_back({handle.value(), output});
+            if constexpr (Detailed) {
+                end_phase(telemetry->named_type_ref_mapping_append_ns);
+            }
+
+            candidate.named_ref = output;
+            return {};
+        }
+        catch (...) {
+            return failure = {status_code::initialization_failed};
+        }
+    }
+
+    begin_phase();
+
+    if (handle.value() < owner->named_type_refs.size() &&
         owner->named_type_refs[handle.value()]) {
         output = owner->named_type_refs[handle.value()];
+
+        if constexpr (Detailed) {
+            end_phase(telemetry->named_type_ref_existing_lookup_ns);
+        }
+
         return {};
     }
 
     if (const auto existing = added_named_type_index.find(handle.value());
         existing != added_named_type_index.end()) {
         output = existing->second;
+
+        if constexpr (Detailed) {
+            end_phase(telemetry->named_type_ref_existing_lookup_ns);
+        }
+
         return {};
     }
 
+    if constexpr (Detailed) {
+        end_phase(telemetry->named_type_ref_existing_lookup_ns);
+    }
+
     try {
-        const auto raw = owner->canonical_types.size() + added_canonical_types.size();
+        const auto raw =
+            owner->canonical_types.size() +
+            added_canonical_types.size();
 
         if (raw > (std::numeric_limits<std::uint32_t>::max)()) {
             return failure = {status_code::initialization_failed};
         }
 
-        output = TypeRef{
-                static_cast<std::uint32_t>(raw) };
+        output = TypeRef{static_cast<std::uint32_t>(raw)};
 
         graph::canonical_type_record record;
         record.kind = canonical_type_kind::named;
         record.named = handle;
 
+        begin_phase();
         added_canonical_types.push_back(record);
+        if constexpr (Detailed) {
+            end_phase(telemetry->named_type_ref_canonical_append_ns);
+        }
 
-        added_named_type_refs.push_back({
-            handle.value(), output });
+        begin_phase();
+        added_named_type_refs.push_back({handle.value(), output});
+        if constexpr (Detailed) {
+            end_phase(telemetry->named_type_ref_mapping_append_ns);
+        }
 
+        begin_phase();
         added_named_type_index.emplace(handle.value(), output);
+        if constexpr (Detailed) {
+            end_phase(telemetry->named_type_ref_index_emplace_ns);
+        }
 
         return {};
     }
     catch (...) {
         return failure = {status_code::initialization_failed};
     }
+}
+
+status graph_update::get_or_create_named_type_ref(
+    type_handle handle,
+    TypeRef& output) noexcept {
+
+    return get_or_create_named_type_ref_impl<false>(
+        handle,
+        output,
+        nullptr);
+}
+
+status graph_update::get_or_create_named_type_ref_sampled(
+    type_handle handle,
+    TypeRef& output,
+    graph_named_enum_telemetry& telemetry) noexcept {
+
+    return get_or_create_named_type_ref_impl<true>(
+        handle,
+        output,
+        &telemetry);
 }
 
 status graph_update::get_or_create_derived(derived_type_kind kind, TypeRef child, std::uint64_t payload,
@@ -1673,10 +1815,30 @@ status graph_update::remove_delta(source_id source, const source_contribution_re
     }
 }
 
-status graph_update::assign_type(stable_id id, graph::entity_slot& entity,
-    std::unique_ptr<graph::type_storage> type) noexcept {
+template <bool Detailed>
+status graph_update::assign_type_impl(
+    stable_id id,
+    graph::entity_slot& entity,
+    std::unique_ptr<graph::type_storage> type,
+    graph_named_enum_telemetry* telemetry) noexcept {
+
+    std::chrono::steady_clock::time_point phase_begin{};
+
+    const auto begin_phase = [&]() noexcept {
+        if constexpr (Detailed) {
+            phase_begin = std::chrono::steady_clock::now();
+        }
+    };
+
+    const auto end_phase = [&](std::uint64_t& target) noexcept {
+        if constexpr (Detailed) {
+            target += graph_prepare_elapsed_ns(phase_begin);
+        }
+    };
 
     try {
+        begin_phase();
+
         std::uint32_t handle = entity.record.type.value();
 
         if (!handle && !full_reconstruction && id) {
@@ -1693,8 +1855,9 @@ status graph_update::assign_type(stable_id id, graph::entity_slot& entity,
                 handle = next_type_slot++;
             }
             else if (claimed_free_type_slots.size() < owner->free_type_slots.size()) {
-                handle = owner->free_type_slots[ owner->free_type_slots.size() - 1 -
-                        claimed_free_type_slots.size()];
+                handle = owner->free_type_slots[
+                    owner->free_type_slots.size() - 1 -
+                    claimed_free_type_slots.size()];
 
                 claimed_free_type_slots.push_back(handle);
             }
@@ -1705,23 +1868,102 @@ status graph_update::assign_type(stable_id id, graph::entity_slot& entity,
             entity.record.type = type_handle{handle};
         }
 
+        if constexpr (Detailed) {
+            end_phase(telemetry->assign_type_handle_ns);
+        }
+
+        begin_phase();
         auto& candidate = touch_type(handle);
+        if constexpr (Detailed) {
+            end_phase(telemetry->assign_type_touch_type_ns);
+        }
 
+        begin_phase();
         candidate.kind = candidate_type_kind::replacement;
-
         candidate.value = std::move(type);
+        if constexpr (Detailed) {
+            end_phase(telemetry->assign_type_candidate_store_ns);
+        }
+
+        begin_phase();
 
         TypeRef ignored;
+        const auto result =
+            [&]() noexcept {
+                if constexpr (Detailed) {
+                    return get_or_create_named_type_ref_sampled(
+                        entity.record.type,
+                        ignored,
+                        *telemetry);
+                }
+                else {
+                    return get_or_create_named_type_ref(
+                        entity.record.type,
+                        ignored);
+                }
+            }();
 
-        return get_or_create_named_type_ref(entity.record.type, ignored);
+        if constexpr (Detailed) {
+            end_phase(telemetry->assign_type_named_type_ref_ns);
+        }
+
+        return result;
     }
     catch (...) {
         return {status_code::initialization_failed};
     }
 }
 
-status graph_update::materialize(stable_id id, string_id name) noexcept {
+status graph_update::assign_type(
+    stable_id id,
+    graph::entity_slot& entity,
+    std::unique_ptr<graph::type_storage> type) noexcept {
+
+    return assign_type_impl<false>(
+        id,
+        entity,
+        std::move(type),
+        nullptr);
+}
+
+status graph_update::assign_type_sampled(
+    stable_id id,
+    graph::entity_slot& entity,
+    std::unique_ptr<graph::type_storage> type,
+    graph_named_enum_telemetry& telemetry) noexcept {
+
+    return assign_type_impl<true>(
+        id,
+        entity,
+        std::move(type),
+        &telemetry);
+}
+
+template <bool Detailed>
+status graph_update::materialize_impl(
+    stable_id id,
+    string_id name,
+    graph_named_enum_telemetry* telemetry) noexcept {
+
+    std::chrono::steady_clock::time_point phase_begin{};
+
+    const auto begin_phase =
+        [&]() noexcept {
+            if constexpr (Detailed) {
+                phase_begin = std::chrono::steady_clock::now();
+            }
+        };
+
+    const auto end_phase =
+        [&](std::uint64_t& target) noexcept {
+            if constexpr (Detailed) {
+                target += graph_prepare_elapsed_ns(phase_begin);
+            }
+        };
+
     try {
+        begin_phase();
+
         auto& slot = touch_entity(id.value());
         auto& aggregate = contributions->touch_entity(id);
 
@@ -1734,15 +1976,21 @@ status graph_update::materialize(stable_id id, string_id name) noexcept {
                 type.value.reset();
             }
 
-            // stable_id reservations are historical Project identity. Removing an
-            // Entity tombstones only its hot Entry; identity[name] remains mapped
-            // so later resurrection reuses the same stable_id.
             slot.entity.record = {};
+
+            if constexpr (Detailed) {
+                end_phase(telemetry->materialize_state_touch_ns);
+            }
+
             return {};
         }
 
         slot.entity.record.name = name;
         touch_identity(name.value()).value = id;
+
+        if constexpr (Detailed) {
+            end_phase(telemetry->materialize_state_touch_ns);
+        }
 
         if (aggregate.aggregate_declarations || aggregate.aggregate_definitions) {
             const bool defined = aggregate.aggregate_definitions != 0;
@@ -1859,6 +2107,8 @@ status graph_update::materialize(stable_id id, string_id name) noexcept {
             }
         }
 
+        begin_phase();
+
         auto type =
             std::make_unique<graph::type_storage>();
 
@@ -1870,6 +2120,12 @@ status graph_update::materialize(stable_id id, string_id name) noexcept {
         };
         type->record.definition = {};
 
+        if constexpr (Detailed) {
+            end_phase(telemetry->materialize_type_storage_ns);
+        }
+
+        begin_phase();
+
         auto build = std::make_unique<graph::type_build_state>();
         build->definition_pending = defined;
 
@@ -1877,17 +2133,75 @@ status graph_update::materialize(stable_id id, string_id name) noexcept {
             build->enumerators = aggregate.definition->values;
         }
 
+        if constexpr (Detailed) {
+            end_phase(telemetry->materialize_build_state_ns);
+        }
+
         slot.entity.record.kind = entity_kind::enum_type;
-        auto result = assign_type(id, slot.entity, std::move(type));
+
+        begin_phase();
+
+        auto result =
+            [&]() noexcept {
+                if constexpr (Detailed) {
+                    return assign_type_sampled(
+                        id,
+                        slot.entity,
+                        std::move(type),
+                        *telemetry);
+                }
+                else {
+                    return assign_type(
+                        id,
+                        slot.entity,
+                        std::move(type));
+                }
+            }();
+
+        if constexpr (Detailed) {
+            end_phase(telemetry->materialize_assign_type_ns);
+        }
+
         if (!result.ok()) {
             return result;
         }
-        owner->candidate_types[slot.entity.record.type.value()].build = std::move(build);
+
+        begin_phase();
+
+        owner->candidate_types[
+            slot.entity.record.type.value()
+        ].build = std::move(build);
+
+        if constexpr (Detailed) {
+            end_phase(telemetry->materialize_attach_ns);
+        }
+
         return {};
     }
     catch (...) {
         return {status_code::initialization_failed};
     }
+}
+
+status graph_update::materialize(
+    stable_id id,
+    string_id name) noexcept {
+
+    return materialize_impl<false>(
+        id,
+        name,
+        nullptr);
+}
+
+status graph_update::materialize_sampled(
+    stable_id id,
+    string_id name,
+    graph_named_enum_telemetry& telemetry) noexcept {
+
+    return materialize_impl<true>(
+        id,
+        name,
+        &telemetry);
 }
 
 status graph_update::begin_source_replacement(source_id source) noexcept {
@@ -2045,8 +2359,13 @@ status graph_update::reconcile_retained_enum(
     return {};
 }
 
-status graph_update::declare_named_enum(string_id name, source_id source, const enum_build_data& data,
-    stable_id& entity, type_handle& type) noexcept {
+status graph_update::declare_named_enum(
+    string_id name,
+    source_id source,
+    const enum_build_data& data,
+    stable_id& entity,
+    type_handle& type,
+    graph_named_enum_telemetry* telemetry) noexcept {
 
     entity = {};
     type = {};
@@ -2059,12 +2378,45 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
         return {status_code::invalid_state};
     }
 
+    const auto sampled =
+        telemetry != nullptr &&
+        telemetry->begin_call();
+
+    std::chrono::steady_clock::time_point total_begin{};
+    std::chrono::steady_clock::time_point phase_begin{};
+
+    if (sampled) {
+        total_begin = std::chrono::steady_clock::now();
+    }
+
+    const auto begin_phase =
+        [&]() noexcept {
+            if (sampled) {
+                phase_begin = std::chrono::steady_clock::now();
+            }
+        };
+
+    const auto end_phase =
+        [&](std::uint64_t& target) noexcept {
+            if (sampled) {
+                target += graph_prepare_elapsed_ns(phase_begin);
+            }
+        };
+
     try {
+        begin_phase();
+
         auto result = begin_source_replacement(source);
+
+        if (sampled) {
+            end_phase(telemetry->source_replacement_ns);
+        }
 
         if (!result.ok()) {
             return failure = result;
         }
+
+        begin_phase();
 
         stable_id id;
 
@@ -2091,11 +2443,21 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
             touch_identity(name.value()).value = id;
         }
 
+        if (sampled) {
+            end_phase(telemetry->identity_ns);
+        }
+
         source_contribution_record contribution;
         contribution.entity = id;
         contribution.name = name;
 
+        begin_phase();
+
         result = build_contribution(data, contribution);
+
+        if (sampled) {
+            end_phase(telemetry->contribution_build_ns);
+        }
 
         if (!result.ok()) {
             return failure = result;
@@ -2103,11 +2465,17 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
 
         bool reconciled = false;
 
+        begin_phase();
+
         result =
             reconcile_retained_enum(
                 source,
                 contribution,
                 reconciled);
+
+        if (sampled) {
+            end_phase(telemetry->reconcile_ns);
+        }
 
         if (!result.ok()) {
             return failure = result;
@@ -2136,26 +2504,65 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
 
             entity = id;
             type = current->type;
+
+            if (sampled) {
+                telemetry->total_ns +=
+                    graph_prepare_elapsed_ns(total_begin);
+            }
+
             return {};
         }
 
+        begin_phase();
+
         result = add_delta(source, id, contribution);
+
+        if (sampled) {
+            end_phase(telemetry->delta_ns);
+        }
 
         if (!result.ok()) {
             return failure = result;
         }
+
+        begin_phase();
 
         contributions->candidate(source)->named.push_back(contribution);
 
-        result = materialize(id, name);
+        if (sampled) {
+            end_phase(telemetry->contribution_append_ns);
+        }
+
+        begin_phase();
+
+        result = sampled
+            ? materialize_sampled(
+                  id,
+                  name,
+                  *telemetry)
+            : materialize(
+                  id,
+                  name);
+
+        if (sampled) {
+            end_phase(telemetry->materialize_ns);
+        }
 
         if (!result.ok()) {
             return failure = result;
         }
 
-        entity = id;
+        begin_phase();
 
-        type = touch_entity(id.value()) .entity.record.type;
+        entity = id;
+        type = touch_entity(id.value()).entity.record.type;
+
+        if (sampled) {
+            end_phase(telemetry->result_lookup_ns);
+
+            telemetry->total_ns +=
+                graph_prepare_elapsed_ns(total_begin);
+        }
 
         return {};
     }

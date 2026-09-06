@@ -3,11 +3,120 @@
 #include "../../diagnostics/diagnostic_descriptor.hpp"
 #include "../graph/graph_build_transaction.hpp"
 
+#include <chrono>
 #include <new>
 #include <vector>
 
 namespace cw::server {
 namespace {
+
+std::uint64_t builder_elapsed_ns(
+    std::chrono::steady_clock::time_point begin) noexcept {
+
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - begin).count());
+}
+
+template <bool Detailed>
+status build_enum_impl(
+    graph_update::source_replacement& replacement,
+    const enum_source_fact& fact,
+    project_builder_scratch& scratch) noexcept {
+
+    try {
+        auto& values = scratch.enum_values;
+
+        std::chrono::steady_clock::time_point copy_begin{};
+
+        if constexpr (Detailed) {
+            copy_begin = std::chrono::steady_clock::now();
+        }
+
+        values.clear();
+        values.reserve(fact.enumerators.size());
+
+        for (const auto& value : fact.enumerators) {
+            values.push_back({
+                value.name,
+                value.value
+            });
+        }
+
+        if constexpr (Detailed) {
+            scratch.enum_value_copy_ns +=
+                builder_elapsed_ns(copy_begin);
+        }
+
+        const enum_build_data data{
+            fact.definition_state,
+            fact.scoped,
+            fact.explicit_underlying,
+            values
+        };
+
+        type_handle type;
+        status result;
+
+        std::chrono::steady_clock::time_point mutation_begin{};
+
+        if constexpr (Detailed) {
+            mutation_begin = std::chrono::steady_clock::now();
+        }
+
+        if (fact.anonymous) {
+            result =
+                replacement.add_anonymous_enum(
+                    data,
+                    type);
+        }
+        else {
+            stable_id entity;
+
+            if constexpr (Detailed) {
+                result =
+                    replacement.add_named_enum(
+                        fact.canonical_name,
+                        data,
+                        entity,
+                        type,
+                        &scratch.named_enum);
+            }
+            else {
+                result =
+                    replacement.add_named_enum(
+                        fact.canonical_name,
+                        data,
+                        entity,
+                        type);
+            }
+
+            if (result.ok() && !entity) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+        }
+
+        if constexpr (Detailed) {
+            scratch.enum_graph_mutation_ns +=
+                builder_elapsed_ns(mutation_begin);
+        }
+
+        if (result.ok() && !type) {
+            return {
+                status_code::initialization_failed
+            };
+        }
+
+        return result;
+    }
+    catch (...) {
+        return {
+            status_code::initialization_failed
+        };
+    }
+}
 
 status build_aggregate_impl(
     graph_update::source_replacement& replacement,
@@ -274,65 +383,15 @@ status project_builder::build_enum(
     const enum_source_fact& fact,
     project_builder_scratch& scratch) const noexcept {
 
-    try {
-        auto& values = scratch.enum_values;
-
-        values.clear();
-        values.reserve(fact.enumerators.size());
-
-        for (const auto& value : fact.enumerators) {
-            values.push_back({
-                value.name,
-                value.value
-            });
-        }
-
-        const enum_build_data data{
-            fact.definition_state,
-            fact.scoped,
-            fact.explicit_underlying,
-            values
-        };
-
-        type_handle type;
-        status result;
-
-        if (fact.anonymous) {
-            result =
-                replacement.add_anonymous_enum(
-                    data,
-                    type);
-        }
-        else {
-            stable_id entity;
-
-            result =
-                replacement.add_named_enum(
-                    fact.canonical_name,
-                    data,
-                    entity,
-                    type);
-
-            if (result.ok() && !entity) {
-                return {
-                    status_code::initialization_failed
-                };
-            }
-        }
-
-        if (result.ok() && !type) {
-            return {
-                status_code::initialization_failed
-            };
-        }
-
-        return result;
-    }
-    catch (...) {
-        return {
-            status_code::initialization_failed
-        };
-    }
+    return scratch.detailed
+        ? build_enum_impl<true>(
+              replacement,
+              fact,
+              scratch)
+        : build_enum_impl<false>(
+              replacement,
+              fact,
+              scratch);
 }
 
 status project_builder::build_aggregate(

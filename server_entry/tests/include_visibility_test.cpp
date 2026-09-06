@@ -50,8 +50,8 @@ int main() {
         graph_manager manager; diagnostic_buffer diagnostics;
         const auto result = run(dir / "after.cpp", manager, diagnostics);
         assert(result.ok());
-        const auto a_name = manager.strings().find("N::A");
-        const auto b_name = manager.strings().find("B");
+        const auto a_name = manager.strings().find_for_test("N::A");
+        const auto b_name = manager.strings().find_for_test("B");
         assert(a_name && b_name);
         const auto* a = manager.compiled_graph().find(a_name);
         const auto* b = manager.compiled_graph().find(b_name);
@@ -73,9 +73,9 @@ int main() {
         graph_manager manager; diagnostic_buffer diagnostics;
         const auto result = run(dir / "transitive.cpp", manager, diagnostics);
         assert(result.ok());
-        assert(manager.compiled_graph().find(manager.strings().find("A2")));
-        assert(manager.compiled_graph().find(manager.strings().find("B2")));
-        assert(manager.compiled_graph().find(manager.strings().find("C")));
+        assert(manager.compiled_graph().find(manager.strings().find_for_test("A2")));
+        assert(manager.compiled_graph().find(manager.strings().find_for_test("B2")));
+        assert(manager.compiled_graph().find(manager.strings().find_for_test("C")));
     }
 
     // Legal same-Entity redeclaration is coalesced in the exported interface.
@@ -85,8 +85,8 @@ int main() {
         graph_manager manager; diagnostic_buffer diagnostics;
         const auto result = run(dir / "redecl.cpp", manager, diagnostics);
         assert(result.ok());
-        assert(manager.compiled_graph().find(manager.strings().find("X")));
-        assert(manager.compiled_graph().find(manager.strings().find("UsesX")));
+        assert(manager.compiled_graph().find(manager.strings().find_for_test("X")));
+        assert(manager.compiled_graph().find(manager.strings().find_for_test("UsesX")));
     }
 
     std::cout << "PASS\n";

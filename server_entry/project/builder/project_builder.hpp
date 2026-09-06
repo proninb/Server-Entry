@@ -5,6 +5,7 @@
 #include "../../operation.hpp"
 #include "../graph/graph.hpp"
 
+#include <cstdint>
 #include <span>
 #include <vector>
 
@@ -19,6 +20,13 @@ struct project_builder_scratch {
     std::vector<enum_value_build> enum_values;
     std::vector<member_build> members;
     std::vector<type_modifier_build> modifiers;
+
+    // Enabled only by detailed frontend publication telemetry. Basic production
+    // publication selects the untimed Builder implementation.
+    bool detailed = false;
+    std::uint64_t enum_value_copy_ns = 0;
+    std::uint64_t enum_graph_mutation_ns = 0;
+    graph_named_enum_telemetry named_enum;
 };
 
 // Converts canonical source facts into canonical Graph state.

@@ -27,26 +27,26 @@ static void publish_definition(
     std::size_t enumerator_count) {
 
     string_id type_name;
-    assert(tx.strings().intern("A", type_name).ok());
+    assert(tx.strings().bind("A", type_name).ok());
 
     std::vector<string_id> member_names(member_count);
     std::vector<member_build> members(member_count);
 
     for (std::size_t index = 0; index < member_count; ++index) {
         const auto spelling = "m" + std::to_string(index);
-        assert(tx.strings().intern(spelling, member_names[index]).ok());
+        assert(tx.strings().bind(spelling, member_names[index]).ok());
         members[index].name = member_names[index];
         members[index].builtin = builtin_type::integer;
     }
 
     string_id enum_name;
-    assert(tx.strings().intern("E", enum_name).ok());
+    assert(tx.strings().bind("E", enum_name).ok());
 
     std::vector<string_id> enumerator_names(enumerator_count);
     std::vector<enum_value_build> enumerators(enumerator_count);
     for (std::size_t index = 0; index < enumerator_count; ++index) {
         const auto spelling = "e" + std::to_string(index);
-        assert(tx.strings().intern(spelling, enumerator_names[index]).ok());
+        assert(tx.strings().bind(spelling, enumerator_names[index]).ok());
         enumerators[index].name = enumerator_names[index];
         enumerators[index].value = {builtin_type::integer, index};
     }
@@ -121,7 +121,7 @@ int main() {
     }
     { const auto state = persisted_state(manager); assert(state.members.size() == 2); assert(state.enum_values.size() == 2); }
 
-    const auto* entity = manager.compiled_graph().find(manager.strings().find("A"));
+    const auto* entity = manager.compiled_graph().find(manager.strings().find_for_test("A"));
     assert(entity);
     const auto members = manager.compiled_graph().members(entity->type);
     assert(members.size() == 2);

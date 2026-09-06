@@ -50,8 +50,8 @@ int main() {
         source_a = roots[0].source;
         source_b = roots[1].source;
 
-        assert(tx.strings().intern("A", name_a).ok());
-        assert(tx.strings().intern("B", name_b).ok());
+        assert(tx.strings().bind("A", name_a).ok());
+        assert(tx.strings().bind("B", name_b).ok());
 
         type_handle a_type;
         type_handle b_type;
@@ -82,7 +82,7 @@ int main() {
     // available physical type slot; persistent Entity identity is independent.
     {
         auto tx = manager.begin_build(graph_build_mode::incremental);
-        assert(tx.strings().intern("C", name_c).ok());
+        assert(tx.strings().bind("C", name_c).ok());
         type_handle c_type;
         add_defined_type(tx, source_b, name_c, c_id, c_type);
         assert(tx.commit().ok());
@@ -100,7 +100,7 @@ int main() {
     {
         auto tx = manager.begin_build(graph_build_mode::rebuild);
 
-        assert(tx.strings().intern("C", name_c).ok());
+        assert(tx.strings().bind("C", name_c).ok());
         stable_id rebuilt_a;
         stable_id rebuilt_c;
         type_handle a_type;

@@ -25,8 +25,8 @@ static string_id publish_member(
 
     string_id type_name;
     string_id member_name;
-    assert(tx.strings().intern("A", type_name).ok());
-    assert(tx.strings().intern(member_spelling, member_name).ok());
+    assert(tx.strings().bind("A", type_name).ok());
+    assert(tx.strings().bind(member_spelling, member_name).ok());
 
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
@@ -66,7 +66,7 @@ int main() {
         const auto source = ensure_source(tx);
         old0 = publish_member(tx, source, "old0");
         assert(tx.commit().ok());
-        type_name_id = manager.strings().find("A");
+        type_name_id = manager.strings().find_for_test("A");
         assert(type_name_id);
     }
 
@@ -109,13 +109,13 @@ int main() {
     assert(manager.strings().live_size() < live_before);
     assert(!manager.strings().get(old0));
     assert(!manager.strings().get(old1));
-    assert(!manager.strings().find("old0"));
-    assert(!manager.strings().find("old1"));
+    assert(!manager.strings().find_for_test("old0"));
+    assert(!manager.strings().find_for_test("old1"));
 
     // Canonical Entity spelling is historical identity and must not be reclaimed.
-    assert(manager.strings().find("A") == type_name_id);
+    assert(manager.strings().find_for_test("A") == type_name_id);
     assert(manager.compiled_graph().find_id(type_name_id) == stable_before);
-    assert(manager.strings().find("current") == current_before_rebuild);
+    assert(manager.strings().find_for_test("current") == current_before_rebuild);
 
     const auto checkpoint =
         std::filesystem::temp_directory_path() /
@@ -130,9 +130,9 @@ int main() {
     assert(loaded.strings().size() == manager.strings().size());
     assert(!loaded.strings().get(old0));
     assert(!loaded.strings().get(old1));
-    assert(loaded.strings().find("A") == type_name_id);
+    assert(loaded.strings().find_for_test("A") == type_name_id);
     assert(loaded.compiled_graph().find_id(type_name_id) == stable_before);
-    assert(loaded.strings().find("current") == current_before_rebuild);
+    assert(loaded.strings().find_for_test("current") == current_before_rebuild);
 
     std::error_code ignored;
     std::filesystem::remove(checkpoint, ignored);

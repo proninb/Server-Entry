@@ -10,8 +10,8 @@ int main() {
     auto tx = manager.begin_build();
     assert(tx.sources().add("bad.cpp", project_item_role::source).ok());
     string_id name, value_name;
-    assert(tx.strings().intern("E", name).ok());
-    assert(tx.strings().intern("V", value_name).ok());
+    assert(tx.strings().bind("E", name).ok());
+    assert(tx.strings().bind("V", value_name).ok());
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(tx.sources().roots()[0].source, replacement).ok());
     enum_value_build value{value_name, {builtin_type::long_double_floating, 0}};

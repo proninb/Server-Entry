@@ -22,9 +22,9 @@ int main() {
         source_a = roots[1].source;
 
         string_id A, B, member_name;
-        assert(tx.strings().intern("A", A).ok());
-        assert(tx.strings().intern("B", B).ok());
-        assert(tx.strings().intern("b", member_name).ok());
+        assert(tx.strings().bind("A", A).ok());
+        assert(tx.strings().bind("B", B).ok());
+        assert(tx.strings().bind("b", member_name).ok());
 
         graph_update::source_replacement rb;
         assert(tx.graph_state().replace_source(source_b, rb).ok());
@@ -43,8 +43,8 @@ int main() {
         assert(tx.commit().ok());
     }
 
-    const auto a_name = manager.strings().find("A");
-    const auto b_name = manager.strings().find("B");
+    const auto a_name = manager.strings().find_for_test("A");
+    const auto b_name = manager.strings().find_for_test("B");
     assert(a_name && b_name);
     assert(manager.compiled_graph().find(a_name));
     assert(manager.compiled_graph().find(b_name));

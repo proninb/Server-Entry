@@ -100,7 +100,7 @@ static std::vector<std::uint32_t> build_project(
 
     for (int index = 0; index < static_cast<int>(order.size()); ++index) {
         const auto name = type_name(index);
-        const auto string = manager.strings().find(name);
+        const auto string = manager.strings().find_for_test(name);
         assert(string);
         const auto* entity = manager.compiled_graph().find(string);
         assert(entity);

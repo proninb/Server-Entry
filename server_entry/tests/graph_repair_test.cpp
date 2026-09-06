@@ -22,8 +22,8 @@ static std::pair<std::uint32_t,std::uint32_t> build_order(bool reverse) {
     auto source = tx.sources().roots()[0].source;
 
     string_id a,z;
-    assert(tx.strings().intern("A", a).ok());
-    assert(tx.strings().intern("Z", z).ok());
+    assert(tx.strings().bind("A", a).ok());
+    assert(tx.strings().bind("Z", z).ok());
 
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
@@ -36,8 +36,8 @@ static std::pair<std::uint32_t,std::uint32_t> build_order(bool reverse) {
         assert(replacement.add_named_type(z, aggregate_definition_state::declared, e2, t2).ok());
     }
     assert(tx.commit().ok());
-    const auto* ae = gm.compiled_graph().find(gm.strings().find("A"));
-    const auto* ze = gm.compiled_graph().find(gm.strings().find("Z"));
+    const auto* ae = gm.compiled_graph().find(gm.strings().find_for_test("A"));
+    const auto* ze = gm.compiled_graph().find(gm.strings().find_for_test("Z"));
     assert(ae && ze);
     return {gm.compiled_graph().find_id(a).value(), gm.compiled_graph().find_id(z).value()};
 }
@@ -56,9 +56,9 @@ int main() {
     const auto source = tx.sources().roots()[0].source;
 
     string_id a,b,m;
-    assert(tx.strings().intern("A", a).ok());
-    assert(tx.strings().intern("B", b).ok());
-    assert(tx.strings().intern("m", m).ok());
+    assert(tx.strings().bind("A", a).ok());
+    assert(tx.strings().bind("B", b).ok());
+    assert(tx.strings().bind("m", m).ok());
 
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
@@ -75,7 +75,7 @@ int main() {
     assert(replacement.add_named_type(b, aggregate_definition_state::declared, be, bt).ok());
     assert(tx.commit().ok());
 
-    const auto* aentity = gm.compiled_graph().find(gm.strings().find("A"));
+    const auto* aentity = gm.compiled_graph().find(gm.strings().find_for_test("A"));
     assert(aentity);
     const auto span = gm.compiled_graph().members(aentity->type);
     assert(span.size() == 1);
@@ -85,7 +85,7 @@ int main() {
     assert(inner && inner->kind == derived_type_kind::pointer);
     type_handle named;
     assert(gm.compiled_graph().named(inner->child, named));
-    const auto* bentity = gm.compiled_graph().find(gm.strings().find("B"));
+    const auto* bentity = gm.compiled_graph().find(gm.strings().find_for_test("B"));
     assert(bentity && named == bentity->type);
 
     std::cout << "PASS\n";

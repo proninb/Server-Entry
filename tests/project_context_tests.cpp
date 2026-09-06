@@ -370,6 +370,138 @@ bool test_dependent_closure_rebuild() {
         summary.publish == 3;
 }
 
+void print_recovery_diagnostic(
+    std::string_view phase,
+    int attempt,
+    status result,
+    const project_context& project) {
+
+    const auto summary =
+        project.last_frontend_summary();
+
+    const runtime* execution = nullptr;
+    const auto runtime_result =
+        project.runtime_access(execution);
+
+    std::cerr
+        << "RECOVERY_DIAG"
+        << " phase=" << phase
+        << " attempt=" << attempt
+        << " status=" << static_cast<std::uint32_t>(result.code)
+        << " state=" << static_cast<std::uint32_t>(project.state())
+        << " diagnostics=" << project.diagnostics().records().size()
+        << " runtime_status="
+        << static_cast<std::uint32_t>(runtime_result.code)
+        << " runtime_ptr=" << (execution != nullptr ? 1 : 0)
+        << " dirty=" << summary.dirty
+        << " checked=" << summary.checked
+        << " affected=" << summary.affected
+        << " working_states=" << summary.working_states
+        << " discovery=" << summary.discovery
+        << " lex=" << summary.lex
+        << " parse=" << summary.parse
+        << " publish=" << summary.publish
+        << " reconciliation="
+        << (summary.reconciliation ? 1 : 0)
+        << '\n';
+}
+
+bool wait_for_failed_incremental_rebuild(
+    project_context& project,
+    logger& log,
+    metrics_store& metrics,
+    std::uint64_t operation) {
+
+    constexpr auto attempts = 200;
+    constexpr auto retry_delay =
+        std::chrono::milliseconds{5};
+
+    status last_result{};
+
+    for (int attempt = 1; attempt <= attempts; ++attempt) {
+        last_result = project.rebuild_sources(
+            operation_id{operation},
+            log,
+            metrics);
+
+        if (!last_result.ok()) {
+            const auto valid_failure =
+                project.state() == project_state::error &&
+                !project.diagnostics().empty();
+
+            if (!valid_failure) {
+                print_recovery_diagnostic(
+                    "bad_write_invalid_failure_state",
+                    attempt,
+                    last_result,
+                    project);
+            }
+
+            return valid_failure;
+        }
+
+        std::this_thread::sleep_for(retry_delay);
+    }
+
+    print_recovery_diagnostic(
+        "bad_write_timeout",
+        attempts,
+        last_result,
+        project);
+
+    return false;
+}
+
+bool wait_for_recovered_incremental_rebuild(
+    project_context& project,
+    logger& log,
+    metrics_store& metrics,
+    std::uint64_t operation) {
+
+    constexpr auto attempts = 200;
+    constexpr auto retry_delay =
+        std::chrono::milliseconds{5};
+
+    status last_result{};
+
+    for (int attempt = 1; attempt <= attempts; ++attempt) {
+        last_result = project.rebuild_sources(
+            operation_id{operation},
+            log,
+            metrics);
+
+        if (last_result.ok() &&
+            project.state() == project_state::valid) {
+            const runtime* execution = nullptr;
+            const auto runtime_result =
+                project.runtime_access(execution);
+
+            if (runtime_result.ok() &&
+                execution != nullptr) {
+                return true;
+            }
+
+            print_recovery_diagnostic(
+                "recovery_runtime_invalid",
+                attempt,
+                runtime_result,
+                project);
+
+            return false;
+        }
+
+        std::this_thread::sleep_for(retry_delay);
+    }
+
+    print_recovery_diagnostic(
+        "recovery_timeout",
+        attempts,
+        last_result,
+        project);
+
+    return false;
+}
+
 bool test_failed_incremental_recovers() {
     temporary_project files;
     logger log;
@@ -394,13 +526,11 @@ bool test_failed_incremental_recovers() {
         return false;
     }
 
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds{10});
-
-    if (project.rebuild_sources(
-            operation_id{19},
+    if (!wait_for_failed_incremental_rebuild(
+            project,
             log,
-            metrics).ok()) {
+            metrics,
+            19)) {
         return false;
     }
 
@@ -410,22 +540,11 @@ bool test_failed_incremental_recovers() {
         return false;
     }
 
-    std::this_thread::sleep_for(
-        std::chrono::milliseconds{10});
-
-    if (!project.rebuild_sources(
-            operation_id{20},
-            log,
-            metrics).ok()) {
-        return false;
-    }
-
-    const runtime* execution = nullptr;
-
-    return
-        project.state() == project_state::valid &&
-        project.runtime_access(execution).ok() &&
-        execution != nullptr;
+    return wait_for_recovered_incremental_rebuild(
+        project,
+        log,
+        metrics,
+        20);
 }
 
 } // namespace

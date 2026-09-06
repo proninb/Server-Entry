@@ -26,6 +26,55 @@ class graph_build_transaction;
 class graph_build_transaction_test_access;
 class graph_update;
 
+// Samples detailed named-enum Graph mutation work without perturbing every
+// canonical operation. Every 1024th named enum is measured; all other calls
+// execute without clock reads.
+struct graph_named_enum_telemetry {
+    static constexpr std::uint64_t sample_stride = 1024;
+
+    std::uint64_t calls = 0;
+    std::uint64_t samples = 0;
+
+    std::uint64_t total_ns = 0;
+    std::uint64_t source_replacement_ns = 0;
+    std::uint64_t identity_ns = 0;
+    std::uint64_t contribution_build_ns = 0;
+    std::uint64_t reconcile_ns = 0;
+    std::uint64_t delta_ns = 0;
+    std::uint64_t contribution_append_ns = 0;
+    std::uint64_t materialize_ns = 0;
+
+    std::uint64_t materialize_state_touch_ns = 0;
+    std::uint64_t materialize_type_storage_ns = 0;
+    std::uint64_t materialize_build_state_ns = 0;
+    std::uint64_t materialize_assign_type_ns = 0;
+
+    std::uint64_t assign_type_handle_ns = 0;
+    std::uint64_t assign_type_touch_type_ns = 0;
+    std::uint64_t assign_type_candidate_store_ns = 0;
+    std::uint64_t assign_type_named_type_ref_ns = 0;
+
+    std::uint64_t named_type_ref_existing_lookup_ns = 0;
+    std::uint64_t named_type_ref_canonical_append_ns = 0;
+    std::uint64_t named_type_ref_mapping_append_ns = 0;
+    std::uint64_t named_type_ref_index_emplace_ns = 0;
+
+    std::uint64_t materialize_attach_ns = 0;
+
+    std::uint64_t result_lookup_ns = 0;
+
+    [[nodiscard]] bool begin_call() noexcept {
+        ++calls;
+
+        if ((calls % sample_stride) != 0) {
+            return false;
+        }
+
+        ++samples;
+        return true;
+    }
+};
+
 struct graph_prepare_phase_telemetry {
     std::uint64_t pending_member_resolution_ns = 0;
     std::uint64_t live_typeref_validation_ns = 0;
@@ -391,6 +440,13 @@ public:
             stable_id& entity,
             type_handle& type) noexcept;
 
+        [[nodiscard]] status add_named_enum(
+            string_id name,
+            const enum_build_data& data,
+            stable_id& entity,
+            type_handle& type,
+            graph_named_enum_telemetry* telemetry) noexcept;
+
         [[nodiscard]] status add_anonymous_enum(
             const enum_build_data& data,
             type_handle& type) noexcept;
@@ -488,7 +544,8 @@ public:
         source_id source,
         const enum_build_data& data,
         stable_id& entity,
-        type_handle& type) noexcept;
+        type_handle& type,
+        graph_named_enum_telemetry* telemetry = nullptr) noexcept;
 
     [[nodiscard]] status declare_named_type(
         string_id name,
@@ -546,14 +603,49 @@ private:
         stable_id id,
         string_id name) noexcept;
 
+    [[nodiscard]] status materialize_sampled(
+        stable_id id,
+        string_id name,
+        graph_named_enum_telemetry& telemetry) noexcept;
+
+    template <bool Detailed>
+    [[nodiscard]] status materialize_impl(
+        stable_id id,
+        string_id name,
+        graph_named_enum_telemetry* telemetry) noexcept;
+
     [[nodiscard]] status assign_type(
         stable_id id,
         graph::entity_slot& entity,
         std::unique_ptr<graph::type_storage> type) noexcept;
 
+    [[nodiscard]] status assign_type_sampled(
+        stable_id id,
+        graph::entity_slot& entity,
+        std::unique_ptr<graph::type_storage> type,
+        graph_named_enum_telemetry& telemetry) noexcept;
+
+    template <bool Detailed>
+    [[nodiscard]] status assign_type_impl(
+        stable_id id,
+        graph::entity_slot& entity,
+        std::unique_ptr<graph::type_storage> type,
+        graph_named_enum_telemetry* telemetry) noexcept;
+
     [[nodiscard]] status get_or_create_named_type_ref(
         type_handle handle,
         TypeRef& output) noexcept;
+
+    [[nodiscard]] status get_or_create_named_type_ref_sampled(
+        type_handle handle,
+        TypeRef& output,
+        graph_named_enum_telemetry& telemetry) noexcept;
+
+    template <bool Detailed>
+    [[nodiscard]] status get_or_create_named_type_ref_impl(
+        type_handle handle,
+        TypeRef& output,
+        graph_named_enum_telemetry* telemetry) noexcept;
 
     [[nodiscard]] status get_or_create_derived(
         derived_type_kind kind,

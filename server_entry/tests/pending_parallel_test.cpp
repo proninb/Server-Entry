@@ -17,10 +17,10 @@ int main() {
     const auto roots = transaction.sources().roots();
 
     string_id A, B, member_a, member_b;
-    assert(transaction.strings().intern("A", A).ok());
-    assert(transaction.strings().intern("B", B).ok());
-    assert(transaction.strings().intern("ma", member_a).ok());
-    assert(transaction.strings().intern("mb", member_b).ok());
+    assert(transaction.strings().bind("A", A).ok());
+    assert(transaction.strings().bind("B", B).ok());
+    assert(transaction.strings().bind("ma", member_a).ok());
+    assert(transaction.strings().bind("mb", member_b).ok());
 
     // Graph mutation is single-owner in v2. Pending canonical references are
     // still allowed: A may reference canonical B before B is materialized.
@@ -70,9 +70,9 @@ int main() {
     assert(bad_transaction.sources().add("x.cpp", project_item_role::source).ok());
 
     string_id X, Y, member;
-    assert(bad_transaction.strings().intern("X", X).ok());
-    assert(bad_transaction.strings().intern("Y", Y).ok());
-    assert(bad_transaction.strings().intern("m", member).ok());
+    assert(bad_transaction.strings().bind("X", X).ok());
+    assert(bad_transaction.strings().bind("Y", Y).ok());
+    assert(bad_transaction.strings().bind("m", member).ok());
 
     graph_update::source_replacement replacement;
     assert(bad_transaction.graph_state().replace_source(

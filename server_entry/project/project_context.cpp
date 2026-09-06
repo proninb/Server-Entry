@@ -55,6 +55,320 @@ void emit_tracking_warning(
         message);
 }
 
+void record_duration_ns(
+    metrics_store& metrics,
+    metric_id id,
+    std::uint64_t duration_ns) noexcept {
+
+    metrics.record_duration(
+        id,
+        std::chrono::nanoseconds{
+            static_cast<std::chrono::nanoseconds::rep>(
+                duration_ns)
+        });
+}
+
+void flush_g0_frontend_metrics(
+    metrics_store& metrics,
+    const source_frontend_summary& summary) noexcept {
+
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_acquire_prepare_duration,
+        summary.g0_acquire_prepare_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_acquire_execute_duration,
+        summary.g0_acquire_execute_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_acquire_apply_duration,
+        summary.g0_acquire_apply_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_discovery_duration,
+        summary.g0_discovery_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_validation_duration,
+        summary.g0_validation_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_semantic_duration,
+        summary.g0_semantic_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_publish_duration,
+        summary.g0_publish_ns);
+
+    if (metrics.mode() == metrics_mode::detailed) {
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_reserve_scan_duration,
+            summary.g0_publish_reserve_scan_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_string_reserve_duration,
+            summary.g0_publish_string_reserve_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_source_replace_duration,
+            summary.g0_publish_source_replace_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_name_duration,
+            summary.g0_publish_enum_name_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_values_duration,
+            summary.g0_publish_enum_values_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_sample_name_resolve_duration,
+            summary.g0_publish_enum_sample_name_resolve_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_sample_name_intern_duration,
+            summary.g0_publish_enum_sample_name_intern_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_sample_values_resolve_duration,
+            summary.g0_publish_enum_sample_values_resolve_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_sample_values_intern_duration,
+            summary.g0_publish_enum_sample_values_intern_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_duration,
+            summary.g0_publish_enum_builder_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_value_copy_duration,
+            summary.g0_publish_enum_builder_value_copy_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_mutation_duration,
+            summary.g0_publish_enum_builder_graph_mutation_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_total_duration,
+            summary.g0_publish_enum_builder_graph_sample_total_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_source_replacement_duration,
+            summary.g0_publish_enum_builder_graph_sample_source_replacement_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_identity_duration,
+            summary.g0_publish_enum_builder_graph_sample_identity_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_contribution_build_duration,
+            summary.g0_publish_enum_builder_graph_sample_contribution_build_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_reconcile_duration,
+            summary.g0_publish_enum_builder_graph_sample_reconcile_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_delta_duration,
+            summary.g0_publish_enum_builder_graph_sample_delta_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_contribution_append_duration,
+            summary.g0_publish_enum_builder_graph_sample_contribution_append_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_duration,
+            summary.g0_publish_enum_builder_graph_sample_materialize_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_state_touch_duration,
+            summary.g0_publish_enum_builder_graph_sample_materialize_state_touch_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_type_storage_duration,
+            summary.g0_publish_enum_builder_graph_sample_materialize_type_storage_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_build_state_duration,
+            summary.g0_publish_enum_builder_graph_sample_materialize_build_state_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_assign_type_duration,
+            summary.g0_publish_enum_builder_graph_sample_materialize_assign_type_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_assign_type_handle_duration,
+            summary.g0_publish_enum_builder_graph_sample_assign_type_handle_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_assign_type_touch_type_duration,
+            summary.g0_publish_enum_builder_graph_sample_assign_type_touch_type_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_assign_type_candidate_store_duration,
+            summary.g0_publish_enum_builder_graph_sample_assign_type_candidate_store_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_assign_type_named_type_ref_duration,
+            summary.g0_publish_enum_builder_graph_sample_assign_type_named_type_ref_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_named_type_ref_existing_lookup_duration,
+            summary.g0_publish_enum_builder_graph_sample_named_type_ref_existing_lookup_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_named_type_ref_canonical_append_duration,
+            summary.g0_publish_enum_builder_graph_sample_named_type_ref_canonical_append_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_named_type_ref_mapping_append_duration,
+            summary.g0_publish_enum_builder_graph_sample_named_type_ref_mapping_append_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_named_type_ref_index_emplace_duration,
+            summary.g0_publish_enum_builder_graph_sample_named_type_ref_index_emplace_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_attach_duration,
+            summary.g0_publish_enum_builder_graph_sample_materialize_attach_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_graph_sample_result_lookup_duration,
+            summary.g0_publish_enum_builder_graph_sample_result_lookup_ns);
+
+        if (summary.g0_publish_enum_builder_graph_call_count != 0) {
+            metrics.increment(
+                metric_id::frontend_g0_publish_enum_builder_graph_call_count,
+                summary.g0_publish_enum_builder_graph_call_count);
+        }
+
+        if (summary.g0_publish_enum_builder_graph_sample_count != 0) {
+            metrics.increment(
+                metric_id::frontend_g0_publish_enum_builder_graph_sample_count,
+                summary.g0_publish_enum_builder_graph_sample_count);
+        }
+
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_enum_builder_residual_duration,
+            summary.g0_publish_enum_builder_residual_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_aggregate_builder_duration,
+            summary.g0_publish_aggregate_builder_ns);
+        record_duration_ns(
+            metrics,
+            metric_id::frontend_g0_publish_residual_duration,
+            summary.g0_publish_residual_ns);
+
+        if (summary.g0_publish_source_count != 0) {
+            metrics.increment(
+                metric_id::frontend_g0_publish_source_count,
+                summary.g0_publish_source_count);
+        }
+
+        if (summary.g0_publish_enum_builder_count != 0) {
+            metrics.increment(
+                metric_id::frontend_g0_publish_enum_builder_count,
+                summary.g0_publish_enum_builder_count);
+        }
+
+        if (summary.g0_publish_aggregate_builder_count != 0) {
+            metrics.increment(
+                metric_id::frontend_g0_publish_aggregate_builder_count,
+                summary.g0_publish_aggregate_builder_count);
+        }
+    }
+
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_commit_duration,
+        summary.g0_commit_ns);
+
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_source_prepare_duration,
+        summary.g0_tx_source_prepare_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_string_prepare_duration,
+        summary.g0_tx_string_prepare_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_graph_prepare_duration,
+        summary.g0_tx_graph_prepare_ns);
+
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_pending_member_resolution_duration,
+        summary.g0_graph_pending_member_resolution_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_live_typeref_validation_duration,
+        summary.g0_graph_live_typeref_validation_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_canonical_typeref_rebuild_duration,
+        summary.g0_graph_canonical_typeref_rebuild_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_string_validation_duration,
+        summary.g0_graph_string_validation_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_definition_scan_duration,
+        summary.g0_graph_definition_scan_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_definition_materialization_duration,
+        summary.g0_graph_definition_materialization_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_rebuild_storage_duration,
+        summary.g0_graph_rebuild_storage_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_dependency_index_duration,
+        summary.g0_graph_dependency_index_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_graph_final_prepare_duration,
+        summary.g0_graph_final_prepare_ns);
+
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_string_retention_duration,
+        summary.g0_tx_string_retention_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_string_compaction_duration,
+        summary.g0_tx_string_compaction_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_contribution_prepare_duration,
+        summary.g0_tx_contribution_prepare_ns);
+
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_source_publish_duration,
+        summary.g0_tx_source_publish_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_string_publish_duration,
+        summary.g0_tx_string_publish_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_contribution_publish_duration,
+        summary.g0_tx_contribution_publish_ns);
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_g0_tx_graph_publish_duration,
+        summary.g0_tx_graph_publish_ns);
+}
+
 } // namespace
 
 status project_context::initialize(
@@ -148,6 +462,13 @@ status project_context::load_project(
     logger& log,
     metrics_store& metrics) noexcept {
 
+    metrics.increment(metric_id::project_load_count);
+
+    scoped_timer project_load_timer{
+        metrics,
+        metric_id::project_load_duration
+    };
+
     diagnostic_records.clear();
     frontend_cache.invalidate();
     change_tracker.stop();
@@ -231,14 +552,29 @@ status project_context::load_project(
     source_acquisition_telemetry acquisition{metrics.mode()};
     source_frontend_generation frontend{transaction};
 
-    const auto rebuilt = frontend.rebuild(
-        operation,
-        diagnostic_records,
-        acquisition,
-        builder);
+    source_rebuild_result rebuilt;
+
+    metrics.increment(metric_id::frontend_build_count);
+
+    {
+        scoped_timer frontend_timer{
+            metrics,
+            metric_id::frontend_build_duration
+        };
+
+        rebuilt = frontend.rebuild(
+            operation,
+            diagnostic_records,
+            acquisition,
+            builder);
+    }
 
     acquisition.flush_to(metrics);
     frontend_summary = rebuilt.frontend;
+
+    flush_g0_frontend_metrics(
+        metrics,
+        frontend_summary);
 
     if (!rebuilt.ok()) {
         log.error(
@@ -260,6 +596,11 @@ status project_context::load_project(
                 std::chrono::steady_clock::now() -
                 cache_begin).count());
 
+    record_duration_ns(
+        metrics,
+        metric_id::frontend_cache_publish_duration,
+        frontend_summary.g0_cache_publish_ns);
+
     if (!cache_result.ok()) {
         frontend_cache.invalidate();
 
@@ -269,8 +610,17 @@ status project_context::load_project(
             "frontend cache initialization failed");
     }
 
-    result = runtime_instance.attach(
-        graphs.compiled_graph());
+    metrics.increment(metric_id::runtime_attach_count);
+
+    {
+        scoped_timer runtime_timer{
+            metrics,
+            metric_id::runtime_attach_duration
+        };
+
+        result = runtime_instance.attach(
+            graphs.compiled_graph());
+    }
 
     if (!result.ok()) {
         try_emit(
@@ -309,6 +659,11 @@ status project_context::load_project(
                 std::chrono::duration_cast<std::chrono::nanoseconds>(
                     std::chrono::steady_clock::now() -
                     tracker_begin).count());
+
+        record_duration_ns(
+            metrics,
+            metric_id::source_tracker_init_duration,
+            frontend_summary.g0_tracker_init_ns);
 
         change_tracking_ready =
             tracking_result.ok();

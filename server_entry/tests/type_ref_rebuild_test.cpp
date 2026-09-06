@@ -26,9 +26,9 @@ static void publish_types(
     string_id a;
     string_id b;
     string_id member_name;
-    assert(tx.strings().intern("A", a).ok());
-    assert(tx.strings().intern("B", b).ok());
-    assert(tx.strings().intern("value", member_name).ok());
+    assert(tx.strings().bind("A", a).ok());
+    assert(tx.strings().bind("B", b).ok());
+    assert(tx.strings().bind("value", member_name).ok());
 
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
@@ -99,8 +99,8 @@ int main() {
         publish_types(tx, source, pointer);
         assert(tx.commit().ok());
 
-        original_a = manager.compiled_graph().find_id(manager.strings().find("A"));
-        original_b = manager.compiled_graph().find_id(manager.strings().find("B"));
+        original_a = manager.compiled_graph().find_id(manager.strings().find_for_test("A"));
+        original_b = manager.compiled_graph().find_id(manager.strings().find_for_test("B"));
         assert(original_a && original_b);
         assert(manager.compiled_graph().derived_type_count() == 1);
     }
@@ -140,8 +140,8 @@ int main() {
     assert(compact.canonical_types.size() == initial_size);
     assert(compact.canonical_types.size() < grown_size);
 
-    assert(manager.compiled_graph().find_id(manager.strings().find("A")) == original_a);
-    assert(manager.compiled_graph().find_id(manager.strings().find("B")) == original_b);
+    assert(manager.compiled_graph().find_id(manager.strings().find_for_test("A")) == original_a);
+    assert(manager.compiled_graph().find_id(manager.strings().find_for_test("B")) == original_b);
 
     const auto* a = manager.compiled_graph().find(original_a);
     assert(a);

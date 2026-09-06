@@ -54,10 +54,10 @@ int main() {
     const auto source = transaction.sources().roots()[0].source;
 
     string_id A, B, E, F;
-    assert(transaction.strings().intern("A", A).ok());
-    assert(transaction.strings().intern("B", B).ok());
-    assert(transaction.strings().intern("E", E).ok());
-    assert(transaction.strings().intern("F", F).ok());
+    assert(transaction.strings().bind("A", A).ok());
+    assert(transaction.strings().bind("B", B).ok());
+    assert(transaction.strings().bind("E", E).ok());
+    assert(transaction.strings().bind("F", F).ok());
 
     graph_update::source_replacement replacement;
     assert(transaction.graph_state().replace_source(source, replacement).ok());

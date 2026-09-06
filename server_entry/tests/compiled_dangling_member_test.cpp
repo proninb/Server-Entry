@@ -18,9 +18,9 @@ int main() {
     const auto roots = tx.sources().roots();
 
     string_id A, B, member_name;
-    assert(tx.strings().intern("A", A).ok());
-    assert(tx.strings().intern("B", B).ok());
-    assert(tx.strings().intern("b", member_name).ok());
+    assert(tx.strings().bind("A", A).ok());
+    assert(tx.strings().bind("B", B).ok());
+    assert(tx.strings().bind("b", member_name).ok());
 
     graph_update::source_replacement rb;
     assert(tx.graph_state().replace_source(roots[0].source, rb).ok());

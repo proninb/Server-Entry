@@ -42,7 +42,7 @@ static status build(graph_manager& manager,
 }
 
 static const entity_entry* find(const graph_manager& manager, const char* name) {
-    auto id = manager.strings().find(name);
+    auto id = manager.strings().find_for_test(name);
     return id ? manager.compiled_graph().find(id) : nullptr;
 }
 
@@ -66,8 +66,8 @@ int main() {
     const auto* initial_a = find(initial, "A");
     const auto* initial_b = find(initial, "B");
     assert(initial_a && initial_b);
-    const auto a_id = initial.compiled_graph().find_id(initial.strings().find("A")).value();
-    const auto b_id = initial.compiled_graph().find_id(initial.strings().find("B")).value();
+    const auto a_id = initial.compiled_graph().find_id(initial.strings().find_for_test("A")).value();
+    const auto b_id = initial.compiled_graph().find_id(initial.strings().find_for_test("B")).value();
     assert(a_id != b_id);
 
     graph_manager restored;
@@ -84,12 +84,12 @@ int main() {
     const auto* rebuilt_b = find(restored, "B");
     const auto* rebuilt_c = find(restored, "C");
     assert(rebuilt_a && !rebuilt_b && rebuilt_c);
-    assert(restored.compiled_graph().find_id(restored.strings().find("A")).value() == a_id);
-    assert(restored.compiled_graph().find_id(restored.strings().find("C")).value() > b_id);
+    assert(restored.compiled_graph().find_id(restored.strings().find_for_test("A")).value() == a_id);
+    assert(restored.compiled_graph().find_id(restored.strings().find_for_test("C")).value() > b_id);
 
     // Once provenance has been reconstructed, ordinary incremental replacement
     // must continue to remove the previous Source contribution correctly.
-    const auto c_id = restored.compiled_graph().find_id(restored.strings().find("C")).value();
+    const auto c_id = restored.compiled_graph().find_id(restored.strings().find_for_test("C")).value();
     write_file(source, "struct A; struct D;\n");
     assert(build(restored, source).ok());
 
@@ -97,11 +97,11 @@ int main() {
     const auto* final_c = find(restored, "C");
     const auto* final_d = find(restored, "D");
     assert(final_a && !final_c && final_d);
-    assert(restored.compiled_graph().find_id(restored.strings().find("A")).value() == a_id);
-    assert(restored.compiled_graph().find_id(restored.strings().find("D")).value() > c_id);
+    assert(restored.compiled_graph().find_id(restored.strings().find_for_test("A")).value() == a_id);
+    assert(restored.compiled_graph().find_id(restored.strings().find_for_test("D")).value() > c_id);
 
     std::cout << "PASS A=" << a_id
               << " B=" << b_id
               << " C=" << c_id
-              << " D=" << restored.compiled_graph().find_id(restored.strings().find("D")).value() << '\n';
+              << " D=" << restored.compiled_graph().find_id(restored.strings().find_for_test("D")).value() << '\n';
 }

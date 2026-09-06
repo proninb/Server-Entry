@@ -51,6 +51,58 @@ struct source_frontend_summary {
     std::uint64_t g0_validation_ns = 0;
     std::uint64_t g0_semantic_ns = 0;
     std::uint64_t g0_publish_ns = 0;
+
+    // Detailed publication decomposition is enabled only for detailed metrics.
+    // Basic production publication performs no per-fact clock reads.
+    std::uint64_t g0_publish_reserve_scan_ns = 0;
+    std::uint64_t g0_publish_string_reserve_ns = 0;
+    std::uint64_t g0_publish_source_replace_ns = 0;
+    std::uint64_t g0_publish_enum_name_ns = 0;
+    std::uint64_t g0_publish_enum_values_ns = 0;
+    std::uint64_t g0_publish_enum_sample_name_resolve_ns = 0;
+    std::uint64_t g0_publish_enum_sample_name_intern_ns = 0;
+    std::uint64_t g0_publish_enum_sample_values_resolve_ns = 0;
+    std::uint64_t g0_publish_enum_sample_values_intern_ns = 0;
+    std::uint64_t g0_publish_enum_builder_ns = 0;
+    std::uint64_t g0_publish_enum_builder_value_copy_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_mutation_ns = 0;
+
+    std::uint64_t g0_publish_enum_builder_graph_sample_total_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_source_replacement_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_identity_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_contribution_build_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_reconcile_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_delta_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_contribution_append_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_materialize_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_materialize_state_touch_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_materialize_type_storage_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_materialize_build_state_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_materialize_assign_type_ns = 0;
+
+    std::uint64_t g0_publish_enum_builder_graph_sample_assign_type_handle_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_assign_type_touch_type_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_assign_type_candidate_store_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_assign_type_named_type_ref_ns = 0;
+
+    std::uint64_t g0_publish_enum_builder_graph_sample_named_type_ref_existing_lookup_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_named_type_ref_canonical_append_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_named_type_ref_mapping_append_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_named_type_ref_index_emplace_ns = 0;
+
+    std::uint64_t g0_publish_enum_builder_graph_sample_materialize_attach_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_result_lookup_ns = 0;
+    std::uint64_t g0_publish_enum_builder_graph_call_count = 0;
+    std::uint64_t g0_publish_enum_builder_graph_sample_count = 0;
+
+    std::uint64_t g0_publish_enum_builder_residual_ns = 0;
+    std::uint64_t g0_publish_aggregate_builder_ns = 0;
+    std::uint64_t g0_publish_residual_ns = 0;
+
+    std::uint64_t g0_publish_source_count = 0;
+    std::uint64_t g0_publish_enum_builder_count = 0;
+    std::uint64_t g0_publish_aggregate_builder_count = 0;
+
     std::uint64_t g0_commit_ns = 0;
 
     std::uint64_t g0_tx_source_prepare_ns = 0;

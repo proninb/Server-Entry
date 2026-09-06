@@ -76,10 +76,10 @@ int main() {
     assert(result.ok());
     assert(manager.state() == project_state::valid);
     assert(manager.compiled_graph().entity_count() == count + 1);
-    assert(manager.strings().find("Root"));
+    assert(manager.strings().find_for_test("Root"));
 
     for (int index = 0; index < count; ++index)
-        assert(manager.strings().find(name(index)));
+        assert(manager.strings().find_for_test(name(index)));
 
     std::cout << "PASS fanout=" << count << '\n';
 }
