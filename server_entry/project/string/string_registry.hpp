@@ -91,6 +91,7 @@ public:
     string_registry_update& operator=(string_registry_update&&) = delete;
 
     [[nodiscard]] string_id find(std::string_view value) const noexcept;
+    [[nodiscard]] status reserve_new_strings(std::size_t count) noexcept;
     [[nodiscard]] status intern(std::string_view value, string_id& result) noexcept;
     [[nodiscard]] std::optional<std::string_view> get(string_id id) const noexcept;
     [[nodiscard]] std::size_t added_size() const noexcept {

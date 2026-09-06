@@ -17,6 +17,7 @@
 #include <atomic>
 #include <chrono>
 #include <iterator>
+#include <limits>
 #include <thread>
 
 namespace cw::server {
@@ -1683,12 +1684,63 @@ source_rebuild_result source_frontend_generation::rebuild(
             const auto publish_begin =
                 std::chrono::steady_clock::now();
 
+            std::size_t string_reserve_hint = 0;
+            const auto maximum =
+                (std::numeric_limits<std::size_t>::max)();
+
+            const auto add_string_reserve =
+                [&](std::size_t count) noexcept {
+                    if (count >
+                        maximum - string_reserve_hint) {
+                        return false;
+                    }
+
+                    string_reserve_hint += count;
+                    return true;
+                };
+
+            for (const auto& state : states) {
+                if (!state.parsed ||
+                    !state.build_entry ||
+                    state.published) {
+                    continue;
+                }
+
+                const auto& entry =
+                    *state.build_entry;
+
+                if (!add_string_reserve(
+                        entry.enums.size()) ||
+                    !add_string_reserve(
+                        entry.enum_values.size()) ||
+                    !add_string_reserve(
+                        entry.aggregates.size()) ||
+                    !add_string_reserve(
+                        entry.members.size()) ||
+                    !add_string_reserve(
+                        entry.members.size())) {
+                    result = {
+                        status_code::initialization_failed
+                    };
+                    break;
+                }
+            }
+
+            if (result.ok()) {
+                result =
+                    transaction->strings().
+                        reserve_new_strings(
+                            string_reserve_hint);
+            }
+
             source_publish_scratch publish_scratch;
 
             // Canonical mutation is single-owner and deterministic. source_id is
             // the build-side ownership coordinate; worker completion order is
             // deliberately irrelevant to String/Entity/TypeRef allocation.
-            for (std::size_t index = 0; index < states.size(); ++index) {
+            for (std::size_t index = 0;
+                 result.ok() && index < states.size();
+                 ++index) {
                 auto& state = states[index];
 
                 if (!state.parsed || !state.build_entry || state.published) {

@@ -225,7 +225,64 @@ string_id string_registry_update::find(
         return added->second;
     }
 
-    return owner->find(value);
+    return owner->lookup_index.empty()
+               ? string_id{}
+               : owner->find(value);
+}
+
+status string_registry_update::reserve_new_strings(
+    std::size_t count) noexcept {
+
+    if (!failure.ok()) {
+        return failure;
+    }
+
+    if (owner == nullptr ||
+        committed ||
+        prepared ||
+        owner->generation != base_generation) {
+        return {status_code::invalid_state};
+    }
+
+    if (count == 0) {
+        return {};
+    }
+
+    const auto maximum =
+        (std::numeric_limits<std::size_t>::max)();
+
+    if (count > maximum - added_records.size() ||
+        count > maximum - added_lookup.size()) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+
+    try {
+        const auto record_required =
+            added_records.size() + count;
+
+        const auto lookup_required =
+            added_lookup.size() + count;
+
+        added_records.reserve(
+            string_sparse_capacity(record_required));
+
+        added_lookup.reserve(
+            string_sparse_capacity(lookup_required));
+
+        return {};
+    }
+    catch (const std::bad_alloc&) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+    catch (const std::length_error&) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
 }
 
 status string_registry_update::intern(

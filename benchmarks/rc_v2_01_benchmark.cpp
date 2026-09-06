@@ -1,10 +1,12 @@
 #include "../server_entry/project/graph/graph_build_transaction_test_access.hpp"
 #include "../server_entry/tests/rc_v2_01a_gates.hpp"
+#include "../server_entry/metrics/source_acquisition_telemetry.hpp"
 
 #include <array>
 #include <chrono>
 #include <cstdlib>
 #include <filesystem>
+#include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <string>
@@ -45,11 +47,76 @@ double milliseconds(clock_type::duration value) {
 }
 
 std::filesystem::path source_path(std::size_t index) {
-    return std::filesystem::path{
-        L"C:\\rc-v2-01\\source_" +
-        std::to_wstring(index) +
-        L".cpp"
+    return
+        std::filesystem::temp_directory_path() /
+        "cw_rc_v2_01_benchmark_sources" /
+        ("source_" + std::to_string(index) + ".cpp");
+}
+
+std::vector<source_id> prepare_physical_sources(
+    graph_build_transaction& transaction,
+    std::size_t count) {
+
+    const auto root =
+        std::filesystem::temp_directory_path() /
+        "cw_rc_v2_01_benchmark_sources";
+
+    std::error_code error;
+    std::filesystem::create_directories(root, error);
+
+    require(!error, "Benchmark Source directory creation failed");
+
+    source_acquisition_telemetry telemetry{
+        metrics_mode::off
     };
+
+    std::vector<source_id> sources;
+    sources.reserve(count);
+
+    for (std::size_t index = 0;
+         index < count;
+         ++index) {
+        const auto path = source_path(index);
+
+        if (!std::filesystem::exists(path, error)) {
+            require(
+                !error,
+                "Benchmark Source existence check failed");
+
+            std::ofstream output{
+                path,
+                std::ios::binary | std::ios::trunc
+            };
+
+            require(
+                static_cast<bool>(output),
+                "Benchmark Source creation failed");
+        }
+        else {
+            require(
+                !error,
+                "Benchmark Source existence check failed");
+        }
+
+        source_id source;
+
+        require(
+            transaction.sources().resolve(
+                path,
+                project_item_role::source,
+                source).ok(),
+            "Physical Source resolution failed");
+
+        require(
+            transaction.sources().acquire(
+                source,
+                telemetry).ok(),
+            "Physical Source acquisition failed");
+
+        sources.push_back(source);
+    }
+
+    return sources;
 }
 
 std::string type_name(std::size_t index) {
@@ -63,17 +130,11 @@ struct prepared_type {
 
 prepared_type prepare_source(
     graph_build_transaction& transaction,
-    std::size_t index,
+    source_id source,
     std::string_view spelling) {
 
     prepared_type result;
-
-    require(
-        transaction.sources().resolve(
-            source_path(index),
-            project_item_role::source,
-            result.source).ok(),
-        "Source resolution failed");
+    result.source = source;
 
     require(
         transaction.strings().intern(
@@ -188,13 +249,20 @@ row g0_initial(
     source_id& target_source,
     string_id& target_name) {
 
+    auto transaction =
+        manager.begin_build(graph_build_mode::rebuild);
+
+    const auto sources =
+        prepare_physical_sources(
+            transaction,
+            count);
+
     const auto contribution_before =
         access::contribution_storage(manager);
 
+    // Physical Source setup is deliberately outside the measured interval.
+    // RC-V2-01 measures canonical String/Entity/Graph construction only.
     const auto started = clock_type::now();
-
-    auto transaction =
-        manager.begin_build(graph_build_mode::rebuild);
 
     for (std::size_t index = 0;
          index < count;
@@ -203,7 +271,7 @@ row g0_initial(
         const auto prepared =
             prepare_source(
                 transaction,
-                index,
+                sources[index],
                 name);
 
         replace_with_opaque_enum(
@@ -491,8 +559,16 @@ void fail_closed_gate() {
         auto transaction =
             manager.begin_build(graph_build_mode::rebuild);
 
+        const auto sources =
+            prepare_physical_sources(
+                transaction,
+                1);
+
         const auto prepared =
-            prepare_source(transaction, 0, "Base");
+            prepare_source(
+                transaction,
+                sources[0],
+                "Base");
 
         source = prepared.source;
         name = prepared.name;
@@ -562,14 +638,14 @@ void fail_closed_gate() {
 
 void define_empty_aggregate(
     graph_build_transaction& transaction,
-    std::size_t source_index,
+    source_id source,
     std::string_view name,
     std::string_view dependency = {}) {
 
     const auto prepared =
         prepare_source(
             transaction,
-            source_index,
+            source,
             name);
 
     graph_update::source_replacement replacement;
@@ -646,18 +722,23 @@ void dependency_chain_gate() {
         auto transaction =
             manager.begin_build(graph_build_mode::rebuild);
 
+        const auto sources =
+            prepare_physical_sources(
+                transaction,
+                3);
+
         define_empty_aggregate(
             transaction,
-            0,
+            sources[0],
             "T0");
         define_empty_aggregate(
             transaction,
-            1,
+            sources[1],
             "T1",
             "T0");
         define_empty_aggregate(
             transaction,
-            2,
+            sources[2],
             "T2",
             "T1");
 
@@ -671,7 +752,7 @@ void dependency_chain_gate() {
 
     define_empty_aggregate(
         transaction,
-        0,
+        source_id{1},
         "T0");
 
     require(

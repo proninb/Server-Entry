@@ -1,0 +1,13 @@
+RC-V2-01A final repair generated from uploaded current snapshot
+
+0576597fd38b7905b02fed62a06b38753836e16364ccaca66c6e0631f5e259fc     22579  server_entry\project\graph\graph.hpp
+17e1e809c521d554c3f3c2f7ca8f9928ee91010f238c612921ab419677a64d50    132733  server_entry\project\graph\graph.cpp
+ee412d276dcb466e3e49e7f62d076a51222cf5885faf61d0d60588bc936a9c6c      4060  server_entry\project\graph\graph_build_transaction.hpp
+f3427b4570004de681c0b5cbc0cf0d97a44dde1f91b00d908df6c914eb120213      6016  server_entry\project\graph\graph_build_transaction.cpp
+3476ba64437c21964308e570332216ab72a6518619253be322fb128fc9bfefbe      6684  server_entry\project\builder\source_contribution_cache.hpp
+30273eb684763dde005c19dd8d7f37a34a7c89e40000f589b6935ec9b6659a68     11618  server_entry\project\builder\source_contribution_cache.cpp
+314ab8e1ccd87e7c65414f1d92583e85bd906545713331799d0c9b6182834668     13428  server_entry\project\string\string_registry.cpp
+f54923ad85d0331d80bf78b60c33f8140c19422fa8b7a4fa5183ef670f245216      3770  ProjectBuilderBenchmark.vcxproj
+ef85c7cdfda376d7eb1a0ee706c1fc9ee3f1837255a59593fe27cae1d333cbc4      2078  server_entry\project\graph\graph_build_transaction_test_access.hpp
+3822cb46eed102f5d237b820eacaa8617c6010165720e1d8c7a99890e44a23b4      2626  server_entry\tests\rc_v2_01a_gates.hpp
+29e90806a5b7944734d9496a1515a9cd93490b7432e8a465cf5cd45ef3453916     18434  benchmarks\rc_v2_01_benchmark.cpp
