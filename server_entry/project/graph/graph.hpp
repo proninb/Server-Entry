@@ -69,6 +69,11 @@ struct graph_storage_prepare_telemetry {
     std::size_t changed_sources = 0;
     std::size_t changed_entities = 0;
     std::size_t changed_types = 0;
+
+    std::size_t pending_resolution_types = 0;
+    std::size_t pending_resolution_members = 0;
+    std::size_t pending_resolution_modifiers = 0;
+
     std::size_t validation_visited_types = 0;
     std::size_t validation_visited_type_refs = 0;
     std::size_t validation_dependency_edges = 0;

@@ -1847,6 +1847,407 @@ void run_edge_scaling_matrix() {
     }
 }
 
+constexpr std::size_t typeref_resolution_filler_members = 4096;
+constexpr std::size_t typeref_resolution_max_refs = 256;
+
+struct typeref_resolution_baseline {
+    source_id target_source{};
+    string_id target_name{};
+    string_id dependency_name{};
+    std::vector<string_id> member_names;
+};
+
+const char* typeref_resolution_scenario(
+    std::size_t refs) noexcept {
+
+    switch (refs) {
+    case 1:
+        return "typeref_r1";
+    case 4:
+        return "typeref_r4";
+    case 16:
+        return "typeref_r16";
+    case 64:
+        return "typeref_r64";
+    case 256:
+        return "typeref_r256";
+    default:
+        return "typeref_invalid";
+    }
+}
+
+void define_typeref_filler(
+    graph_build_transaction& transaction,
+    source_id source,
+    string_id name,
+    std::vector<string_id>& retained_member_names) {
+
+    graph_update::source_replacement replacement;
+
+    require(
+        transaction.graph_state().replace_source(
+            source,
+            replacement).ok(),
+        "RC-V2-07 filler Source replacement failed");
+
+    stable_id entity;
+    type_handle type;
+
+    require(
+        replacement.add_named_type(
+            name,
+            aggregate_definition_state::defined,
+            entity,
+            type).ok(),
+        "RC-V2-07 filler aggregate creation failed");
+
+    std::vector<member_build> members;
+    members.reserve(
+        typeref_resolution_filler_members);
+
+    retained_member_names.clear();
+    retained_member_names.reserve(
+        typeref_resolution_max_refs);
+
+    for (std::size_t index = 0;
+         index < typeref_resolution_filler_members;
+         ++index) {
+        string_id member_name;
+
+        require(
+            transaction.strings().intern(
+                "typeref_member_" +
+                    std::to_string(index),
+                member_name).ok(),
+            "RC-V2-07 filler member String interning failed");
+
+        if (index < typeref_resolution_max_refs) {
+            retained_member_names.push_back(
+                member_name);
+        }
+
+        members.push_back(
+            member_build{
+                member_name,
+                std::optional<builtin_type>{
+                    builtin_type::integer
+                },
+                {},
+                0,
+                0
+            });
+    }
+
+    require(
+        replacement.define_members(
+            type,
+            members,
+            {}).ok(),
+        "RC-V2-07 filler member definition failed");
+}
+
+typeref_resolution_baseline
+build_typeref_resolution_baseline(
+    graph_manager& manager,
+    std::size_t count) {
+
+    require(
+        count >= 8192,
+        "RC-V2-07 N smaller than workload");
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::rebuild);
+
+    auto sources =
+        prepare_physical_sources(
+            transaction,
+            count);
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(
+                count +
+                typeref_resolution_filler_members +
+                512)
+            .ok(),
+        "RC-V2-07 G0 String reserve failed");
+
+    typeref_resolution_baseline baseline;
+
+    require(
+        transaction.strings().intern(
+            type_name(0),
+            baseline.dependency_name).ok(),
+        "RC-V2-07 dependency name interning failed");
+
+    replace_with_opaque_enum(
+        transaction,
+        sources[0],
+        baseline.dependency_name);
+
+    require(
+        transaction.strings().intern(
+            type_name(1),
+            baseline.target_name).ok(),
+        "RC-V2-07 target name interning failed");
+
+    define_empty_aggregate(
+        transaction,
+        sources[1],
+        type_name(1));
+
+    baseline.target_source =
+        sources[1];
+
+    string_id filler_name;
+
+    require(
+        transaction.strings().intern(
+            type_name(2),
+            filler_name).ok(),
+        "RC-V2-07 filler name interning failed");
+
+    define_typeref_filler(
+        transaction,
+        sources[2],
+        filler_name,
+        baseline.member_names);
+
+    for (std::size_t index = 3;
+         index < count;
+         ++index) {
+        const auto prepared =
+            prepare_source(
+                transaction,
+                sources[index],
+                type_name(index));
+
+        replace_with_opaque_enum(
+            transaction,
+            prepared.source,
+            prepared.name);
+    }
+
+    require(
+        transaction.commit().ok(),
+        "RC-V2-07 G0 baseline failed");
+
+    require(
+        baseline.member_names.size() ==
+            typeref_resolution_max_refs,
+        "RC-V2-07 retained member name count invalid");
+
+    require_g0_headroom(
+        manager,
+        count);
+
+    const auto storage =
+        access::graph_storage(manager);
+
+    require(
+        storage.canonical_types_size >= count,
+        "RC-V2-07 canonical TypeRef table is not O(N)");
+
+    require(
+        storage.member_records_capacity -
+            storage.member_records_size >=
+            341,
+        "RC-V2-07 member arena lacks incremental headroom");
+
+    return baseline;
+}
+
+row typeref_resolution_case(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t refs,
+    const typeref_resolution_baseline& baseline) {
+
+    require(
+        refs != 0 &&
+        refs <= baseline.member_names.size(),
+        "RC-V2-07 invalid R");
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    graph_update::source_replacement replacement;
+
+    require(
+        transaction.graph_state().replace_source(
+            baseline.target_source,
+            replacement).ok(),
+        "RC-V2-07 target Source replacement failed");
+
+    stable_id entity;
+    type_handle type;
+
+    require(
+        replacement.add_named_type(
+            baseline.target_name,
+            aggregate_definition_state::defined,
+            entity,
+            type).ok(),
+        "RC-V2-07 target aggregate creation failed");
+
+    std::vector<member_build> members;
+    members.reserve(refs);
+
+    for (std::size_t index = 0;
+         index < refs;
+         ++index) {
+        members.push_back(
+            member_build{
+                baseline.member_names[index],
+                std::nullopt,
+                baseline.dependency_name,
+                0,
+                0
+            });
+    }
+
+    require(
+        replacement.define_members(
+            type,
+            members,
+            {}).ok(),
+        "RC-V2-07 target member definition failed");
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        typeref_resolution_scenario(refs),
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+void require_typeref_resolution_gates(
+    const row& value,
+    std::size_t refs) {
+
+    const auto& graph =
+        value.graph;
+
+    require(
+        graph.changed_sources == 1,
+        "RC-V2-07 changed_sources != 1");
+
+    require(
+        graph.changed_entities == 1,
+        "RC-V2-07 changed_entities != 1");
+
+    require(
+        graph.changed_types == 1,
+        "RC-V2-07 changed_types != 1");
+
+    require(
+        graph.pending_resolution_types == 1,
+        "RC-V2-07 pending resolution touched != 1 Type");
+
+    require(
+        graph.pending_resolution_members == refs,
+        "RC-V2-07 pending resolution members != R");
+
+    require(
+        graph.pending_resolution_modifiers == 0,
+        "RC-V2-07 unexpected modifier resolution");
+
+    require(
+        graph.validation_visited_types == 1,
+        "RC-V2-07 validation visited != 1 Type");
+
+    require(
+        graph.validation_visited_type_refs == refs,
+        "RC-V2-07 validation TypeRefs != R");
+
+    require(
+        graph.validation_dependency_edges == 0,
+        "RC-V2-07 unexpected reverse dependency traversal");
+
+    require(
+        graph.canonical_types.size_before >=
+            value.types,
+        "RC-V2-07 global canonical table is too small");
+
+    require(
+        graph.canonical_types.size_after ==
+            graph.canonical_types.size_before,
+        "RC-V2-07 incremental resolution changed canonical table size");
+
+    require(
+        !rc_v2_01a::graph_reallocated(graph),
+        "RC-V2-07 committed Graph storage reallocated");
+
+    require(
+        !value.contribution_reallocated,
+        "RC-V2-07 SourceContribution storage reallocated");
+
+    require(
+        value.strings_before.records_data ==
+            value.strings_after.records_data,
+        "RC-V2-07 String records relocated");
+
+    require(
+        value.strings_before.lookup_bucket_count ==
+            value.strings_after.lookup_bucket_count,
+        "RC-V2-07 String lookup rehashed");
+}
+
+void run_typeref_resolution_matrix() {
+
+    for (const auto count :
+         std::array<std::size_t, 2>{
+             8192,
+             32768}) {
+        graph_manager manager;
+
+        require(
+            manager.initialize().ok(),
+            "RC-V2-07 manager initialization failed");
+
+        const auto baseline =
+            build_typeref_resolution_baseline(
+                manager,
+                count);
+
+        for (const auto refs :
+             std::array<std::size_t, 5>{
+                 1,
+                 4,
+                 16,
+                 64,
+                 256}) {
+            const auto value =
+                typeref_resolution_case(
+                    manager,
+                    count,
+                    refs,
+                    baseline);
+
+            require_typeref_resolution_gates(
+                value,
+                refs);
+
+            print_row(value);
+        }
+    }
+}
+
 void print_header() {
     std::cout
         << "types,scenario,total_ms,setup_ms,prepare_ms,publish_ms,"
@@ -1863,6 +2264,11 @@ void print_header() {
         << "graph_rebuild_storage_ms,"
         << "graph_dependency_index_ms,"
         << "graph_final_prepare_ms,"
+        << "pending_resolution_types,"
+        << "pending_resolution_members,"
+        << "pending_resolution_modifiers,"
+        << "canonical_types_size_before,"
+        << "canonical_types_size_after,"
         << "string_records_size_before,string_records_size_after,"
         << "string_records_capacity_before,string_records_capacity_after,"
         << "string_records_reallocated,string_records_relocation_bytes,"
@@ -1924,6 +2330,11 @@ void print_row(const row& value) {
         << milliseconds(timing.graph_rebuild_storage_ns) << ','
         << milliseconds(timing.graph_dependency_index_ns) << ','
         << milliseconds(timing.graph_final_prepare_ns) << ','
+        << value.graph.pending_resolution_types << ','
+        << value.graph.pending_resolution_members << ','
+        << value.graph.pending_resolution_modifiers << ','
+        << value.graph.canonical_types.size_before << ','
+        << value.graph.canonical_types.size_after << ','
         << value.strings_before.records_size << ','
         << value.strings_after.records_size << ','
         << value.strings_before.records_capacity << ','
@@ -2576,6 +2987,16 @@ void run_matrix(std::size_t count) {
 
 int main(int argc, char** argv) {
     if (argc == 2 &&
+        std::string_view{argv[1]} == "--rc-v2-07") {
+        print_header();
+        run_typeref_resolution_matrix();
+
+        std::cout
+            << "RC-V2-07 TYPEREF RESOLUTION SCALING PASS\n";
+        return 0;
+    }
+
+    if (argc == 2 &&
         std::string_view{argv[1]} == "--rc-v2-06") {
         print_header();
         run_edge_scaling_matrix();
@@ -2641,8 +3062,9 @@ int main(int argc, char** argv) {
     run_dependency_scaling_matrix();
     run_multi_root_dependency_matrix();
     run_edge_scaling_matrix();
+    run_typeref_resolution_matrix();
 
     std::cout
-        << "RC-V2-06 DEPENDENCY EDGE SCALING PASS\n";
+        << "RC-V2-07 TYPEREF RESOLUTION SCALING PASS\n";
     return 0;
 }

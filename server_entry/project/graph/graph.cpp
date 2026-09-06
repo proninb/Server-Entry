@@ -2472,6 +2472,14 @@ status graph_update::resolve_pending_members(
         return {};
     }
 
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+    ++storage_telemetry.pending_resolution_types;
+    storage_telemetry.pending_resolution_members +=
+        build.pending_members.size();
+    storage_telemetry.pending_resolution_modifiers +=
+        build.pending_modifiers.size();
+#endif
+
     try {
         std::vector<member_record> resolved_members;
         resolved_members.reserve(build.pending_members.size());
