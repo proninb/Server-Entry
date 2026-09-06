@@ -148,6 +148,62 @@ const source_contribution_state* source_contribution_cache_update::committed(
     return &owner->states[source.value()];
 }
 
+bool source_contribution_cache_update::has_retained_previous(
+    source_id source) const noexcept {
+
+    if (!owner ||
+        !source ||
+        source.value() >= owner->candidates.size()) {
+        return false;
+    }
+
+    const auto& slot =
+        owner->candidates[source.value()];
+
+    return
+        slot.generation == candidate_generation &&
+        slot.previous_retained;
+}
+
+status source_contribution_cache_update::retain_previous(
+    source_id source) noexcept {
+
+    if (!owner ||
+        prepared ||
+        committed_update ||
+        !source ||
+        source.value() >= owner->candidates.size()) {
+        return failure = {status_code::invalid_state};
+    }
+
+    auto& slot =
+        owner->candidates[source.value()];
+
+    if (slot.generation != candidate_generation) {
+        return failure = {status_code::invalid_state};
+    }
+
+    slot.previous_retained = true;
+    return {};
+}
+
+void source_contribution_cache_update::release_previous(
+    source_id source) noexcept {
+
+    if (!owner ||
+        !source ||
+        source.value() >= owner->candidates.size()) {
+        return;
+    }
+
+    auto& slot =
+        owner->candidates[source.value()];
+
+    if (slot.generation == candidate_generation) {
+        slot.previous_retained = false;
+    }
+}
+
 status source_contribution_cache_update::replace(
     source_id source,
     source_contribution_state*& output) noexcept {
@@ -170,6 +226,7 @@ status source_contribution_cache_update::replace(
         auto& slot = owner->candidates[source.value()];
         slot.generation = candidate_generation;
         slot.value = {};
+        slot.previous_retained = false;
         changed.push_back(source.value());
         output = &slot.value;
         return {};

@@ -177,6 +177,50 @@ std::uint64_t convert_integral(integral_constant value, builtin_type target,
     return converted & bit_mask(builtin_bit_width(target, abi));
 }
 
+bool same_source_definition(
+    const std::shared_ptr<const source_definition_payload>& left,
+    const std::shared_ptr<const source_definition_payload>& right) noexcept {
+
+    if (left == right) {
+        return true;
+    }
+
+    if (!left || !right ||
+        left->underlying != right->underlying ||
+        left->values.size() != right->values.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0;
+         index < left->values.size();
+         ++index) {
+        if (left->values[index].name != right->values[index].name ||
+            left->values[index].bits != right->values[index].bits) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool same_enum_contribution(
+    const source_contribution_record& left,
+    const source_contribution_record& right) noexcept {
+
+    return
+        left.entity == right.entity &&
+        left.name == right.name &&
+        left.kind == entity_kind::enum_type &&
+        right.kind == entity_kind::enum_type &&
+        left.state == right.state &&
+        left.scoped == right.scoped &&
+        left.fixed == right.fixed &&
+        left.underlying == right.underlying &&
+        same_source_definition(
+            left.definition,
+            right.definition);
+}
+
 } // namespace
 
 std::size_t graph::derived_type_key_hash::operator()(const derived_type_key& key) const noexcept {
@@ -1874,6 +1918,20 @@ status graph_update::begin_source_replacement(source_id source) noexcept {
         changed_sources.push_back(source.value());
 
         if (previous && !full_reconstruction) {
+            if (previous->named.size() == 1 &&
+                previous->anonymous_types.empty() &&
+                previous->named.front().kind ==
+                    entity_kind::enum_type) {
+                result =
+                    contributions->retain_previous(source);
+
+                if (!result.ok()) {
+                    return failure = result;
+                }
+
+                return {};
+            }
+
             for (const auto& contribution : previous->named) {
                 result = remove_delta(source, contribution);
 
@@ -1894,6 +1952,97 @@ status graph_update::begin_source_replacement(source_id source) noexcept {
     catch (...) {
         return failure = {status_code::initialization_failed};
     }
+}
+
+status graph_update::flush_retained_source_replacement(
+    source_id source) noexcept {
+
+    if (!contributions->has_retained_previous(source)) {
+        return {};
+    }
+
+    const auto* previous =
+        contributions->committed(source);
+
+    if (!previous ||
+        previous->named.size() != 1 ||
+        !previous->anonymous_types.empty() ||
+        previous->named.front().kind !=
+            entity_kind::enum_type) {
+        return failure = {status_code::configuration_failed};
+    }
+
+    contributions->release_previous(source);
+
+    const auto result =
+        remove_delta(
+            source,
+            previous->named.front());
+
+    return result.ok()
+        ? status{}
+        : failure = result;
+}
+
+status graph_update::flush_retained_source_replacements() noexcept {
+
+    for (const auto raw : changed_sources) {
+        const auto result =
+            flush_retained_source_replacement(
+                source_id{raw});
+
+        if (!result.ok()) {
+            return result;
+        }
+    }
+
+    return {};
+}
+
+status graph_update::reconcile_retained_enum(
+    source_id source,
+    const source_contribution_record& contribution,
+    bool& reconciled) noexcept {
+
+    reconciled = false;
+
+    if (!contributions->has_retained_previous(source)) {
+        return {};
+    }
+
+    const auto* previous =
+        contributions->committed(source);
+
+    if (!previous ||
+        previous->named.size() != 1 ||
+        !previous->anonymous_types.empty()) {
+        return failure = {status_code::configuration_failed};
+    }
+
+    const auto& old =
+        previous->named.front();
+
+    if (!same_enum_contribution(old, contribution)) {
+        return flush_retained_source_replacement(source);
+    }
+
+    auto* candidate =
+        contributions->candidate(source);
+
+    if (!candidate) {
+        return failure = {status_code::invalid_state};
+    }
+
+    try {
+        candidate->named.push_back(old);
+    }
+    catch (...) {
+        return failure = {status_code::initialization_failed};
+    }
+
+    contributions->release_previous(source);
+    reconciled = true;
+    return {};
 }
 
 status graph_update::declare_named_enum(string_id name, source_id source, const enum_build_data& data,
@@ -1917,9 +2066,17 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
             return failure = result;
         }
 
-        auto& identity_slot = touch_identity(name.value());
+        stable_id id;
 
-        auto id = identity_slot.value;
+        if (name.value() < owner->candidate_identities.size()) {
+            const auto& candidate_identity =
+                owner->candidate_identities[name.value()];
+
+            if (candidate_identity.generation ==
+                candidate_generation) {
+                id = candidate_identity.value;
+            }
+        }
 
         if (!id && name.value() < owner->identity.size()) {
             id = owner->identity[name.value()];
@@ -1931,8 +2088,7 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
             }
 
             id = stable_id{next_stable_id++};
-
-            identity_slot.value = id;
+            touch_identity(name.value()).value = id;
         }
 
         source_contribution_record contribution;
@@ -1943,6 +2099,44 @@ status graph_update::declare_named_enum(string_id name, source_id source, const 
 
         if (!result.ok()) {
             return failure = result;
+        }
+
+        bool reconciled = false;
+
+        result =
+            reconcile_retained_enum(
+                source,
+                contribution,
+                reconciled);
+
+        if (!result.ok()) {
+            return failure = result;
+        }
+
+        if (reconciled) {
+            const entity_entry* current = nullptr;
+
+            if (id.value() < owner->candidate_entities.size()) {
+                const auto& candidate =
+                    owner->candidate_entities[id.value()];
+
+                if (candidate.generation == candidate_generation &&
+                    candidate.entity.record.live()) {
+                    current = &candidate.entity.record;
+                }
+            }
+
+            if (!current && !full_reconstruction) {
+                current = owner->find(id);
+            }
+
+            if (!current || !current->type) {
+                return failure = {status_code::configuration_failed};
+            }
+
+            entity = id;
+            type = current->type;
+            return {};
         }
 
         result = add_delta(source, id, contribution);
@@ -1991,9 +2185,17 @@ status graph_update::declare_named_type(string_id name, source_id source, aggreg
             return failure = result;
         }
 
-        auto& identity_slot = touch_identity(name.value());
+        stable_id id;
 
-        auto id = identity_slot.value;
+        if (name.value() < owner->candidate_identities.size()) {
+            const auto& candidate_identity =
+                owner->candidate_identities[name.value()];
+
+            if (candidate_identity.generation ==
+                candidate_generation) {
+                id = candidate_identity.value;
+            }
+        }
 
         if (!id && name.value() < owner->identity.size()) {
             id = owner->identity[name.value()];
@@ -2005,8 +2207,7 @@ status graph_update::declare_named_type(string_id name, source_id source, aggreg
             }
 
             id = stable_id{next_stable_id++};
-
-            identity_slot.value = id;
+            touch_identity(name.value()).value = id;
         }
 
         source_contribution_record contribution;
@@ -2016,6 +2217,13 @@ status graph_update::declare_named_type(string_id name, source_id source, aggreg
 
         contribution.state = state == aggregate_definition_state::defined ? enum_definition_state::defined
                 : enum_definition_state::opaque;
+
+        result =
+            flush_retained_source_replacement(source);
+
+        if (!result.ok()) {
+            return failure = result;
+        }
 
         result = add_delta(source, id, contribution);
 
@@ -2057,6 +2265,13 @@ status graph_update::add_anonymous_enum(source_id source, const enum_build_data&
 
     try {
         auto result = begin_source_replacement(source);
+
+        if (!result.ok()) {
+            return failure = result;
+        }
+
+        result =
+            flush_retained_source_replacement(source);
 
         if (!result.ok()) {
             return failure = result;
@@ -2116,9 +2331,13 @@ status graph_update::add_anonymous_enum(source_id source, const enum_build_data&
     }
 }
 
-const entity_entry* graph_update::find(stable_id id) const noexcept {
+const entity_entry* graph_update::find(stable_id id) noexcept {
 
     if (!id || !owner || prepared || committed) {
+        return nullptr;
+    }
+
+    if (!flush_retained_source_replacements().ok()) {
         return nullptr;
     }
 
@@ -2133,7 +2352,7 @@ const entity_entry* graph_update::find(stable_id id) const noexcept {
     return full_reconstruction ? nullptr : owner->find(id);
 }
 
-const entity_entry* graph_update::find(string_id name) const noexcept {
+const entity_entry* graph_update::find(string_id name) noexcept {
 
     if (!name || !owner || prepared || committed) {
         return nullptr;
@@ -2152,9 +2371,13 @@ const entity_entry* graph_update::find(string_id name) const noexcept {
     return find(id);
 }
 
-const type_entry* graph_update::find(type_handle handle) const noexcept {
+const type_entry* graph_update::find(type_handle handle) noexcept {
 
     if (!handle || !owner || prepared || committed) {
+        return nullptr;
+    }
+
+    if (!flush_retained_source_replacements().ok()) {
         return nullptr;
     }
 
@@ -2175,9 +2398,13 @@ const type_entry* graph_update::find(type_handle handle) const noexcept {
     return full_reconstruction ? nullptr : owner->find(handle);
 }
 
-std::span<const enum_value_record> graph_update::enum_values(type_handle handle) const noexcept {
+std::span<const enum_value_record> graph_update::enum_values(type_handle handle) noexcept {
 
     if (!handle || !owner || prepared || committed) {
+        return {};
+    }
+
+    if (!flush_retained_source_replacements().ok()) {
         return {};
     }
 
@@ -3460,6 +3687,13 @@ status graph_update::prepare_publish(const source_manager_update& sources,
 
     if (!owner || prepared || committed || owner->generation != base_generation) {
         return failure = {status_code::invalid_state};
+    }
+
+    const auto retained_result =
+        flush_retained_source_replacements();
+
+    if (!retained_result.ok()) {
+        return retained_result;
     }
 
 #if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)

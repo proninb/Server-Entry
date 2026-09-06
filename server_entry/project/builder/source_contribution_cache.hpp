@@ -103,6 +103,7 @@ private:
     struct candidate_slot {
         std::uint64_t generation = 0;
         source_contribution_state value;
+        bool previous_retained = false;
     };
 
     struct candidate_entity_slot {
@@ -133,6 +134,14 @@ public:
 
     [[nodiscard]] bool was_replaced(source_id source) const noexcept;
     [[nodiscard]] const source_contribution_state* committed(source_id source) const noexcept;
+
+    [[nodiscard]] bool has_retained_previous(
+        source_id source) const noexcept;
+
+    [[nodiscard]] status retain_previous(
+        source_id source) noexcept;
+
+    void release_previous(source_id source) noexcept;
 
     // Starts a new empty contribution for Source. Replacing a Source means its
     // old committed contribution is removed by Graph and this candidate is then

@@ -449,13 +449,13 @@ public:
         source_id source,
         source_replacement& replacement) noexcept;
 
-    [[nodiscard]] const entity_entry* find(string_id name) const noexcept;
-    [[nodiscard]] const entity_entry* find(stable_id id) const noexcept;
+    [[nodiscard]] const entity_entry* find(string_id name) noexcept;
+    [[nodiscard]] const entity_entry* find(stable_id id) noexcept;
     [[nodiscard]] stable_id find_id(string_id name) const noexcept;
-    [[nodiscard]] const type_entry* find(type_handle handle) const noexcept;
+    [[nodiscard]] const type_entry* find(type_handle handle) noexcept;
 
     [[nodiscard]] std::span<const enum_value_record> enum_values(
-        type_handle handle) const noexcept;
+        type_handle handle) noexcept;
 
     [[nodiscard]] const graph_prepare_phase_telemetry&
         prepare_phase_telemetry() const noexcept {
@@ -511,6 +511,17 @@ private:
     void cancel() noexcept;
 
     [[nodiscard]] status begin_source_replacement(source_id source) noexcept;
+
+    [[nodiscard]] status flush_retained_source_replacement(
+        source_id source) noexcept;
+
+    [[nodiscard]] status flush_retained_source_replacements() noexcept;
+
+    [[nodiscard]] status reconcile_retained_enum(
+        source_id source,
+        const source_contribution_record& contribution,
+        bool& reconciled) noexcept;
+
     [[nodiscard]] status remove_named_entity_for_testing(stable_id id) noexcept;
 
     [[nodiscard]] status build_contribution(

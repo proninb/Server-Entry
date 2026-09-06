@@ -1150,6 +1150,52 @@ row k_add(
         strings_before);
 }
 
+void require_k_noop_gates(
+    const row& value,
+    std::size_t k) {
+
+    const auto& graph = value.graph;
+
+    require(
+        graph.changed_sources == k,
+        "RC-V2-03G changed_sources != K");
+
+    require(
+        graph.changed_entities == 0,
+        "RC-V2-03G no-op changed Entities");
+
+    require(
+        graph.changed_types == 0,
+        "RC-V2-03G no-op changed Types");
+
+    require(
+        graph.validation_visited_types == 0,
+        "RC-V2-03G no-op validation visited Types");
+
+    require(
+        graph.validation_visited_type_refs == 0 &&
+        graph.validation_dependency_edges == 0,
+        "RC-V2-03G no-op dependency work");
+
+    require(
+        !rc_v2_01a::graph_reallocated(graph),
+        "RC-V2-03G Graph storage reallocated");
+
+    require(
+        !value.contribution_reallocated,
+        "RC-V2-03G SourceContribution storage reallocated");
+
+    require(
+        value.strings_before.records_data ==
+            value.strings_after.records_data,
+        "RC-V2-03G String records relocated");
+
+    require(
+        value.strings_before.lookup_bucket_count ==
+            value.strings_after.lookup_bucket_count,
+        "RC-V2-03G String lookup rehashed");
+}
+
 void require_k_gates(
     const row& value,
     std::size_t k) {
@@ -1221,7 +1267,7 @@ void run_k_matrix(
             k,
             baseline);
 
-    require_k_gates(modify, k);
+    require_k_noop_gates(modify, k);
 
     const auto remove =
         k_remove(
@@ -1395,7 +1441,7 @@ void run_locality_case(
             baseline,
             mode);
 
-    require_k_gates(
+    require_k_noop_gates(
         value,
         k);
 
@@ -1454,7 +1500,7 @@ void run_matrix(std::size_t count) {
             target_source,
             target_name);
 
-    require_incremental_gates(modify);
+    require_k_noop_gates(modify, 1);
 
     const auto remove =
         g2_remove_one(
@@ -1541,6 +1587,6 @@ int main() {
 
     run_locality_matrix();
 
-    std::cout << "RC-V2-03D2 NOOP PREALLOCATION FAST PATH PASS\n";
+    std::cout << "RC-V2-03G3 BARRIER-FREE RECONCILE PASS\n";
     return 0;
 }
