@@ -1,7 +1,7 @@
 #include "../server_entry/project/builder/project_builder.hpp"
 #include "../server_entry/project/graph/graph_manager.hpp"
 #include "../server_entry/project/parser/parser.hpp"
-#include "../server_entry/project/construction/source_publisher.hpp"
+#include "../server_entry/project/frontend/source_publisher.hpp"
 #include "../server_entry/metrics/metrics_store.hpp"
 
 #include <algorithm>
@@ -64,10 +64,10 @@ void register_source(graph_manager& manager, const wchar_t* path)
     require(transaction.commit().ok());
 }
 
-string_id intern(graph_build_transaction& transaction, const std::string& text)
+string_id bind_string(graph_build_transaction& transaction, const std::string& text)
 {
     string_id result;
-    require(transaction.strings().intern(text, result).ok());
+    require(transaction.strings().bind(text, result).ok());
     return result;
 }
 
@@ -212,7 +212,7 @@ result named_build(std::size_t count)
         std::vector<enum_source_fact> facts;
         facts.reserve(count);
         for (std::size_t index = 0; index < count; ++index)
-            facts.push_back({intern(transaction, "E" + std::to_string(index)), false,
+            facts.push_back({bind_string(transaction, "E" + std::to_string(index)), false,
                              false, enum_definition_state::opaque,
                              builtin_type::integer, {}});
         project_builder builder;
@@ -241,7 +241,7 @@ result incremental_over_100k()
         std::vector<enum_source_fact> facts;
         facts.reserve(100000);
         for (std::size_t index = 0; index < 100000; ++index)
-            facts.push_back({intern(transaction, "Large" + std::to_string(index)), false,
+            facts.push_back({bind_string(transaction, "Large" + std::to_string(index)), false,
                              false, enum_definition_state::opaque,
                              builtin_type::integer, {}});
         const source_fact_batch batch[] = {{source_id{1}, facts}};
@@ -254,7 +254,7 @@ result incremental_over_100k()
     string_id incremental_name;
     {
         auto transaction = manager.begin_build();
-        incremental_name = intern(transaction, "Incremental");
+        incremental_name = bind_string(transaction, "Incremental");
         require(transaction.commit().ok());
     }
     const enum_source_fact fact[] = {{incremental_name, false, false,
@@ -272,10 +272,10 @@ result aggregate_members(std::size_t type_count,std::size_t members_per_type,boo
     auto transaction=manager.begin_build();
     std::vector<aggregate_source_fact::member_fact> members;members.reserve(members_per_type);
     for(std::size_t m=0;m<members_per_type;++m)
-        members.push_back({intern(transaction,"M"+std::to_string(m)),builtin_type::integer,{},references});
+        members.push_back({bind_string(transaction,"M"+std::to_string(m)),builtin_type::integer,{},references});
     std::vector<aggregate_source_fact> facts;facts.reserve(type_count);
     for(std::size_t t=0;t<type_count;++t)
-        facts.push_back({intern(transaction,"T"+std::to_string(t)),aggregate_definition_state::defined,members});
+        facts.push_back({bind_string(transaction,"T"+std::to_string(t)),aggregate_definition_state::defined,members});
     project_builder builder;diagnostic_buffer diagnostics;
     const source_fact_batch batch[]={{source_id{1},{},facts}};
     const auto t0=clock_type::now();require(builder.build(transaction,batch,operation_id{5},diagnostics).ok());
@@ -317,7 +317,7 @@ void compiled_persistence_100k()
 {
     graph_manager saved;require(saved.initialize().ok());register_source(saved,LR"(C:\builder-benchmark\compiled.cpp)");
     auto transaction=saved.begin_build();std::vector<enum_source_fact> facts;facts.reserve(100000);
-    for(std::size_t i=0;i<100000;++i)facts.push_back({intern(transaction,"Persisted"+std::to_string(i)),false,false,enum_definition_state::opaque,builtin_type::integer,{}});
+    for(std::size_t i=0;i<100000;++i)facts.push_back({bind_string(transaction,"Persisted"+std::to_string(i)),false,false,enum_definition_state::opaque,builtin_type::integer,{}});
     project_builder builder;diagnostic_buffer diagnostics;const source_fact_batch batch[]={{source_id{1},facts}};require(builder.build(transaction,batch,operation_id{4},diagnostics).ok());require(transaction.commit().ok());
     const auto file=std::filesystem::temp_directory_path()/L"cw_compiled_100k.bin";std::error_code ignored;std::filesystem::remove(file,ignored);metrics_store metrics;metrics.set_mode(metrics_mode::detailed);
     require(saved.save_compiled_checkpoint(file,&metrics).ok());graph_manager loaded;require(loaded.initialize().ok());require(loaded.load_compiled_checkpoint(file,&metrics).ok());const auto snapshot=metrics.snapshot();

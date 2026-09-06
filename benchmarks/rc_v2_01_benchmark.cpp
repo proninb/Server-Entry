@@ -158,7 +158,7 @@ prepared_type prepare_source(
     result.source = source;
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             spelling,
             result.name).ok(),
         "String interning failed");
@@ -307,6 +307,18 @@ row finish_row(
     return result;
 }
 
+status reserve_string_capacity(
+    string_registry_update& strings,
+    std::size_t count) noexcept {
+
+    // Benchmark-generated names are short. Reserve a deliberately conservative
+    // byte upper bound so RC01 still measures canonical work, not arena growth.
+    constexpr std::size_t generated_name_capacity = 128;
+
+    return strings.reserve_bindings(
+        count,
+        count * generated_name_capacity);
+}
 row g0_initial(
     graph_manager& manager,
     std::size_t count,
@@ -331,8 +343,7 @@ row g0_initial(
     const auto started = clock_type::now();
 
     require(
-        transaction.strings()
-            .reserve_new_strings(count)
+        reserve_string_capacity(transaction.strings(), count)
             .ok(),
         "G0 String Registry bulk reserve failed");
 
@@ -448,7 +459,7 @@ row g3_add_one(
         manager.begin_build(graph_build_mode::incremental);
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             "T_replacement_" + std::to_string(count),
             replacement_name).ok(),
         "Replacement name interning failed");
@@ -487,8 +498,7 @@ row g0_rebuild_after_churn(
         manager.begin_build(graph_build_mode::rebuild);
 
     require(
-        transaction.strings()
-            .reserve_new_strings(count)
+        reserve_string_capacity(transaction.strings(), count)
             .ok(),
         "Rebuild String Registry bulk reserve failed");
 
@@ -511,7 +521,7 @@ row g0_rebuild_after_churn(
         }
         else {
             require(
-                transaction.strings().intern(
+                transaction.strings().bind(
                     type_name(index),
                     name).ok(),
                 "Rebuild name interning failed");
@@ -687,7 +697,7 @@ void fail_closed_gate() {
     string_id candidate_name;
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             "Candidate",
             candidate_name).ok(),
         "Fail-closed candidate name failed");
@@ -771,7 +781,7 @@ void define_empty_aggregate(
     string_id dependency_name;
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             dependency,
             dependency_name).ok(),
         "Dependency name interning failed");
@@ -779,7 +789,7 @@ void define_empty_aggregate(
     string_id member_name;
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             "member_" + std::string{name},
             member_name).ok(),
         "Dependency member name interning failed");
@@ -903,8 +913,7 @@ dependency_scaling_baseline build_dependency_scaling_baseline(
             count);
 
     require(
-        transaction.strings()
-            .reserve_new_strings(
+        reserve_string_capacity(transaction.strings(),
                 count +
                 dependency_scaling_max_depth)
             .ok(),
@@ -1172,7 +1181,7 @@ void define_multi_root_hub(
         string_id dependency_name;
 
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 type_name(root),
                 dependency_name).ok(),
             "RC-V2-05 hub dependency name failed");
@@ -1180,7 +1189,7 @@ void define_multi_root_hub(
         string_id member_name;
 
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 "root_member_" +
                     std::to_string(root),
                 member_name).ok(),
@@ -1222,8 +1231,7 @@ multi_root_baseline build_multi_root_baseline(
             count);
 
     require(
-        transaction.strings()
-            .reserve_new_strings(
+        reserve_string_capacity(transaction.strings(),
                 count +
                 multi_root_count +
                 multi_root_shared_count)
@@ -1237,7 +1245,7 @@ multi_root_baseline build_multi_root_baseline(
          root < multi_root_count;
          ++root) {
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 type_name(root),
                 root_names[root]).ok(),
             "RC-V2-05 root String interning failed");
@@ -1549,7 +1557,7 @@ void define_edge_scaling_aggregate(
             string_id dependency_name;
 
             require(
-                transaction.strings().intern(
+                transaction.strings().bind(
                     type_name(dependency_index),
                     dependency_name).ok(),
                 "RC-V2-06 dependency name interning failed");
@@ -1557,7 +1565,7 @@ void define_edge_scaling_aggregate(
             string_id member_name;
 
             require(
-                transaction.strings().intern(
+                transaction.strings().bind(
                     "edge_member_" +
                         std::to_string(type_index) +
                         "_" +
@@ -1629,8 +1637,7 @@ edge_scaling_baseline build_edge_scaling_baseline(
     }
 
     require(
-        transaction.strings()
-            .reserve_new_strings(
+        reserve_string_capacity(transaction.strings(),
                 count +
                 topology_edges)
             .ok(),
@@ -1655,7 +1662,7 @@ edge_scaling_baseline build_edge_scaling_baseline(
         string_id root_name;
 
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 type_name(root_index),
                 root_name).ok(),
             "RC-V2-06 root String interning failed");
@@ -1915,7 +1922,7 @@ void define_typeref_filler(
         string_id member_name;
 
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 "typeref_member_" +
                     std::to_string(index),
                 member_name).ok(),
@@ -1965,8 +1972,7 @@ build_typeref_resolution_baseline(
             count);
 
     require(
-        transaction.strings()
-            .reserve_new_strings(
+        reserve_string_capacity(transaction.strings(),
                 count +
                 typeref_resolution_filler_members +
                 512)
@@ -1976,7 +1982,7 @@ build_typeref_resolution_baseline(
     typeref_resolution_baseline baseline;
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             type_name(0),
             baseline.dependency_name).ok(),
         "RC-V2-07 dependency name interning failed");
@@ -1987,7 +1993,7 @@ build_typeref_resolution_baseline(
         baseline.dependency_name);
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             type_name(1),
             baseline.target_name).ok(),
         "RC-V2-07 target name interning failed");
@@ -2003,7 +2009,7 @@ build_typeref_resolution_baseline(
     string_id filler_name;
 
     require(
-        transaction.strings().intern(
+        transaction.strings().bind(
             type_name(2),
             filler_name).ok(),
         "RC-V2-07 filler name interning failed");
@@ -2394,8 +2400,7 @@ k_baseline build_k_baseline(
             count);
 
     require(
-        transaction.strings()
-            .reserve_new_strings(count)
+        reserve_string_capacity(transaction.strings(), count)
             .ok(),
         "RC-V2-03 G0 String bulk reserve failed");
 
@@ -2406,7 +2411,7 @@ k_baseline build_k_baseline(
          index < count;
          ++index) {
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 type_name(index),
                 names[index]).ok(),
             "RC-V2-03 G0 String interning failed");
@@ -2538,8 +2543,7 @@ row k_add(
             graph_build_mode::incremental);
 
     require(
-        transaction.strings()
-            .reserve_new_strings(k)
+        reserve_string_capacity(transaction.strings(), k)
             .ok(),
         "RC-V2-03 incremental String bulk reserve failed");
 
@@ -2555,7 +2559,7 @@ row k_add(
         string_id replacement_name;
 
         require(
-            transaction.strings().intern(
+            transaction.strings().bind(
                 "K_replacement_" +
                     std::to_string(count) + "_" +
                     std::to_string(k) + "_" +

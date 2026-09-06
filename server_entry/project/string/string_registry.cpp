@@ -10,97 +10,183 @@
 namespace cw::server {
 namespace {
 
-constexpr std::size_t string_capacity_floor = 64;
+constexpr std::size_t string_index_floor = 64;
 
-std::size_t string_sparse_capacity(
-    std::size_t required) noexcept {
+std::size_t next_power_of_two(
+    std::size_t value) noexcept {
 
-    if (required == 0) {
+    if (value <= 1) {
+        return 1;
+    }
+
+    --value;
+
+    for (std::size_t shift = 1;
+         shift < sizeof(std::size_t) * 8;
+         shift <<= 1) {
+        value |= value >> shift;
+    }
+
+    return value + 1;
+}
+
+std::size_t index_capacity_for(
+    std::size_t live) noexcept {
+
+    if (live == 0) {
         return 0;
     }
 
-    const auto extra =
-        (std::max)(required / 8, string_capacity_floor);
     const auto maximum =
         (std::numeric_limits<std::size_t>::max)();
 
-    return required > maximum - extra
-        ? required
-        : required + extra;
+    if (live > maximum / 2) {
+        return 0;
+    }
+
+    return next_power_of_two(
+        (std::max)(
+            string_index_floor,
+            live * 2));
+}
+
+std::size_t bucket_for(
+    std::uint64_t hash,
+    std::size_t mask) noexcept {
+
+    return static_cast<std::size_t>(
+        hash ^ (hash >> 32)) & mask;
 }
 
 } // namespace
 
+std::uint64_t string_registry::hash_value(
+    std::string_view value) noexcept {
+
+    std::uint64_t hash =
+        1469598103934665603ull;
+
+    for (const auto byte : value) {
+        hash ^=
+            static_cast<std::uint8_t>(byte);
+
+        hash *=
+            1099511628211ull;
+    }
+
+    hash ^= hash >> 32;
+    hash *= 0xd6e8feb86659fd93ull;
+    hash ^= hash >> 32;
+    return hash;
+}
+
 status string_registry::initialize() noexcept {
-    lookup_index.clear();
+    blocks.clear();
     records.clear();
-    storage.clear();
+    index.clear();
+    live_count = 0;
     ++generation;
     return {};
 }
 
-string_registry_update string_registry::begin_update() noexcept {
-    return string_registry_update{*this, generation};
+string_registry_update
+string_registry::begin_update() noexcept {
+
+    return string_registry_update{
+        *this,
+        generation
+    };
 }
 
-string_id string_registry::find(std::string_view value) const noexcept {
-    const auto found = lookup_index.find(value);
-
-    return found == lookup_index.end()
-               ? string_id{}
-               : found->second;
-}
-
-std::optional<std::string_view> string_registry::get(
+std::optional<std::string_view>
+string_registry::get(
     string_id id) const noexcept {
 
-    if (!id || id.value() > records.size()) {
+    if (!id ||
+        id.value() > records.size()) {
         return std::nullopt;
     }
 
-    const auto* record = records[id.value() - 1];
+    const auto& record =
+        records[id.value() - 1];
 
-    return record
-        ? std::optional<std::string_view>{std::string_view{record->bytes}}
-        : std::nullopt;
+    if (!record.live() ||
+        record.block >= blocks.size()) {
+        return std::nullopt;
+    }
+
+    const auto& bytes =
+        blocks[record.block].bytes;
+
+    const auto offset =
+        static_cast<std::size_t>(
+            record.offset);
+
+    if (offset > bytes.size() ||
+        record.length >
+            bytes.size() - offset) {
+        return std::nullopt;
+    }
+
+    return record.length == 0
+        ? std::optional<std::string_view>{
+              std::string_view{}}
+        : std::optional<std::string_view>{
+              std::string_view{
+                  bytes.data() + offset,
+                  record.length
+              }};
 }
 
-// Reconstructs the value-to-ID index from canonical ID records and rejects any
-// gap or duplicate value that would violate the dense registry contract.
-status string_registry::rebuild_lookup_index() noexcept {
-    try {
-        lookup_type rebuilt;
-        rebuilt.reserve(records.size());
+string_id string_registry::find_value(
+    std::string_view value,
+    std::uint64_t hash) const noexcept {
 
-        for (std::size_t index = 0; index != records.size(); ++index) {
-            const auto value = static_cast<std::uint32_t>(index + 1);
-            const auto* record = records[index];
+    if (index.empty()) {
+        return {};
+    }
 
-            if (!record) {
-                continue;
-            }
+    const auto mask =
+        index.size() - 1;
 
-            const auto [position, inserted] =
-                rebuilt.emplace(
-                    std::string_view{record->bytes},
-                    string_id{value});
+    auto bucket =
+        bucket_for(
+            hash,
+            mask);
 
-            (void)position;
+    for (std::size_t probe = 0;
+         probe < index.size();
+         ++probe) {
+        const auto raw =
+            index[bucket];
 
-            if (!inserted) {
-                return {status_code::invalid_state};
+        if (raw == 0) {
+            return {};
+        }
+
+        if (raw <= records.size()) {
+            const auto& record =
+                records[raw - 1];
+
+            if (record.live() &&
+                record.hash == hash &&
+                record.length ==
+                    value.size()) {
+                const auto stored =
+                    get(string_id{raw});
+
+                if (stored &&
+                    *stored == value) {
+                    return string_id{raw};
+                }
             }
         }
 
-        lookup_index.swap(rebuilt);
-        return {};
+        bucket =
+            (bucket + 1) & mask;
     }
-    catch (const std::bad_alloc&) {
-        return {status_code::initialization_failed};
-    }
-    catch (const std::length_error&) {
-        return {status_code::initialization_failed};
-    }
+
+    return {};
 }
 
 status string_registry::export_slots(
@@ -108,15 +194,24 @@ status string_registry::export_slots(
 
     try {
         output.clear();
-        output.resize(records.size());
+        output.resize(
+            records.size());
 
-        for (std::size_t index = 0;
-             index < records.size();
-             ++index) {
-            const auto* record = records[index];
+        for (std::size_t slot = 0;
+             slot < records.size();
+             ++slot) {
+            const auto id =
+                string_id{
+                    static_cast<std::uint32_t>(
+                        slot + 1)
+                };
 
-            if (record) {
-                output[index] = record->bytes;
+            const auto value =
+                get(id);
+
+            if (value) {
+                output[slot] =
+                    std::string{*value};
             }
         }
 
@@ -124,7 +219,9 @@ status string_registry::export_slots(
     }
     catch (...) {
         output.clear();
-        return {status_code::initialization_failed};
+        return {
+            status_code::initialization_failed
+        };
     }
 }
 
@@ -134,56 +231,196 @@ status string_registry::import_slots(
     string_registry candidate;
 
     if (!candidate.initialize().ok()) {
-        return {status_code::initialization_failed};
+        return {
+            status_code::initialization_failed
+        };
     }
 
     try {
-        candidate.records.resize(values.size());
-        candidate.lookup_index.reserve(values.size());
+        candidate.records.resize(
+            values.size());
 
-        for (std::size_t index = 0;
-             index < values.size();
-             ++index) {
-            if (!values[index]) {
+        std::size_t live = 0;
+        std::size_t bytes_required = 0;
+
+        for (const auto& value : values) {
+            if (!value) {
                 continue;
             }
 
-            candidate.storage.push_back({*values[index]});
-            const auto* record = &candidate.storage.back();
-            candidate.records[index] = record;
+            if (value->size() >
+                (std::numeric_limits<std::uint32_t>::max)() ||
+                value->size() >
+                    (std::numeric_limits<std::size_t>::max)() -
+                        bytes_required) {
+                return {
+                    status_code::artifact_corrupt
+                };
+            }
 
-            const auto id = string_id{
-                static_cast<std::uint32_t>(index + 1)
-            };
+            bytes_required +=
+                value->size();
 
-            const auto [position, inserted] =
-                candidate.lookup_index.emplace(
-                    std::string_view{record->bytes},
-                    id);
+            ++live;
+        }
 
-            (void)position;
+        if (live != 0) {
+            candidate.blocks.emplace_back();
+
+            candidate.blocks[0].bytes.reserve(
+                bytes_required);
+
+            const auto capacity =
+                index_capacity_for(live);
+
+            if (capacity == 0) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+
+            candidate.index.assign(
+                capacity,
+                0);
+        }
+
+        for (std::size_t slot = 0;
+             slot < values.size();
+             ++slot) {
+            if (!values[slot]) {
+                continue;
+            }
+
+            const auto& value =
+                *values[slot];
+
+            const auto hash =
+                hash_value(value);
+
+            const auto raw =
+                static_cast<std::uint32_t>(
+                    slot + 1);
+
+            const auto offset =
+                candidate.blocks[0].bytes.size();
+
+            candidate.blocks[0].bytes.insert(
+                candidate.blocks[0].bytes.end(),
+                value.begin(),
+                value.end());
+
+            auto& record =
+                candidate.records[slot];
+
+            record.hash = hash;
+            record.offset = offset;
+            record.block = 0;
+            record.length =
+                static_cast<std::uint32_t>(
+                    value.size());
+
+            const auto mask =
+                candidate.index.size() - 1;
+
+            auto bucket =
+                bucket_for(
+                    hash,
+                    mask);
+
+            bool inserted = false;
+
+            for (std::size_t probe = 0;
+                 probe < candidate.index.size();
+                 ++probe) {
+                const auto existing_raw =
+                    candidate.index[bucket];
+
+                if (existing_raw == 0) {
+                    candidate.index[bucket] =
+                        raw;
+
+                    inserted = true;
+                    break;
+                }
+
+                const auto& existing =
+                    candidate.records[
+                        existing_raw - 1];
+
+                if (existing.hash == hash &&
+                    existing.length ==
+                        value.size()) {
+                    const auto existing_value =
+                        candidate.get(
+                            string_id{
+                                existing_raw
+                            });
+
+                    if (existing_value &&
+                        *existing_value ==
+                            value) {
+                        return {
+                            status_code::
+                                artifact_corrupt
+                        };
+                    }
+                }
+
+                bucket =
+                    (bucket + 1) & mask;
+            }
 
             if (!inserted) {
-                return {status_code::artifact_corrupt};
+                return {
+                    status_code::initialization_failed
+                };
             }
         }
+
+        candidate.live_count =
+            live;
     }
     catch (...) {
-        return {status_code::initialization_failed};
+        return {
+            status_code::initialization_failed
+        };
     }
 
-    storage.swap(candidate.storage);
-    records.swap(candidate.records);
-    lookup_index.swap(candidate.lookup_index);
+    blocks.swap(
+        candidate.blocks);
+
+    records.swap(
+        candidate.records);
+
+    index.swap(
+        candidate.index);
+
+    live_count =
+        candidate.live_count;
+
     ++generation;
     return {};
 }
 
-void string_registry::swap_compiled(string_registry& other) noexcept {
-    storage.swap(other.storage);
-    records.swap(other.records);
-    lookup_index.swap(other.lookup_index);
-    std::swap(generation, other.generation);
+void string_registry::swap_compiled(
+    string_registry& other) noexcept {
+
+    blocks.swap(
+        other.blocks);
+
+    records.swap(
+        other.records);
+
+    index.swap(
+        other.index);
+
+    std::swap(
+        live_count,
+        other.live_count);
+
+    std::swap(
+        generation,
+        other.generation);
 }
 
 string_registry_update::string_registry_update(
@@ -195,43 +432,127 @@ string_registry_update::string_registry_update(
 
 string_registry_update::string_registry_update(
     string_registry_update&& other) noexcept
-    : owner(std::exchange(other.owner, nullptr)),
-      added_storage(std::move(other.added_storage)),
-      added_records(std::move(other.added_records)),
-      added_lookup(std::move(other.added_lookup)),
-      rebuilt_storage(std::move(other.rebuilt_storage)),
-      rebuilt_records(std::move(other.rebuilt_records)),
-      rebuilt_lookup(std::move(other.rebuilt_lookup)),
-      base_generation(other.base_generation),
+    : owner(
+          std::exchange(
+              other.owner,
+              nullptr)),
+      added_records(
+          std::move(
+              other.added_records)),
+      added_bytes(
+          std::move(
+              other.added_bytes)),
+      added_index(
+          std::move(
+              other.added_index)),
+      rebuilt_blocks(
+          std::move(
+              other.rebuilt_blocks)),
+      rebuilt_records(
+          std::move(
+              other.rebuilt_records)),
+      rebuilt_index(
+          std::move(
+              other.rebuilt_index)),
+      rebuilt_live_count(
+          other.rebuilt_live_count),
+      prepared_index(
+          std::move(
+              other.prepared_index)),
+      index_rebuild_prepared(
+          other.index_rebuild_prepared),
+      base_generation(
+          other.base_generation),
       failure(other.failure),
       committed(other.committed),
       prepared(other.prepared),
-      rebuild_compaction_prepared(other.rebuild_compaction_prepared) {
+      rebuild_compaction_prepared(
+          other.rebuild_compaction_prepared) {
 }
 
-string_id string_registry_update::find(
-    std::string_view value) const noexcept {
+status string_registry_update::ensure_added_index(
+    std::size_t required) noexcept {
 
-    if (owner == nullptr ||
-        committed ||
-        prepared ||
-        owner->generation != base_generation) {
+    if (required == 0) {
         return {};
     }
 
-    const auto added = added_lookup.find(value);
-
-    if (added != added_lookup.end()) {
-        return added->second;
+    if (!added_index.empty() &&
+        required * 2 <=
+            added_index.size()) {
+        return {};
     }
 
-    return owner->lookup_index.empty()
-               ? string_id{}
-               : owner->find(value);
+    const auto capacity =
+        index_capacity_for(
+            required);
+
+    if (capacity == 0) {
+        return {
+            status_code::initialization_failed
+        };
+    }
+
+    try {
+        std::vector<std::uint32_t>
+            rebuilt(
+                capacity,
+                0);
+
+        const auto mask =
+            rebuilt.size() - 1;
+
+        for (std::size_t offset = 0;
+             offset < added_records.size();
+             ++offset) {
+            const auto raw =
+                static_cast<std::uint32_t>(
+                    owner->records.size() +
+                    offset +
+                    1);
+
+            auto bucket =
+                bucket_for(
+                    added_records[offset].hash,
+                    mask);
+
+            bool inserted = false;
+
+            for (std::size_t probe = 0;
+                 probe < rebuilt.size();
+                 ++probe) {
+                if (rebuilt[bucket] == 0) {
+                    rebuilt[bucket] = raw;
+                    inserted = true;
+                    break;
+                }
+
+                bucket =
+                    (bucket + 1) & mask;
+            }
+
+            if (!inserted) {
+                return {
+                    status_code::invalid_state
+                };
+            }
+        }
+
+        added_index.swap(
+            rebuilt);
+
+        return {};
+    }
+    catch (...) {
+        return {
+            status_code::initialization_failed
+        };
+    }
 }
 
-status string_registry_update::reserve_new_strings(
-    std::size_t count) noexcept {
+status string_registry_update::reserve_bindings(
+    std::size_t count,
+    std::size_t bytes) noexcept {
 
     if (!failure.ok()) {
         return failure;
@@ -240,52 +561,52 @@ status string_registry_update::reserve_new_strings(
     if (owner == nullptr ||
         committed ||
         prepared ||
-        owner->generation != base_generation) {
-        return {status_code::invalid_state};
-    }
-
-    if (count == 0) {
-        return {};
-    }
-
-    const auto maximum =
-        (std::numeric_limits<std::size_t>::max)();
-
-    if (count > maximum - added_records.size() ||
-        count > maximum - added_lookup.size()) {
-        return failure = {
-            status_code::initialization_failed
+        owner->generation !=
+            base_generation) {
+        return {
+            status_code::invalid_state
         };
     }
 
     try {
-        const auto record_required =
-            added_records.size() + count;
-
-        const auto lookup_required =
-            added_lookup.size() + count;
+        if (count >
+                (std::numeric_limits<std::size_t>::max)() -
+                    added_records.size() ||
+            bytes >
+                (std::numeric_limits<std::size_t>::max)() -
+                    added_bytes.size()) {
+            return failure = {
+                status_code::initialization_failed
+            };
+        }
 
         added_records.reserve(
-            string_sparse_capacity(record_required));
+            added_records.size() +
+            count);
 
-        added_lookup.reserve(
-            string_sparse_capacity(lookup_required));
+        added_bytes.reserve(
+            added_bytes.size() +
+            bytes);
+
+        const auto result =
+            ensure_added_index(
+                added_records.size() +
+                count);
+
+        if (!result.ok()) {
+            return failure = result;
+        }
 
         return {};
     }
-    catch (const std::bad_alloc&) {
-        return failure = {
-            status_code::initialization_failed
-        };
-    }
-    catch (const std::length_error&) {
+    catch (...) {
         return failure = {
             status_code::initialization_failed
         };
     }
 }
 
-status string_registry_update::intern(
+status string_registry_update::bind(
     std::string_view value,
     string_id& result) noexcept {
 
@@ -298,94 +619,244 @@ status string_registry_update::intern(
     if (owner == nullptr ||
         committed ||
         prepared ||
-        owner->generation != base_generation) {
-        return {status_code::invalid_state};
+        owner->generation !=
+            base_generation) {
+        return {
+            status_code::invalid_state
+        };
     }
 
-    if (const auto existing = find(value); existing) {
+    if (value.size() >
+        (std::numeric_limits<std::uint32_t>::max)()) {
+        return failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    const auto hash =
+        string_registry::hash_value(
+            value);
+
+    // Historical committed identity is checked only at the String Binding
+    // boundary. Fresh G0 has an empty owner index and skips this path.
+    if (const auto existing =
+            owner->find_value(
+                value,
+                hash);
+        existing) {
         result = existing;
         return {};
     }
 
-    const auto next =
-        owner->records.size() + added_records.size() + 1;
+    const auto ensure_result =
+        ensure_added_index(
+            added_records.size() +
+            1);
 
-    if (next > std::numeric_limits<std::uint32_t>::max()) {
-        return failure = {status_code::initialization_failed};
+    if (!ensure_result.ok()) {
+        return failure =
+            ensure_result;
     }
 
-    try {
-        added_storage.push_back({std::string{value}});
-        const auto* record = &added_storage.back();
-        const auto id =
-            string_id{static_cast<std::uint32_t>(next)};
+    const auto mask =
+        added_index.size() - 1;
 
-        try {
-            added_records.push_back(record);
+    auto bucket =
+        bucket_for(
+            hash,
+            mask);
+
+    std::size_t empty_bucket =
+        added_index.size();
+
+    for (std::size_t probe = 0;
+         probe < added_index.size();
+         ++probe) {
+        const auto raw =
+            added_index[bucket];
+
+        if (raw == 0) {
+            empty_bucket = bucket;
+            break;
         }
-        catch (...) {
-            added_storage.pop_back();
-            throw;
-        }
 
-        try {
-            const auto [position, inserted] =
-                added_lookup.emplace(
-                    std::string_view{record->bytes},
-                    id);
+        if (raw >
+            owner->records.size()) {
+            const auto offset =
+                raw -
+                owner->records.size() -
+                1;
 
-            if (!inserted) {
-                added_records.pop_back();
-                added_storage.pop_back();
-                result = position->second;
-                return {};
+            if (offset <
+                added_records.size()) {
+                const auto& record =
+                    added_records[offset];
+
+                if (record.hash == hash &&
+                    record.length ==
+                        value.size()) {
+                    const auto byte_offset =
+                        static_cast<std::size_t>(
+                            record.offset);
+
+                    if (byte_offset <=
+                            added_bytes.size() &&
+                        record.length <=
+                            added_bytes.size() -
+                                byte_offset) {
+                        const auto stored =
+                            record.length == 0
+                            ? std::string_view{}
+                            : std::string_view{
+                                  added_bytes.data() +
+                                      byte_offset,
+                                  record.length
+                              };
+
+                        if (stored == value) {
+                            result =
+                                string_id{raw};
+
+                            return {};
+                        }
+                    }
+                }
             }
         }
+
+        bucket =
+            (bucket + 1) & mask;
+    }
+
+    if (empty_bucket ==
+        added_index.size()) {
+        return failure = {
+            status_code::invalid_state
+        };
+    }
+
+    const auto next =
+        owner->records.size() +
+        added_records.size() +
+        1;
+
+    if (next >
+        (std::numeric_limits<std::uint32_t>::max)()) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+
+    const auto byte_offset =
+        added_bytes.size();
+
+    try {
+        added_bytes.insert(
+            added_bytes.end(),
+            value.begin(),
+            value.end());
+
+        string_registry::string_record
+            record;
+
+        record.hash = hash;
+        record.offset = byte_offset;
+        record.block =
+            static_cast<std::uint32_t>(
+                owner->blocks.size());
+        record.length =
+            static_cast<std::uint32_t>(
+                value.size());
+
+        try {
+            added_records.push_back(
+                record);
+        }
         catch (...) {
-            added_records.pop_back();
-            added_storage.pop_back();
+            added_bytes.resize(
+                byte_offset);
+
             throw;
         }
 
-        result = id;
+        const auto raw =
+            static_cast<std::uint32_t>(
+                next);
+
+        added_index[empty_bucket] =
+            raw;
+
+        result =
+            string_id{raw};
+
         return {};
     }
     catch (const std::bad_alloc&) {
-        return failure = {status_code::initialization_failed};
+        return failure = {
+            status_code::initialization_failed
+        };
     }
     catch (const std::length_error&) {
-        return failure = {status_code::initialization_failed};
+        return failure = {
+            status_code::initialization_failed
+        };
     }
 }
 
-
-std::optional<std::string_view> string_registry_update::get(
+std::optional<std::string_view>
+string_registry_update::get(
     string_id id) const noexcept {
 
     if (!id ||
         owner == nullptr ||
         committed ||
         prepared ||
-        owner->generation != base_generation) {
+        owner->generation !=
+            base_generation) {
         return std::nullopt;
     }
 
-    if (id.value() <= owner->records.size()) {
+    if (id.value() <=
+        owner->records.size()) {
         return owner->get(id);
     }
 
     const auto offset =
-        id.value() - owner->records.size() - 1;
+        id.value() -
+        owner->records.size() -
+        1;
 
-    if (offset >= added_records.size()) {
+    if (offset >=
+        added_records.size()) {
         return std::nullopt;
     }
 
-    return std::string_view{added_records[offset]->bytes};
+    const auto& record =
+        added_records[offset];
+
+    const auto byte_offset =
+        static_cast<std::size_t>(
+            record.offset);
+
+    if (byte_offset >
+            added_bytes.size() ||
+        record.length >
+            added_bytes.size() -
+                byte_offset) {
+        return std::nullopt;
+    }
+
+    return record.length == 0
+        ? std::optional<std::string_view>{
+              std::string_view{}}
+        : std::optional<std::string_view>{
+              std::string_view{
+                  added_bytes.data() +
+                      byte_offset,
+                  record.length
+              }};
 }
 
-// Validation may read a prepared candidate because prepare_publish() freezes
-// mutation but has not yet transferred candidate storage into the owner.
 std::optional<std::string_view>
 string_registry_update::get_for_validation(
     string_id id) const noexcept {
@@ -393,34 +864,50 @@ string_registry_update::get_for_validation(
     if (!id ||
         owner == nullptr ||
         committed ||
-        owner->generation != base_generation) {
+        owner->generation !=
+            base_generation) {
         return std::nullopt;
     }
 
-    if (id.value() <= owner->records.size()) {
+    if (id.value() <=
+        owner->records.size()) {
         return owner->get(id);
     }
 
     const auto offset =
-        id.value() - owner->records.size() - 1;
+        id.value() -
+        owner->records.size() -
+        1;
 
-    if (offset >= added_records.size()) {
+    if (offset >=
+        added_records.size()) {
         return std::nullopt;
     }
 
-    return std::string_view{added_records[offset]->bytes};
-}
+    const auto& record =
+        added_records[offset];
 
-status string_registry_update::commit() noexcept {
+    const auto byte_offset =
+        static_cast<std::size_t>(
+            record.offset);
 
-    const auto result = prepare_publish();
-
-    if (!result.ok()) {
-        return result;
+    if (byte_offset >
+            added_bytes.size() ||
+        record.length >
+            added_bytes.size() -
+                byte_offset) {
+        return std::nullopt;
     }
 
-    publish_prepared();
-    return {};
+    return record.length == 0
+        ? std::optional<std::string_view>{
+              std::string_view{}}
+        : std::optional<std::string_view>{
+              std::string_view{
+                  added_bytes.data() +
+                      byte_offset,
+                  record.length
+              }};
 }
 
 status string_registry_update::prepare_publish() noexcept {
@@ -429,45 +916,136 @@ status string_registry_update::prepare_publish() noexcept {
         return failure;
     }
 
-    if (owner == nullptr || committed || prepared) {
-        return {status_code::invalid_state};
-    }
-
-    if (base_generation != owner->generation) {
-        return failure = {status_code::invalid_state};
+    if (owner == nullptr ||
+        committed ||
+        prepared ||
+        owner->generation !=
+            base_generation) {
+        return {
+            status_code::invalid_state
+        };
     }
 
     try {
         const auto record_required =
-            owner->records.size() + added_records.size();
+            owner->records.size() +
+            added_records.size();
 
-        if (record_required > owner->records.capacity()) {
-            owner->records.reserve(
-                string_sparse_capacity(record_required));
+        owner->records.reserve(
+            record_required);
+
+        if (!added_records.empty()) {
+            if (owner->blocks.size() >=
+                string_registry::invalid_block) {
+                return failure = {
+                    status_code::initialization_failed
+                };
+            }
+
+            owner->blocks.reserve(
+                owner->blocks.size() + 1);
         }
 
-        const auto lookup_required =
-            owner->lookup_index.size() + added_lookup.size();
+        const auto combined_live =
+            owner->live_count +
+            added_records.size();
 
-        const auto lookup_capacity =
-            static_cast<std::size_t>(
-                owner->lookup_index.bucket_count() *
-                owner->lookup_index.max_load_factor());
+        const auto required_capacity =
+            index_capacity_for(
+                combined_live);
 
-        if (lookup_required > lookup_capacity) {
-            owner->lookup_index.reserve(
-                string_sparse_capacity(lookup_required));
+        if (combined_live != 0 &&
+            required_capacity == 0) {
+            return failure = {
+                status_code::initialization_failed
+            };
         }
-    }
-    catch (const std::bad_alloc&) {
-        return failure = {status_code::initialization_failed};
-    }
-    catch (const std::length_error&) {
-        return failure = {status_code::initialization_failed};
-    }
 
-    prepared = true;
-    return {};
+        if (combined_live != 0 &&
+            (owner->index.empty() ||
+             combined_live * 2 >
+                 owner->index.size())) {
+            prepared_index.assign(
+                required_capacity,
+                0);
+
+            const auto mask =
+                prepared_index.size() - 1;
+
+            const auto insert_raw =
+                [&](std::uint32_t raw,
+                    std::uint64_t hash) noexcept {
+                    auto bucket =
+                        bucket_for(
+                            hash,
+                            mask);
+
+                    for (std::size_t probe = 0;
+                         probe <
+                             prepared_index.size();
+                         ++probe) {
+                        if (prepared_index[
+                                bucket] == 0) {
+                            prepared_index[
+                                bucket] = raw;
+
+                            return true;
+                        }
+
+                        bucket =
+                            (bucket + 1) & mask;
+                    }
+
+                    return false;
+                };
+
+            for (std::size_t slot = 0;
+                 slot < owner->records.size();
+                 ++slot) {
+                const auto& record =
+                    owner->records[slot];
+
+                if (!record.live()) {
+                    continue;
+                }
+
+                if (!insert_raw(
+                        static_cast<std::uint32_t>(
+                            slot + 1),
+                        record.hash)) {
+                    return failure = {
+                        status_code::invalid_state
+                    };
+                }
+            }
+
+            for (std::size_t slot = 0;
+                 slot < added_records.size();
+                 ++slot) {
+                if (!insert_raw(
+                        static_cast<std::uint32_t>(
+                            owner->records.size() +
+                            slot +
+                            1),
+                        added_records[slot].hash)) {
+                    return failure = {
+                        status_code::invalid_state
+                    };
+                }
+            }
+
+            index_rebuild_prepared =
+                true;
+        }
+
+        prepared = true;
+        return {};
+    }
+    catch (...) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
 }
 
 status string_registry_update::prepare_rebuild_compaction(
@@ -481,82 +1059,115 @@ status string_registry_update::prepare_rebuild_compaction(
         committed ||
         !prepared ||
         rebuild_compaction_prepared ||
-        owner->generation != base_generation) {
-        return failure = {status_code::invalid_state};
+        owner->generation !=
+            base_generation) {
+        return failure = {
+            status_code::invalid_state
+        };
     }
 
     const auto candidate_size =
-        owner->records.size() + added_records.size();
+        owner->records.size() +
+        added_records.size();
 
-    if (retained.size() <= candidate_size) {
-        return failure = {status_code::invalid_state};
+    if (retained.size() <=
+        candidate_size) {
+        return failure = {
+            status_code::invalid_state
+        };
     }
 
-    // Compaction is a no-op when every candidate string remains reachable.
-    // This is the common initial-G0 case. Avoid rebuilding the complete
-    // storage/index a second time after deterministic interning has already
-    // produced the exact canonical String Registry.
     bool compaction_required = false;
 
-    for (std::size_t value = 1;
-         value <= candidate_size;
-         ++value) {
-        if (retained[value] == 0) {
+    for (std::size_t raw = 1;
+         raw <= candidate_size;
+         ++raw) {
+        if (retained[raw] == 0) {
             compaction_required = true;
             break;
         }
     }
 
     if (!compaction_required) {
-        // Initial G0 has no committed String Registry. All candidate strings
-        // are retained, so prepare the exact committed containers now and let
-        // publish_prepared() adopt them only through no-fail swaps.
-        //
-        // std::list splice preserves string object addresses, so every
-        // string_view key in added_lookup and every pointer in added_records
-        // remains valid after ownership moves into rebuilt_storage.
-        if (owner->storage.empty() &&
-            owner->records.empty() &&
-            owner->lookup_index.empty()) {
-            rebuilt_storage.splice(
-                rebuilt_storage.end(),
-                added_storage);
-
-            rebuilt_records.swap(
-                added_records);
-
-            rebuilt_lookup.swap(
-                added_lookup);
-
-            rebuild_compaction_prepared = true;
-        }
-
         return {};
     }
 
     try {
-        rebuilt_storage.clear();
+        rebuilt_blocks.clear();
         rebuilt_records.clear();
-        rebuilt_lookup.clear();
+        rebuilt_index.clear();
+        rebuilt_live_count = 0;
 
-        rebuilt_records.reserve(
-            string_sparse_capacity(candidate_size));
-        rebuilt_records.resize(candidate_size);
-        rebuilt_lookup.reserve(
-            string_sparse_capacity(candidate_size));
+        rebuilt_records.resize(
+            candidate_size);
 
-        for (std::size_t offset = 0;
-             offset < candidate_size;
-             ++offset) {
-            const auto id = string_id{
-                static_cast<std::uint32_t>(offset + 1)
-            };
+        std::size_t bytes_required = 0;
 
-            if (retained[id.value()] == 0) {
+        for (std::size_t raw = 1;
+             raw <= candidate_size;
+             ++raw) {
+            if (retained[raw] == 0) {
                 continue;
             }
 
-            const auto value = get_for_validation(id);
+            const auto value =
+                get_for_validation(
+                    string_id{
+                        static_cast<std::uint32_t>(
+                            raw)
+                    });
+
+            if (!value ||
+                value->size() >
+                    (std::numeric_limits<std::size_t>::max)() -
+                        bytes_required) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            bytes_required +=
+                value->size();
+
+            ++rebuilt_live_count;
+        }
+
+        if (rebuilt_live_count != 0) {
+            rebuilt_blocks.emplace_back();
+
+            rebuilt_blocks[0].bytes.reserve(
+                bytes_required);
+
+            const auto capacity =
+                index_capacity_for(
+                    rebuilt_live_count);
+
+            if (capacity == 0) {
+                return failure = {
+                    status_code::initialization_failed
+                };
+            }
+
+            rebuilt_index.assign(
+                capacity,
+                0);
+        }
+
+        for (std::size_t raw = 1;
+             raw <= candidate_size;
+             ++raw) {
+            if (retained[raw] == 0) {
+                continue;
+            }
+
+            const auto id =
+                string_id{
+                    static_cast<std::uint32_t>(
+                        raw)
+                };
+
+            const auto value =
+                get_for_validation(id);
 
             if (!value) {
                 return failure = {
@@ -564,16 +1175,51 @@ status string_registry_update::prepare_rebuild_compaction(
                 };
             }
 
-            rebuilt_storage.push_back({std::string{*value}});
-            const auto* record = &rebuilt_storage.back();
-            rebuilt_records[offset] = record;
+            const auto hash =
+                string_registry::hash_value(
+                    *value);
 
-            const auto [position, inserted] =
-                rebuilt_lookup.emplace(
-                    std::string_view{record->bytes},
-                    id);
+            auto& record =
+                rebuilt_records[raw - 1];
 
-            (void)position;
+            record.hash = hash;
+            record.offset =
+                rebuilt_blocks[0].bytes.size();
+            record.block = 0;
+            record.length =
+                static_cast<std::uint32_t>(
+                    value->size());
+
+            rebuilt_blocks[0].bytes.insert(
+                rebuilt_blocks[0].bytes.end(),
+                value->begin(),
+                value->end());
+
+            const auto mask =
+                rebuilt_index.size() - 1;
+
+            auto bucket =
+                bucket_for(
+                    hash,
+                    mask);
+
+            bool inserted = false;
+
+            for (std::size_t probe = 0;
+                 probe < rebuilt_index.size();
+                 ++probe) {
+                if (rebuilt_index[bucket] == 0) {
+                    rebuilt_index[bucket] =
+                        static_cast<std::uint32_t>(
+                            raw);
+
+                    inserted = true;
+                    break;
+                }
+
+                bucket =
+                    (bucket + 1) & mask;
+            }
 
             if (!inserted) {
                 return failure = {
@@ -582,7 +1228,9 @@ status string_registry_update::prepare_rebuild_compaction(
             }
         }
 
-        rebuild_compaction_prepared = true;
+        rebuild_compaction_prepared =
+            true;
+
         return {};
     }
     catch (...) {
@@ -592,45 +1240,116 @@ status string_registry_update::prepare_rebuild_compaction(
     }
 }
 
-// Publication transfers stable string storage and both indexes into the owner
-// after all potentially allocating destination growth has already succeeded.
 void string_registry_update::publish_prepared() noexcept {
 
-    assert(prepared && !committed && owner != nullptr);
+    assert(
+        prepared &&
+        !committed &&
+        owner != nullptr);
 
     if (rebuild_compaction_prepared) {
-        owner->storage.swap(rebuilt_storage);
-        owner->records.swap(rebuilt_records);
-        owner->lookup_index.swap(rebuilt_lookup);
+        owner->blocks.swap(
+            rebuilt_blocks);
 
-        added_storage.clear();
+        owner->records.swap(
+            rebuilt_records);
+
+        owner->index.swap(
+            rebuilt_index);
+
+        owner->live_count =
+            rebuilt_live_count;
+
         added_records.clear();
-        added_lookup.clear();
+        added_bytes.clear();
+        added_index.clear();
     }
     else {
-        owner->storage.splice(
-            owner->storage.end(),
-            added_storage);
+        const auto first_new_raw =
+            static_cast<std::uint32_t>(
+                owner->records.size() +
+                1);
 
-        owner->records.insert(
-            owner->records.end(),
-            added_records.begin(),
-            added_records.end());
-        owner->lookup_index.merge(added_lookup);
+        if (!added_records.empty()) {
+            owner->blocks.emplace_back();
+
+            owner->blocks.back().bytes.swap(
+                added_bytes);
+
+            owner->records.insert(
+                owner->records.end(),
+                added_records.begin(),
+                added_records.end());
+
+            owner->live_count +=
+                added_records.size();
+
+            if (index_rebuild_prepared) {
+                owner->index.swap(
+                    prepared_index);
+            }
+            else {
+                const auto mask =
+                    owner->index.size() - 1;
+
+                for (std::size_t offset = 0;
+                     offset < added_records.size();
+                     ++offset) {
+                    const auto raw =
+                        first_new_raw +
+                        static_cast<std::uint32_t>(
+                            offset);
+
+                    auto bucket =
+                        bucket_for(
+                            added_records[offset].hash,
+                            mask);
+
+                    for (;;) {
+                        if (owner->index[bucket] == 0) {
+                            owner->index[bucket] =
+                                raw;
+
+                            break;
+                        }
+
+                        bucket =
+                            (bucket + 1) & mask;
+                    }
+                }
+            }
+        }
+        else if (index_rebuild_prepared) {
+            owner->index.swap(
+                prepared_index);
+        }
 
         added_records.clear();
-        assert(added_lookup.empty());
+        added_index.clear();
     }
 
     ++owner->generation;
     committed = true;
 }
 
-void string_registry_update::cancel() noexcept {
+status string_registry_update::commit() noexcept {
+    const auto result =
+        prepare_publish();
 
+    if (!result.ok()) {
+        return result;
+    }
+
+    publish_prepared();
+    return {};
+}
+
+void string_registry_update::cancel() noexcept {
     if (!committed) {
         prepared = true;
-        failure = {status_code::invalid_state};
+        failure = {
+            status_code::invalid_state
+        };
     }
 }
 

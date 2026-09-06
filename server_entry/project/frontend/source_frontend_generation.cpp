@@ -1503,7 +1503,7 @@ source_rebuild_result source_frontend_generation::rebuild(
             }
         }
 
-        
+
 
         const auto worker_count =
             semantic_count == 0
@@ -1684,20 +1684,14 @@ source_rebuild_result source_frontend_generation::rebuild(
             const auto publish_begin =
                 std::chrono::steady_clock::now();
 
+            const auto publish_reserve_scan_begin =
+                std::chrono::steady_clock::now();
+
             std::size_t string_reserve_hint = 0;
+            std::size_t string_byte_reserve_hint = 0;
+
             const auto maximum =
                 (std::numeric_limits<std::size_t>::max)();
-
-            const auto add_string_reserve =
-                [&](std::size_t count) noexcept {
-                    if (count >
-                        maximum - string_reserve_hint) {
-                        return false;
-                    }
-
-                    string_reserve_hint += count;
-                    return true;
-                };
 
             for (const auto& state : states) {
                 if (!state.parsed ||
@@ -1709,31 +1703,50 @@ source_rebuild_result source_frontend_generation::rebuild(
                 const auto& entry =
                     *state.build_entry;
 
-                if (!add_string_reserve(
-                        entry.enums.size()) ||
-                    !add_string_reserve(
-                        entry.enum_values.size()) ||
-                    !add_string_reserve(
-                        entry.aggregates.size()) ||
-                    !add_string_reserve(
-                        entry.members.size()) ||
-                    !add_string_reserve(
-                        entry.members.size())) {
+                if (entry.name_count() >
+                        maximum -
+                            string_reserve_hint ||
+                    entry.name_bytes_size() >
+                        maximum -
+                            string_byte_reserve_hint) {
                     result = {
-                        status_code::initialization_failed
+                        status_code::
+                            initialization_failed
                     };
                     break;
                 }
+
+                string_reserve_hint +=
+                    entry.name_count();
+
+                string_byte_reserve_hint +=
+                    entry.name_bytes_size();
             }
 
+            current_summary.g0_publish_reserve_scan_ns +=
+                g0_elapsed_ns(
+                    publish_reserve_scan_begin,
+                    std::chrono::steady_clock::now());
+
             if (result.ok()) {
+                const auto string_reserve_begin =
+                    std::chrono::steady_clock::now();
+
                 result =
                     transaction->strings().
-                        reserve_new_strings(
-                            string_reserve_hint);
+                        reserve_bindings(
+                            string_reserve_hint,
+                            string_byte_reserve_hint);
+
+                current_summary.g0_publish_string_reserve_ns +=
+                    g0_elapsed_ns(
+                        string_reserve_begin,
+                        std::chrono::steady_clock::now());
             }
 
             source_publish_scratch publish_scratch;
+            publish_scratch.telemetry.enabled =
+                telemetry.mode() == metrics_mode::detailed;
 
             // Canonical mutation is single-owner and deterministic. source_id is
             // the build-side ownership coordinate; worker completion order is
@@ -1764,10 +1777,125 @@ source_rebuild_result source_frontend_generation::rebuild(
                 ++state.counts.publish;
             }
 
-            current_summary.g0_publish_ns +=
+            const auto publish_total_ns =
                 g0_elapsed_ns(
                     publish_begin,
                     std::chrono::steady_clock::now());
+
+            current_summary.g0_publish_ns +=
+                publish_total_ns;
+
+            if (publish_scratch.telemetry.enabled) {
+                current_summary.g0_publish_source_replace_ns +=
+                    publish_scratch.telemetry.source_replace_ns;
+                current_summary.g0_publish_enum_name_ns +=
+                    publish_scratch.telemetry.enum_name_ns;
+                current_summary.g0_publish_enum_values_ns +=
+                    publish_scratch.telemetry.enum_values_ns;
+                current_summary.g0_publish_enum_sample_name_resolve_ns +=
+                    publish_scratch.telemetry.enum_sample_name_resolve_ns;
+                current_summary.g0_publish_enum_sample_name_intern_ns +=
+                    publish_scratch.telemetry.enum_sample_name_intern_ns;
+                current_summary.g0_publish_enum_sample_values_resolve_ns +=
+                    publish_scratch.telemetry.enum_sample_values_resolve_ns;
+                current_summary.g0_publish_enum_sample_values_intern_ns +=
+                    publish_scratch.telemetry.enum_sample_values_intern_ns;
+                current_summary.g0_publish_enum_builder_ns +=
+                    publish_scratch.telemetry.enum_builder_ns;
+                current_summary.g0_publish_enum_builder_value_copy_ns +=
+                    publish_scratch.builder.enum_value_copy_ns;
+                current_summary.g0_publish_enum_builder_graph_mutation_ns +=
+                    publish_scratch.builder.enum_graph_mutation_ns;
+
+                const auto& graph_sample =
+                    publish_scratch.builder.named_enum;
+
+                current_summary.g0_publish_enum_builder_graph_sample_total_ns +=
+                    graph_sample.total_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_source_replacement_ns +=
+                    graph_sample.source_replacement_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_identity_ns +=
+                    graph_sample.identity_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_contribution_build_ns +=
+                    graph_sample.contribution_build_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_reconcile_ns +=
+                    graph_sample.reconcile_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_delta_ns +=
+                    graph_sample.delta_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_contribution_append_ns +=
+                    graph_sample.contribution_append_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_materialize_ns +=
+                    graph_sample.materialize_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_materialize_state_touch_ns +=
+                    graph_sample.materialize_state_touch_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_materialize_type_storage_ns +=
+                    graph_sample.materialize_type_storage_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_materialize_build_state_ns +=
+                    graph_sample.materialize_build_state_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_materialize_assign_type_ns +=
+                    graph_sample.materialize_assign_type_ns;
+
+                current_summary.g0_publish_enum_builder_graph_sample_assign_type_handle_ns +=
+                    graph_sample.assign_type_handle_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_assign_type_touch_type_ns +=
+                    graph_sample.assign_type_touch_type_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_assign_type_candidate_store_ns +=
+                    graph_sample.assign_type_candidate_store_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_assign_type_named_type_ref_ns +=
+                    graph_sample.assign_type_named_type_ref_ns;
+
+                current_summary.g0_publish_enum_builder_graph_sample_named_type_ref_existing_lookup_ns +=
+                    graph_sample.named_type_ref_existing_lookup_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_named_type_ref_canonical_append_ns +=
+                    graph_sample.named_type_ref_canonical_append_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_named_type_ref_mapping_append_ns +=
+                    graph_sample.named_type_ref_mapping_append_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_named_type_ref_index_emplace_ns +=
+                    graph_sample.named_type_ref_index_emplace_ns;
+
+                current_summary.g0_publish_enum_builder_graph_sample_materialize_attach_ns +=
+                    graph_sample.materialize_attach_ns;
+                current_summary.g0_publish_enum_builder_graph_sample_result_lookup_ns +=
+                    graph_sample.result_lookup_ns;
+                current_summary.g0_publish_enum_builder_graph_call_count +=
+                    graph_sample.calls;
+                current_summary.g0_publish_enum_builder_graph_sample_count +=
+                    graph_sample.samples;
+
+                const auto enum_builder_attributed_ns =
+                    publish_scratch.builder.enum_value_copy_ns +
+                    publish_scratch.builder.enum_graph_mutation_ns;
+
+                if (publish_scratch.telemetry.enum_builder_ns >=
+                    enum_builder_attributed_ns) {
+                    current_summary.g0_publish_enum_builder_residual_ns +=
+                        publish_scratch.telemetry.enum_builder_ns -
+                        enum_builder_attributed_ns;
+                }
+
+                current_summary.g0_publish_aggregate_builder_ns +=
+                    publish_scratch.telemetry.aggregate_builder_ns;
+
+                current_summary.g0_publish_source_count +=
+                    publish_scratch.telemetry.source_count;
+                current_summary.g0_publish_enum_builder_count +=
+                    publish_scratch.telemetry.enum_builder_count;
+                current_summary.g0_publish_aggregate_builder_count +=
+                    publish_scratch.telemetry.aggregate_builder_count;
+
+                const auto attributed_ns =
+                    current_summary.g0_publish_reserve_scan_ns +
+                    current_summary.g0_publish_string_reserve_ns +
+                    publish_scratch.telemetry.source_replace_ns +
+                    // RC18 sampled enum preparation is not subtracted from wall residual.
+                    publish_scratch.telemetry.enum_builder_ns +
+                    publish_scratch.telemetry.aggregate_builder_ns;
+
+                if (publish_total_ns >= attributed_ns) {
+                    current_summary.g0_publish_residual_ns +=
+                        publish_total_ns - attributed_ns;
+                }
+            }
         }
 
         try {

@@ -7,7 +7,9 @@
 #include "../parser/source_facts.hpp"
 #include "../../source_id.hpp"
 #include "../../status.hpp"
+#include "../../string_id.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <string_view>
@@ -15,15 +17,20 @@
 
 namespace cw::server {
 
-// References spelling bytes owned by one source_build_entry.
-// Builder entries survive source_context reuse but remain transient build state.
+// References one captured name slot. The slot is Source-local until the String
+// Binding boundary assigns its canonical project string_id.
 struct build_name_ref {
-    std::uint32_t offset = 0;
-    std::uint32_t length = 0;
+    std::uint32_t index = 0;
 
     [[nodiscard]] constexpr explicit operator bool() const noexcept {
-        return length != 0;
+        return index != 0;
     }
+};
+
+struct source_build_name {
+    std::uint32_t offset = 0;
+    std::uint32_t length = 0;
+    string_id canonical{};
 };
 
 struct source_build_enum_value {
@@ -36,7 +43,8 @@ struct source_build_enum {
     build_name_ref canonical_name{};
     bool anonymous = false;
     bool scoped = false;
-    enum_definition_state definition_state = enum_definition_state::defined;
+    enum_definition_state definition_state =
+        enum_definition_state::defined;
     std::optional<builtin_type> explicit_underlying;
     std::uint32_t value_offset = 0;
     std::uint32_t value_count = 0;
@@ -45,7 +53,8 @@ struct source_build_enum {
 };
 
 struct source_build_modifier {
-    derived_type_kind kind = derived_type_kind::pointer;
+    derived_type_kind kind =
+        derived_type_kind::pointer;
     std::uint64_t payload = 0;
 };
 
@@ -59,16 +68,16 @@ struct source_build_member {
 
 struct source_build_aggregate {
     build_name_ref canonical_name{};
-    aggregate_definition_state definition_state = aggregate_definition_state::declared;
+    aggregate_definition_state definition_state =
+        aggregate_definition_state::declared;
     std::uint32_t member_offset = 0;
     std::uint32_t member_count = 0;
     source_text_range declaration_range{};
     source_text_range name_range{};
 };
 
-// Owns the minimal Builder-side contribution captured from one Source.
-// It contains no Parser-owned views and is keyed exclusively by source_id;
-// worker/thread identity never participates in canonical construction.
+// Owns one Source's transient Builder contribution. Name bytes stay packed;
+// canonical string_id values are bound exactly once before Graph mutation.
 class source_build_entry final {
 public:
     [[nodiscard]] status store_name(
@@ -78,6 +87,21 @@ public:
     [[nodiscard]] status resolve_name(
         build_name_ref reference,
         std::string_view& output) const noexcept;
+
+    [[nodiscard]] status bind_name(
+        build_name_ref reference,
+        string_id canonical) noexcept;
+
+    [[nodiscard]] string_id bound_name(
+        build_name_ref reference) const noexcept;
+
+    [[nodiscard]] std::size_t name_count() const noexcept {
+        return name_entries.size();
+    }
+
+    [[nodiscard]] std::size_t name_bytes_size() const noexcept {
+        return names.size();
+    }
 
     void reset() noexcept;
 
@@ -90,6 +114,7 @@ public:
 
 private:
     std::vector<char> names;
+    std::vector<source_build_name> name_entries;
 };
 
 } // namespace cw::server

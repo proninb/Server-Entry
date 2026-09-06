@@ -6,11 +6,33 @@
 #include "../../diagnostics/diagnostic_buffer.hpp"
 #include "../../operation.hpp"
 
+#include <cstdint>
 #include <vector>
 
 namespace cw::server {
 
 class graph_build_transaction;
+
+// Detailed publication telemetry is local to one frontend generation. Basic
+// production publication selects an untimed implementation at the Source
+// boundary and performs no per-fact clock reads.
+struct source_publish_telemetry {
+    bool enabled = false;
+
+    std::uint64_t source_replace_ns = 0;
+    std::uint64_t enum_name_ns = 0;
+    std::uint64_t enum_values_ns = 0;
+    std::uint64_t enum_sample_name_resolve_ns = 0;
+    std::uint64_t enum_sample_name_intern_ns = 0;
+    std::uint64_t enum_sample_values_resolve_ns = 0;
+    std::uint64_t enum_sample_values_intern_ns = 0;
+    std::uint64_t enum_builder_ns = 0;
+    std::uint64_t aggregate_builder_ns = 0;
+
+    std::uint64_t source_count = 0;
+    std::uint64_t enum_builder_count = 0;
+    std::uint64_t aggregate_builder_count = 0;
+};
 
 // Reusable COLD buffers for one deterministic single-owner publication pass.
 // No canonical identity or Graph state is stored here.
@@ -19,6 +41,7 @@ struct source_publish_scratch {
     std::vector<aggregate_source_fact::member_fact> members;
     std::vector<canonical_type_modifier> modifiers;
     project_builder_scratch builder;
+    source_publish_telemetry telemetry;
 };
 
 // Captures one Parser batch into Builder-owned Source state. After this returns
@@ -32,14 +55,14 @@ struct source_publish_scratch {
 // String/Entity/TypeRef mutation is performed by the build coordinator.
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    const source_build_entry& entry,
+    source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics) noexcept;
 
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    const source_build_entry& entry,
+    source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics,

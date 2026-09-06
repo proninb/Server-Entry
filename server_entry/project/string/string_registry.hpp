@@ -5,12 +5,11 @@
 
 #include <cstddef>
 #include <cstdint>
-#include <list>
+#include <limits>
 #include <optional>
 #include <span>
 #include <string>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace cw::server {
@@ -32,11 +31,9 @@ struct string_registry_storage_snapshot {
 
 #endif
 
-// Owns the canonical interned strings used by Graph construction and access.
-// String bytes remain at stable addresses so registry lookup keys and returned
-// string_views stay valid until the registry is reinitialized or replaced.
-// string_id values are one-based registry slot identities assigned on publish.
-// G0 reclamation may tombstone an unused slot but never renumbers or reuses it.
+// Owns canonical project string identities. string_id is the direct one-based
+// slot coordinate. Text-to-ID binding is construction-only; Graph and Runtime
+// consume string_id and never perform textual lookup.
 class string_registry final {
 public:
     string_registry() = default;
@@ -47,15 +44,37 @@ public:
 
     [[nodiscard]] status initialize() noexcept;
     [[nodiscard]] string_registry_update begin_update() noexcept;
-    [[nodiscard]] string_id find(std::string_view value) const noexcept;
-    [[nodiscard]] std::optional<std::string_view> get(string_id id) const noexcept;
-    [[nodiscard]] std::size_t size() const noexcept { return records.size(); }
-    [[nodiscard]] std::size_t live_size() const noexcept { return lookup_index.size(); }
-    [[nodiscard]] status rebuild_lookup_index() noexcept;
+
+    [[nodiscard]] std::optional<std::string_view> get(
+        string_id id) const noexcept;
+
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+
+    // Test observer only. Production code has no text-to-ID query after the
+    // construction String Binding boundary.
+    [[nodiscard]] string_id find_for_test(
+        std::string_view value) const noexcept {
+        return find_value(
+            value,
+            hash_value(value));
+    }
+
+#endif
+
+    [[nodiscard]] std::size_t size() const noexcept {
+        return records.size();
+    }
+
+    [[nodiscard]] std::size_t live_size() const noexcept {
+        return live_count;
+    }
+
     [[nodiscard]] status export_slots(
         std::vector<std::optional<std::string>>& output) const noexcept;
+
     [[nodiscard]] status import_slots(
         std::span<const std::optional<std::string>> values) noexcept;
+
     void swap_compiled(string_registry& other) noexcept;
 
 private:
@@ -64,48 +83,66 @@ private:
     friend class graph_update;
     friend class graph_build_transaction_test_access;
 
+    static constexpr std::uint32_t invalid_block =
+        (std::numeric_limits<std::uint32_t>::max)();
+
     struct string_record {
-        std::string bytes;
-    };
+        std::uint64_t hash = 0;
+        std::uint64_t offset = 0;
+        std::uint32_t block = invalid_block;
+        std::uint32_t length = 0;
 
-    struct string_view_hash {
-        using is_transparent = void;
-
-        [[nodiscard]] std::size_t operator()(std::string_view value) const noexcept {
-            return std::hash<std::string_view>{}(value);
+        [[nodiscard]] bool live() const noexcept {
+            return block != invalid_block;
         }
     };
 
-    using lookup_type = std::unordered_map<
-        std::string_view,
-        string_id,
-        string_view_hash,
-        std::equal_to<>>;
+    struct byte_block {
+        std::vector<char> bytes;
+    };
 
-    // storage owns bytes and therefore the lifetime of lookup string_views.
-    // records is the direct string_id-to-Entry table; slot N is records[N - 1].
-    // A null record is a G0-reclaimed tombstone. Numeric slots are never reused.
-    std::list<string_record> storage;
-    std::vector<const string_record*> records;
-    lookup_type lookup_index;
+    [[nodiscard]] static std::uint64_t hash_value(
+        std::string_view value) noexcept;
+
+    [[nodiscard]] string_id find_value(
+        std::string_view value,
+        std::uint64_t hash) const noexcept;
+
+    std::vector<byte_block> blocks;
+    std::vector<string_record> records;
+
+    // Construction-only canonicalization index. Bucket N stores a raw string_id;
+    // zero is empty. This table is never used by Graph or Runtime consumers.
+    std::vector<std::uint32_t> index;
+
+    std::size_t live_count = 0;
     std::uint64_t generation = 0;
 };
 
-// Builds an isolated append-only update against one string_registry generation.
-// New strings and indexes remain update-local until publication; any owner
-// generation change invalidates the update so stale candidates cannot commit.
+// Builds one isolated String Registry candidate. bind() is the only textual
+// identity boundary: it maps bytes to one canonical string_id. All later
+// Builder/Graph work must use that ID directly.
 class string_registry_update final {
 public:
     ~string_registry_update() = default;
+
     string_registry_update(const string_registry_update&) = delete;
     string_registry_update& operator=(const string_registry_update&) = delete;
+
     string_registry_update(string_registry_update&& other) noexcept;
     string_registry_update& operator=(string_registry_update&&) = delete;
 
-    [[nodiscard]] string_id find(std::string_view value) const noexcept;
-    [[nodiscard]] status reserve_new_strings(std::size_t count) noexcept;
-    [[nodiscard]] status intern(std::string_view value, string_id& result) noexcept;
-    [[nodiscard]] std::optional<std::string_view> get(string_id id) const noexcept;
+    [[nodiscard]] status reserve_bindings(
+        std::size_t count,
+        std::size_t bytes) noexcept;
+
+    [[nodiscard]] status bind(
+        std::string_view value,
+        string_id& result) noexcept;
+
+    [[nodiscard]] std::optional<std::string_view> get(
+        string_id id) const noexcept;
+
     [[nodiscard]] std::size_t added_size() const noexcept {
         return added_records.size();
     }
@@ -117,33 +154,15 @@ private:
     friend class graph_build_transaction;
     friend class graph_update;
 
-    string_registry_update(
+    explicit string_registry_update(
         string_registry& owner,
         std::uint64_t generation) noexcept;
 
-    string_registry* owner = nullptr;
-    std::list<string_registry::string_record> added_storage;
-    std::vector<const string_registry::string_record*> added_records;
-    string_registry::lookup_type added_lookup;
+    [[nodiscard]] status ensure_added_index(
+        std::size_t required) noexcept;
 
-    // G0-only physical string reclamation. The rebuilt records vector preserves
-    // every numeric string_id slot while unretained slots become nullptr.
-    std::list<string_registry::string_record> rebuilt_storage;
-    std::vector<const string_registry::string_record*> rebuilt_records;
-    string_registry::lookup_type rebuilt_lookup;
-    std::uint64_t base_generation = 0;
-    status failure{};
-    bool committed = false;
-    bool prepared = false;
-    bool rebuild_compaction_prepared = false;
-
-    // Reserves all destination hash-table capacity before publication so the
-    // subsequent splice/merge publish step cannot fail through allocation.
     [[nodiscard]] status prepare_publish() noexcept;
 
-    // Builds a compact physical registry for G0 while preserving all string_id
-    // slot numbers. retained[id] must be nonzero for every semantic/historical
-    // string that must survive the rebuild.
     [[nodiscard]] status prepare_rebuild_compaction(
         std::span<const std::uint8_t> retained) noexcept;
 
@@ -155,9 +174,29 @@ private:
 
     [[nodiscard]] std::size_t candidate_size_for_validation() const noexcept {
         return owner == nullptr
-                   ? 0
-                   : owner->records.size() + added_records.size();
+            ? 0
+            : owner->records.size() + added_records.size();
     }
+
+    string_registry* owner = nullptr;
+
+    std::vector<string_registry::string_record> added_records;
+    std::vector<char> added_bytes;
+    std::vector<std::uint32_t> added_index;
+
+    std::vector<string_registry::byte_block> rebuilt_blocks;
+    std::vector<string_registry::string_record> rebuilt_records;
+    std::vector<std::uint32_t> rebuilt_index;
+    std::size_t rebuilt_live_count = 0;
+
+    std::vector<std::uint32_t> prepared_index;
+    bool index_rebuild_prepared = false;
+
+    std::uint64_t base_generation = 0;
+    status failure{};
+    bool committed = false;
+    bool prepared = false;
+    bool rebuild_compaction_prepared = false;
 };
 
 } // namespace cw::server

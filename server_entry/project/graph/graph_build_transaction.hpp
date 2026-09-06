@@ -34,13 +34,13 @@ struct source_publish_scratch;
 
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    const source_build_entry& entry,
+    source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics) noexcept;
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    const source_build_entry& entry,
+    source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -130,13 +130,13 @@ private:
 
     friend status publish_source_entry(
         graph_build_transaction& transaction,
-        const source_build_entry& entry,
+        source_build_entry& entry,
         const project_builder& builder,
         operation_id operation,
         diagnostic_buffer& diagnostics) noexcept;
     friend status publish_source_entry(
         graph_build_transaction& transaction,
-        const source_build_entry& entry,
+        source_build_entry& entry,
         const project_builder& builder,
         operation_id operation,
         diagnostic_buffer& diagnostics,

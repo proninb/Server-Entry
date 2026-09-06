@@ -131,7 +131,7 @@ bool intern(
     std::string_view text,
     string_id& output) {
 
-    return transaction.strings().intern(
+    return transaction.strings().bind(
         text,
         output).ok();
 }
@@ -1320,21 +1320,38 @@ bool test_parser_publisher_boundary() {
     batch.enums = context.enums;
     batch.aggregates = context.aggregates;
 
-    if (!publish_source_facts(
-            transaction,
+    source_build_entry captured;
+
+    if (!capture_source_facts(
             batch,
+            captured).ok() ||
+        !publish_source_entry(
+            transaction,
+            captured,
             builder,
             operation_id{16},
-            diagnostics).ok() ||
-        !transaction.commit().ok()) {
+            diagnostics).ok()) {
+        return false;
+    }
+
+    if (captured.enums.empty() ||
+        captured.enum_values.empty()) {
         return false;
     }
 
     const auto canonical_name =
-        manager.strings().find("Published");
+        captured.bound_name(
+            captured.enums[0].canonical_name);
 
     const auto canonical_value =
-        manager.strings().find("One");
+        captured.bound_name(
+            captured.enum_values[0].name);
+
+    if (!canonical_name ||
+        !canonical_value ||
+        !transaction.commit().ok()) {
+        return false;
+    }
 
     const auto identity =
         manager.compiled_graph().find_id(

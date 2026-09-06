@@ -5,10 +5,43 @@
 #include "../parser/source_context.hpp"
 #include "../../diagnostics/diagnostic_descriptor.hpp"
 
+#include <chrono>
 #include <vector>
 
 namespace cw::server {
 namespace {
+
+template <bool Enabled>
+class publish_timing_scope final {
+public:
+    publish_timing_scope(
+        std::uint64_t& total_ns,
+        std::uint64_t& count) noexcept
+        : total_ns(total_ns),
+          count(count) {
+
+        if constexpr (Enabled) {
+            begin = std::chrono::steady_clock::now();
+        }
+    }
+
+    publish_timing_scope(const publish_timing_scope&) = delete;
+    publish_timing_scope& operator=(const publish_timing_scope&) = delete;
+
+    ~publish_timing_scope() noexcept {
+        if constexpr (Enabled) {
+            total_ns += static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() - begin).count());
+            ++count;
+        }
+    }
+
+private:
+    std::uint64_t& total_ns;
+    std::uint64_t& count;
+    std::chrono::steady_clock::time_point begin{};
+};
 
 status copy_name(
     const source_context& context,
@@ -32,6 +65,59 @@ status copy_name(
     return destination.store_name(bytes, output);
 }
 
+// String Binding is the only text-to-project-ID boundary. It runs before Graph
+// mutation and binds every captured name exactly once. Publication below this
+// function is ID-only.
+status bind_source_names(
+    graph_build_transaction& transaction,
+    source_build_entry& entry) noexcept {
+
+    for (std::uint32_t raw = 1;
+         raw <= entry.name_count();
+         ++raw) {
+        const build_name_ref reference{
+            raw
+        };
+
+        std::string_view bytes;
+
+        auto result =
+            entry.resolve_name(
+                reference,
+                bytes);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        string_id canonical;
+
+        result =
+            transaction.strings().bind(
+                bytes,
+                canonical);
+
+        if (!result.ok() ||
+            !canonical) {
+            return result.ok()
+                ? status{
+                    status_code::
+                        configuration_failed}
+                : result;
+        }
+
+        result =
+            entry.bind_name(
+                reference,
+                canonical);
+
+        if (!result.ok()) {
+            return result;
+        }
+    }
+
+    return {};
+}
 } // namespace
 
 status capture_source_facts(
@@ -210,16 +296,16 @@ status capture_source_facts(
     }
 }
 
-status publish_source_entry(
+template <bool Detailed>
+status publish_source_entry_impl(
     graph_build_transaction& transaction,
-    const source_build_entry& entry,
+    source_build_entry& entry,
     const project_builder& builder,
     const operation_id operation,
     diagnostic_buffer& diagnostics,
     source_publish_scratch& scratch) noexcept {
 
-    const auto abort = [&](status result) noexcept {
-        transaction.fail(result);
+    const auto abort = [](status result) noexcept {
         return result;
     };
 
@@ -264,8 +350,33 @@ status publish_source_entry(
     }
 
     try {
+        const auto binding_result =
+            bind_source_names(
+                transaction,
+                entry);
+
+        if (!binding_result.ok()) {
+            return
+                binding_result.code ==
+                    status_code::initialization_failed
+                ? infrastructure()
+                : malformed();
+        }
+
+        // RC21 identity boundary: no text-to-string_id work is permitted below.
         graph_update::source_replacement replacement;
-        auto result = transaction.graph_state().replace_source(entry.source, replacement);
+        status result;
+
+        {
+            publish_timing_scope<Detailed> timing{
+                scratch.telemetry.source_replace_ns,
+                scratch.telemetry.source_count
+            };
+
+            result = transaction.graph_state().replace_source(
+                entry.source,
+                replacement);
+        }
 
         if (!result.ok()) {
             if (result.code == status_code::duplicate_source_replacement) {
@@ -288,51 +399,103 @@ status publish_source_entry(
         members.clear();
         modifiers.clear();
 
+        scratch.builder.detailed = Detailed;
+
+        std::uint32_t enum_prepare_ordinal = 0;
+
         for (const auto& fact : entry.enums) {
+            const bool sample =
+                [&]() noexcept {
+                    if constexpr (Detailed) {
+                        ++enum_prepare_ordinal;
+                        return
+                            (enum_prepare_ordinal % 1024u) == 0;
+                    }
+
+                    return false;
+                }();
+
             string_id canonical_name;
 
+            std::chrono::steady_clock::time_point name_begin{};
+
+            if constexpr (Detailed) {
+                if (sample) {
+                    name_begin =
+                        std::chrono::steady_clock::now();
+                }
+            }
+
             if (!fact.anonymous) {
-                std::string_view bytes;
-                result = entry.resolve_name(fact.canonical_name, bytes);
-                if (!result.ok()) {
+                canonical_name =
+                    entry.bound_name(
+                        fact.canonical_name);
+
+                if (!canonical_name) {
                     return malformed();
                 }
+            }
 
-                result = transaction.strings().intern(bytes, canonical_name);
-                if (!result.ok()) {
-                    return result.code == status_code::initialization_failed
-                        ? infrastructure()
-                        : abort(result);
+            if constexpr (Detailed) {
+                if (sample) {
+                    scratch.telemetry.enum_name_ns +=
+                        static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<
+                                std::chrono::nanoseconds>(
+                                    std::chrono::steady_clock::now() -
+                                    name_begin).count());
+                }
+            }
+
+            std::chrono::steady_clock::time_point values_begin{};
+
+            if constexpr (Detailed) {
+                if (sample) {
+                    values_begin =
+                        std::chrono::steady_clock::now();
                 }
             }
 
             if (fact.value_offset > entry.enum_values.size() ||
-                fact.value_count > entry.enum_values.size() - fact.value_offset) {
+                fact.value_count >
+                    entry.enum_values.size() -
+                    fact.value_offset) {
                 return malformed();
             }
 
             enum_values.clear();
             enum_values.reserve(fact.value_count);
 
-            for (std::uint32_t index = 0; index < fact.value_count; ++index) {
-                const auto& value = entry.enum_values[fact.value_offset + index];
-                std::string_view bytes;
-                result = entry.resolve_name(value.name, bytes);
-                if (!result.ok()) {
+            for (std::uint32_t index = 0;
+                 index < fact.value_count;
+                 ++index) {
+                const auto& value =
+                    entry.enum_values[
+                        fact.value_offset + index];
+
+                const auto name =
+                    entry.bound_name(
+                        value.name);
+
+                if (!name) {
                     return malformed();
                 }
 
-                string_id name;
-                result = transaction.strings().intern(bytes, name);
-                if (!result.ok() || !name) {
-                    return result.code == status_code::initialization_failed
-                        ? infrastructure()
-                        : abort(result.ok()
-                              ? status{status_code::configuration_failed}
-                              : result);
-                }
+                enum_values.push_back({
+                    name,
+                    value.value
+                });
+            }
 
-                enum_values.push_back({name, value.value});
+            if constexpr (Detailed) {
+                if (sample) {
+                    scratch.telemetry.enum_values_ns +=
+                        static_cast<std::uint64_t>(
+                            std::chrono::duration_cast<
+                                std::chrono::nanoseconds>(
+                                    std::chrono::steady_clock::now() -
+                                    values_begin).count());
+                }
             }
 
             const enum_source_fact canonical{
@@ -344,10 +507,18 @@ status publish_source_entry(
                 enum_values
             };
 
-            result = builder.build_enum(
-                replacement,
-                canonical,
-                scratch.builder);
+            {
+                publish_timing_scope<Detailed> timing{
+                    scratch.telemetry.enum_builder_ns,
+                    scratch.telemetry.enum_builder_count
+                };
+
+                result = builder.build_enum(
+                    replacement,
+                    canonical,
+                    scratch.builder);
+            }
+
             if (!result.ok()) {
                 if (result.code == status_code::configuration_failed) {
                     const auto emitted = emit(
@@ -364,20 +535,12 @@ status publish_source_entry(
         }
 
         for (const auto& fact : entry.aggregates) {
-            std::string_view bytes;
-            result = entry.resolve_name(fact.canonical_name, bytes);
-            if (!result.ok()) {
-                return malformed();
-            }
+            const auto canonical_name =
+                entry.bound_name(
+                    fact.canonical_name);
 
-            string_id canonical_name;
-            result = transaction.strings().intern(bytes, canonical_name);
-            if (!result.ok() || !canonical_name) {
-                return result.code == status_code::initialization_failed
-                    ? infrastructure()
-                    : abort(result.ok()
-                          ? status{status_code::configuration_failed}
-                          : result);
+            if (!canonical_name) {
+                return malformed();
             }
 
             if (fact.member_offset > entry.members.size() ||
@@ -391,36 +554,23 @@ status publish_source_entry(
 
             for (std::uint32_t index = 0; index < fact.member_count; ++index) {
                 const auto& member = entry.members[fact.member_offset + index];
-                std::string_view member_bytes;
-                result = entry.resolve_name(member.name, member_bytes);
-                if (!result.ok()) {
+                const auto member_name =
+                    entry.bound_name(
+                        member.name);
+
+                if (!member_name) {
                     return malformed();
                 }
 
-                string_id member_name;
-                result = transaction.strings().intern(member_bytes, member_name);
-                if (!result.ok() || !member_name) {
-                    return result.code == status_code::initialization_failed
-                        ? infrastructure()
-                        : abort(result.ok()
-                              ? status{status_code::configuration_failed}
-                              : result);
-                }
-
                 string_id user_type_name;
+
                 if (!member.builtin) {
-                    std::string_view type_bytes;
-                    result = entry.resolve_name(member.user_type_name, type_bytes);
-                    if (!result.ok()) {
+                    user_type_name =
+                        entry.bound_name(
+                            member.user_type_name);
+
+                    if (!user_type_name) {
                         return malformed();
-                    }
-                    result = transaction.strings().intern(type_bytes, user_type_name);
-                    if (!result.ok() || !user_type_name) {
-                        return result.code == status_code::initialization_failed
-                            ? infrastructure()
-                            : abort(result.ok()
-                                  ? status{status_code::configuration_failed}
-                                  : result);
                     }
                 }
 
@@ -449,15 +599,22 @@ status publish_source_entry(
                 });
             }
 
-            result = builder.build_aggregate(
-                replacement,
-                {
-                    canonical_name,
-                    fact.definition_state,
-                    members,
-                    modifiers
-                },
-                scratch.builder);
+            {
+                publish_timing_scope<Detailed> timing{
+                    scratch.telemetry.aggregate_builder_ns,
+                    scratch.telemetry.aggregate_builder_count
+                };
+
+                result = builder.build_aggregate(
+                    replacement,
+                    {
+                        canonical_name,
+                        fact.definition_state,
+                        members,
+                        modifiers
+                    },
+                    scratch.builder);
+            }
 
             if (!result.ok()) {
                 if (result.code == status_code::configuration_failed) {
@@ -483,7 +640,40 @@ status publish_source_entry(
 
 status publish_source_entry(
     graph_build_transaction& transaction,
-    const source_build_entry& entry,
+    source_build_entry& entry,
+    const project_builder& builder,
+    const operation_id operation,
+    diagnostic_buffer& diagnostics,
+    source_publish_scratch& scratch) noexcept {
+
+    const auto result =
+        scratch.telemetry.enabled
+            ? publish_source_entry_impl<true>(
+                  transaction,
+                  entry,
+                  builder,
+                  operation,
+                  diagnostics,
+                  scratch)
+            : publish_source_entry_impl<false>(
+                  transaction,
+                  entry,
+                  builder,
+                  operation,
+                  diagnostics,
+                  scratch);
+
+    if (!result.ok()) {
+        // The friend boundary owns fail-closed transaction cancellation.
+        transaction.fail(result);
+    }
+
+    return result;
+}
+
+status publish_source_entry(
+    graph_build_transaction& transaction,
+    source_build_entry& entry,
     const project_builder& builder,
     const operation_id operation,
     diagnostic_buffer& diagnostics) noexcept {

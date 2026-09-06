@@ -285,7 +285,7 @@ bool test_discard_and_prepared_mutation_rejection() {
         string_id name;
 
         if (!resolve_source(transaction, source_a, source) ||
-            !transaction.strings().intern("Transient", name).ok()) {
+            !transaction.strings().bind("Transient", name).ok()) {
             return false;
         }
 
@@ -312,7 +312,7 @@ bool test_discard_and_prepared_mutation_rejection() {
 
         string_id rejected;
 
-        if (transaction.strings().intern("Late", rejected).ok() ||
+        if (transaction.strings().bind("Late", rejected).ok() ||
             transaction.sources().add(
                 source_b,
                 project_item_role::source).ok() ||
@@ -350,7 +350,7 @@ bool test_stale_source_generation_is_atomic() {
             transaction,
             source_a,
             candidate_source) ||
-        !transaction.strings().intern(
+        !transaction.strings().bind(
             "Candidate",
             candidate_name).ok()) {
         return false;
@@ -398,7 +398,9 @@ bool test_stale_source_generation_is_atomic() {
     return
         manager.state() == project_state::error &&
         access::sources(manager).source_count() == 1 &&
-        manager.strings().find("Candidate") == string_id{} &&
+        manager.strings().size() == 0 &&
+        manager.strings().live_size() == 0 &&
+        !manager.strings().get(candidate_name).has_value() &&
         manager.compiled_graph().entity_count() == 0;
 }
 
@@ -417,7 +419,7 @@ bool test_forced_prepare_failures_are_atomic() {
         string_id name;
 
         if (!resolve_source(transaction, source_a, source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Atomic",
                 name).ok()) {
             return false;
@@ -490,14 +492,14 @@ bool build_two_names(
     string_id z_name;
 
     if (reverse) {
-        if (!transaction.strings().intern("Zeta", z_name).ok() ||
-            !transaction.strings().intern("Alpha", a_name).ok()) {
+        if (!transaction.strings().bind("Zeta", z_name).ok() ||
+            !transaction.strings().bind("Alpha", a_name).ok()) {
             return false;
         }
     }
     else {
-        if (!transaction.strings().intern("Alpha", a_name).ok() ||
-            !transaction.strings().intern("Zeta", z_name).ok()) {
+        if (!transaction.strings().bind("Alpha", a_name).ok() ||
+            !transaction.strings().bind("Zeta", z_name).ok()) {
             return false;
         }
     }
@@ -607,10 +609,10 @@ bool test_definition_range_and_external_contributions() {
                 transaction,
                 source_b,
                 declaration_source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "N::State",
                 name).ok() ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Ready",
                 value_name).ok()) {
             return false;
@@ -801,7 +803,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
             manager.begin_build(graph_build_mode::rebuild);
 
         if (!resolve_source(transaction, source_a, source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Empty",
                 name).ok()) {
             return false;
@@ -897,7 +899,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
                 transaction,
                 source_a,
                 same_source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Empty",
                 same_name).ok() ||
             same_source != source ||
@@ -950,7 +952,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
                 transaction,
                 source_b,
                 new_source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Different",
                 new_name).ok()) {
             return false;
@@ -1009,10 +1011,10 @@ bool test_aggregate_members_and_modifier_order() {
         source_id source;
 
         if (!resolve_source(transaction, source_a, source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Aggregate",
                 type_name).ok() ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "value",
                 member_name).ok()) {
             return false;
@@ -1141,9 +1143,9 @@ bool test_pending_named_member_and_dangling_guard() {
         source_id source;
 
         if (!resolve_source(transaction, source_a, source) ||
-            !transaction.strings().intern("A", a_name).ok() ||
-            !transaction.strings().intern("B", b_name).ok() ||
-            !transaction.strings().intern("b", member_name).ok()) {
+            !transaction.strings().bind("A", a_name).ok() ||
+            !transaction.strings().bind("B", b_name).ok() ||
+            !transaction.strings().bind("b", member_name).ok()) {
             return false;
         }
 
@@ -1247,13 +1249,13 @@ bool test_pending_named_member_and_dangling_guard() {
             invalid,
             source_b,
             invalid_source) ||
-        !invalid.strings().intern(
+        !invalid.strings().bind(
             "InvalidA",
             invalid_a).ok() ||
-        !invalid.strings().intern(
+        !invalid.strings().bind(
             "MissingB",
             missing_b).ok() ||
-        !invalid.strings().intern(
+        !invalid.strings().bind(
             "member",
             invalid_member).ok()) {
         return false;
@@ -1318,10 +1320,10 @@ bool test_incremental_handle_and_typeref_preservation() {
             manager.begin_build(graph_build_mode::rebuild);
 
         if (!resolve_source(transaction, source_a, source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "StableType",
                 type_name).ok() ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "p",
                 member_name).ok()) {
             return false;
@@ -1402,10 +1404,10 @@ bool test_incremental_handle_and_typeref_preservation() {
                 transaction,
                 source_a,
                 same_source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "StableType",
                 same_type_name).ok() ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "p",
                 same_member_name).ok() ||
             same_source != source ||
@@ -1499,10 +1501,10 @@ bool test_compiled_checkpoint_roundtrip_and_fail_closed_load() {
                 transaction,
                 source_a,
                 source) ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Persisted",
                 name).ok() ||
-            !transaction.strings().intern(
+            !transaction.strings().bind(
                 "Answer",
                 value_name).ok()) {
             return false;
@@ -1575,15 +1577,15 @@ bool test_compiled_checkpoint_roundtrip_and_fail_closed_load() {
         return false;
     }
 
-    const auto loaded_name =
-        loaded.strings().find("Persisted");
+    const auto loaded_name_value =
+        loaded.strings().get(name);
 
-    const auto loaded_value_name =
-        loaded.strings().find("Answer");
+    const auto loaded_value_name_value =
+        loaded.strings().get(value_name);
 
     const auto loaded_identity =
         loaded.compiled_graph().find_id(
-            loaded_name);
+            name);
 
     const auto* loaded_entity =
         loaded.compiled_graph().find(
@@ -1601,8 +1603,10 @@ bool test_compiled_checkpoint_roundtrip_and_fail_closed_load() {
                   loaded_entity->type)
             : std::span<const enum_value_record>{};
 
-    if (loaded_name != name ||
-        loaded_value_name != value_name ||
+    if (!loaded_name_value ||
+        *loaded_name_value != "Persisted" ||
+        !loaded_value_name_value ||
+        *loaded_value_name_value != "Answer" ||
         loaded_identity != identity ||
         !loaded_entity ||
         loaded_entity->type != type ||
