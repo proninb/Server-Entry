@@ -26,6 +26,8 @@ struct row {
     double setup_ms = 0;
     double prepare_ms = 0;
     double publish_ms = 0;
+    double setup_replace_source_ms = 0;
+    double setup_declare_named_ms = 0;
     graph_build_transaction_timing timing{};
     graph_storage_prepare_telemetry graph{};
     string_registry_storage_snapshot strings_before{};
@@ -826,6 +828,7 @@ void dependency_chain_gate() {
 void print_header() {
     std::cout
         << "types,scenario,total_ms,setup_ms,prepare_ms,publish_ms,"
+        << "setup_replace_source_ms,setup_declare_named_ms,"
         << "prepare_accounted_ms,source_prepare_ms,string_prepare_ms,"
         << "graph_prepare_ms,string_retention_ms,string_compaction_ms,"
         << "contribution_prepare_ms,"
@@ -881,6 +884,8 @@ void print_row(const row& value) {
         << value.setup_ms << ','
         << value.prepare_ms << ','
         << value.publish_ms << ','
+        << value.setup_replace_source_ms << ','
+        << value.setup_declare_named_ms << ','
         << milliseconds(prepare_accounted_ns(timing)) << ','
         << milliseconds(timing.source_prepare_ns) << ','
         << milliseconds(timing.string_prepare_ns) << ','
@@ -924,6 +929,500 @@ void print_row(const row& value) {
         << '\n';
 }
 
+struct k_baseline {
+    std::vector<source_id> sources;
+    std::vector<string_id> names;
+};
+
+std::size_t k_source_index(
+    std::size_t count,
+    std::size_t k,
+    std::size_t position) {
+
+    require(
+        k != 0 &&
+        k <= count &&
+        position < k,
+        "Invalid RC-V2-03 K selection");
+
+    return (position * count) / k;
+}
+
+k_baseline build_k_baseline(
+    graph_manager& manager,
+    std::size_t count) {
+
+    auto transaction =
+        manager.begin_build(graph_build_mode::rebuild);
+
+    auto sources =
+        prepare_physical_sources(
+            transaction,
+            count);
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(count)
+            .ok(),
+        "RC-V2-03 G0 String bulk reserve failed");
+
+    std::vector<string_id> names;
+    names.resize(count);
+
+    for (std::size_t index = 0;
+         index < count;
+         ++index) {
+        require(
+            transaction.strings().intern(
+                type_name(index),
+                names[index]).ok(),
+            "RC-V2-03 G0 String interning failed");
+
+        replace_with_opaque_enum(
+            transaction,
+            sources[index],
+            names[index]);
+    }
+
+    require(
+        transaction.commit().ok(),
+        "RC-V2-03 G0 commit failed");
+
+    require_g0_headroom(manager, count);
+
+    return {
+        std::move(sources),
+        std::move(names)
+    };
+}
+
+row k_modify(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t k,
+    const k_baseline& baseline) {
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    for (std::size_t position = 0;
+         position < k;
+         ++position) {
+        const auto index =
+            k_source_index(
+                count,
+                k,
+                position);
+
+        replace_with_opaque_enum(
+            transaction,
+            baseline.sources[index],
+            baseline.names[index]);
+    }
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        "k_modify",
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+row k_remove(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t k,
+    const k_baseline& baseline) {
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    for (std::size_t position = 0;
+         position < k;
+         ++position) {
+        const auto index =
+            k_source_index(
+                count,
+                k,
+                position);
+
+        replace_empty(
+            transaction,
+            baseline.sources[index]);
+    }
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        "k_remove",
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+row k_add(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t k,
+    const k_baseline& baseline) {
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(k)
+            .ok(),
+        "RC-V2-03 incremental String bulk reserve failed");
+
+    for (std::size_t position = 0;
+         position < k;
+         ++position) {
+        const auto index =
+            k_source_index(
+                count,
+                k,
+                position);
+
+        string_id replacement_name;
+
+        require(
+            transaction.strings().intern(
+                "K_replacement_" +
+                    std::to_string(count) + "_" +
+                    std::to_string(k) + "_" +
+                    std::to_string(position),
+                replacement_name).ok(),
+            "RC-V2-03 replacement String interning failed");
+
+        replace_with_opaque_enum(
+            transaction,
+            baseline.sources[index],
+            replacement_name);
+    }
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        "k_add",
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+void require_k_gates(
+    const row& value,
+    std::size_t k) {
+
+    const auto& graph = value.graph;
+
+    require(
+        graph.changed_sources == k,
+        "RC-V2-03 changed_sources != K");
+
+    require(
+        graph.changed_entities == k,
+        "RC-V2-03 changed_entities != K");
+
+    require(
+        graph.changed_types == k,
+        "RC-V2-03 changed_types != K");
+
+    require(
+        graph.validation_visited_types == k,
+        "RC-V2-03 validation_visited_types != K");
+
+    require(
+        graph.validation_visited_type_refs == 0,
+        "RC-V2-03 unexpected TypeRef validation work");
+
+    require(
+        graph.validation_dependency_edges == 0,
+        "RC-V2-03 unexpected dependency closure");
+
+    require(
+        !rc_v2_01a::graph_reallocated(graph),
+        "RC-V2-03 committed Graph storage reallocated");
+
+    require(
+        !value.contribution_reallocated,
+        "RC-V2-03 SourceContribution storage reallocated");
+
+    require(
+        value.strings_before.records_data ==
+            value.strings_after.records_data,
+        "RC-V2-03 String records relocated");
+
+    require(
+        value.strings_before.lookup_bucket_count ==
+            value.strings_after.lookup_bucket_count,
+        "RC-V2-03 String lookup rehashed");
+}
+
+void run_k_matrix(
+    std::size_t count,
+    std::size_t k) {
+
+    graph_manager manager;
+
+    require(
+        manager.initialize().ok(),
+        "RC-V2-03 manager initialization failed");
+
+    const auto baseline =
+        build_k_baseline(
+            manager,
+            count);
+
+    const auto modify =
+        k_modify(
+            manager,
+            count,
+            k,
+            baseline);
+
+    require_k_gates(modify, k);
+
+    const auto remove =
+        k_remove(
+            manager,
+            count,
+            k,
+            baseline);
+
+    require_k_gates(remove, k);
+
+    const auto add =
+        k_add(
+            manager,
+            count,
+            k,
+            baseline);
+
+    require_k_gates(add, k);
+
+    print_row(modify);
+    print_row(remove);
+    print_row(add);
+}
+enum class k_locality_mode : std::uint8_t {
+    clustered,
+    spread
+};
+
+std::size_t k_locality_index(
+    std::size_t count,
+    std::size_t k,
+    std::size_t position,
+    k_locality_mode mode) {
+
+    if (mode == k_locality_mode::clustered) {
+        require(
+            position < k &&
+            k <= count,
+            "Invalid RC-V2-03B clustered selection");
+
+        return position;
+    }
+
+    return k_source_index(
+        count,
+        k,
+        position);
+}
+
+row k_modify_locality(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t k,
+    const k_baseline& baseline,
+    k_locality_mode mode) {
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    clock_type::duration replace_elapsed{};
+    clock_type::duration declare_elapsed{};
+
+    for (std::size_t position = 0;
+         position < k;
+         ++position) {
+        const auto index =
+            k_locality_index(
+                count,
+                k,
+                position,
+                mode);
+
+        graph_update::source_replacement replacement;
+
+        auto phase_begin =
+            clock_type::now();
+
+        const auto replace_result =
+            transaction.graph_state().replace_source(
+                baseline.sources[index],
+                replacement);
+
+        replace_elapsed +=
+            clock_type::now() - phase_begin;
+
+        require(
+            replace_result.ok(),
+            "RC-V2-03B Source replacement failed");
+
+        const enum_build_data data{
+            enum_definition_state::opaque,
+            false,
+            builtin_type::integer,
+            {}
+        };
+
+        stable_id entity;
+        type_handle type;
+
+        phase_begin =
+            clock_type::now();
+
+        const auto declare_result =
+            replacement.add_named_enum(
+                baseline.names[index],
+                data,
+                entity,
+                type);
+
+        declare_elapsed +=
+            clock_type::now() - phase_begin;
+
+        require(
+            declare_result.ok(),
+            "RC-V2-03B enum materialization failed");
+    }
+
+    const auto setup_done =
+        clock_type::now();
+
+    auto result =
+        finish_row(
+            manager,
+            transaction,
+            count,
+            mode == k_locality_mode::clustered
+                ? "k_modify_clustered"
+                : "k_modify_spread",
+            started,
+            setup_done,
+            contribution_before,
+            strings_before);
+
+    result.setup_replace_source_ms =
+        milliseconds(replace_elapsed);
+    result.setup_declare_named_ms =
+        milliseconds(declare_elapsed);
+
+    return result;
+}
+
+void run_locality_case(
+    std::size_t count,
+    std::size_t k,
+    k_locality_mode mode) {
+
+    graph_manager manager;
+
+    require(
+        manager.initialize().ok(),
+        "RC-V2-03B manager initialization failed");
+
+    const auto baseline =
+        build_k_baseline(
+            manager,
+            count);
+
+    const auto value =
+        k_modify_locality(
+            manager,
+            count,
+            k,
+            baseline,
+            mode);
+
+    require_k_gates(
+        value,
+        k);
+
+    print_row(value);
+}
+
+void run_locality_matrix() {
+    for (const auto count :
+         std::array<std::size_t, 2>{
+             8192,
+             32768}) {
+        for (const auto k :
+             std::array<std::size_t, 2>{
+                 64,
+                 256}) {
+            run_locality_case(
+                count,
+                k,
+                k_locality_mode::clustered);
+
+            run_locality_case(
+                count,
+                k,
+                k_locality_mode::spread);
+        }
+    }
+}
 void run_matrix(std::size_t count) {
     graph_manager manager;
 
@@ -1023,6 +1522,25 @@ int main() {
         run_matrix(count);
     }
 
-    std::cout << "RC-V2-02A G0 BULK RESERVE PASS\n";
+    for (const auto count :
+         std::array<std::size_t, 2>{
+             8192,
+             32768}) {
+        for (const auto k :
+             std::array<std::size_t, 5>{
+                 1,
+                 4,
+                 16,
+                 64,
+                 256}) {
+            run_k_matrix(
+                count,
+                k);
+        }
+    }
+
+    run_locality_matrix();
+
+    std::cout << "RC-V2-03B LOCALITY PASS\n";
     return 0;
 }
