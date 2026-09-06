@@ -11,7 +11,8 @@ namespace {
 
 status build_aggregate_impl(
     graph_update::source_replacement& replacement,
-    const aggregate_source_fact& fact) noexcept {
+    const aggregate_source_fact& fact,
+    project_builder_scratch& scratch) noexcept {
 
     stable_id entity;
     type_handle type;
@@ -39,8 +40,11 @@ status build_aggregate_impl(
     }
 
     try {
-        std::vector<member_build> members;
-        std::vector<type_modifier_build> modifiers;
+        auto& members = scratch.members;
+        auto& modifiers = scratch.modifiers;
+
+        members.clear();
+        modifiers.clear();
 
         members.reserve(fact.members.size());
         modifiers.reserve(fact.modifiers.size());
@@ -81,6 +85,18 @@ status build_aggregate_impl(
     catch (...) {
         return {status_code::initialization_failed};
     }
+}
+
+status build_aggregate_impl(
+    graph_update::source_replacement& replacement,
+    const aggregate_source_fact& fact) noexcept {
+
+    project_builder_scratch scratch;
+
+    return build_aggregate_impl(
+        replacement,
+        fact,
+        scratch);
 }
 
 } // namespace
@@ -245,8 +261,23 @@ status project_builder::build_enum(
     graph_update::source_replacement& replacement,
     const enum_source_fact& fact) const noexcept {
 
+    project_builder_scratch scratch;
+
+    return build_enum(
+        replacement,
+        fact,
+        scratch);
+}
+
+status project_builder::build_enum(
+    graph_update::source_replacement& replacement,
+    const enum_source_fact& fact,
+    project_builder_scratch& scratch) const noexcept {
+
     try {
-        std::vector<enum_value_build> values;
+        auto& values = scratch.enum_values;
+
+        values.clear();
         values.reserve(fact.enumerators.size());
 
         for (const auto& value : fact.enumerators) {
@@ -311,6 +342,17 @@ status project_builder::build_aggregate(
     return build_aggregate_impl(
         replacement,
         fact);
+}
+
+status project_builder::build_aggregate(
+    graph_update::source_replacement& replacement,
+    const aggregate_source_fact& fact,
+    project_builder_scratch& scratch) const noexcept {
+
+    return build_aggregate_impl(
+        replacement,
+        fact,
+        scratch);
 }
 
 } // namespace cw::server

@@ -245,29 +245,50 @@ status source_contribution_cache_update::remap_new_entities(
     }
 
     try {
-        std::vector<source_contribution_cache::candidate_entity_slot> previous(remap.size());
+        struct remapped_entity {
+            std::uint32_t target = 0;
+            source_contribution_cache::candidate_entity_slot value;
+        };
+
+        std::vector<remapped_entity> previous;
+        previous.reserve(changed_entities.size());
 
         for (std::size_t offset = 0; offset < remap.size(); ++offset) {
             const auto raw = static_cast<std::size_t>(base) + offset;
-            if (raw < owner->candidate_entities.size() &&
-                owner->candidate_entities[raw].generation == candidate_generation) {
-                previous[offset] = std::move(owner->candidate_entities[raw]);
-                owner->candidate_entities[raw] = {};
-            }
-        }
 
-        for (std::size_t offset = 0; offset < remap.size(); ++offset) {
-            const auto target = remap[offset];
-            if (!target || previous[offset].generation != candidate_generation) {
+            if (raw >= owner->candidate_entities.size()) {
                 continue;
             }
 
-            if (owner->candidate_entities.size() <= target) {
-                grow_contribution_vector(owner->candidate_entities, static_cast<std::size_t>(target) + 1);
+            auto& candidate = owner->candidate_entities[raw];
+
+            if (candidate.generation != candidate_generation) {
+                continue;
             }
 
-            owner->candidate_entities[target] = std::move(previous[offset]);
-            owner->candidate_entities[target].generation = candidate_generation;
+            const auto target = remap[offset];
+
+            if (target) {
+                previous.push_back({
+                    target,
+                    std::move(candidate)
+                });
+            }
+
+            candidate = {};
+        }
+
+        for (auto& item : previous) {
+            if (owner->candidate_entities.size() <= item.target) {
+                grow_contribution_vector(
+                    owner->candidate_entities,
+                    static_cast<std::size_t>(item.target) + 1);
+            }
+
+            owner->candidate_entities[item.target] =
+                std::move(item.value);
+            owner->candidate_entities[item.target].generation =
+                candidate_generation;
         }
 
         for (auto& id : changed_entities) {

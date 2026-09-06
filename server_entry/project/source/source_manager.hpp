@@ -184,6 +184,12 @@ public:
         source_id id,
         source_acquisition_telemetry& telemetry) noexcept;
 
+    // G0-only capacity hint from the already parsed Project configuration.
+    // It does not create Sources or affect identity; nested Project discovery
+    // may still grow beyond the hint.
+    [[nodiscard]] status reserve_initial_sources(
+        std::size_t count) noexcept;
+
     // Candidate views are stable while this update is active, except that
     // reacquiring the same Source may replace its candidate state. Every view
     // obtained from an update becomes invalid after commit or cancellation.
@@ -234,12 +240,25 @@ private:
         physical_delta;
     std::unordered_map<std::uint32_t, std::vector<source_id>> include_delta;
     std::unordered_map<std::uint32_t, std::vector<source_id>> prepared_dependents;
+
+    // G0 is fully materialized before the publication barrier. The committed
+    // Source Manager then adopts these detached structures only through no-fail
+    // swaps, keeping publication O(1) with respect to Source count.
+    std::vector<source_record> prepared_g0_sources;
+    std::vector<source_root> prepared_g0_roots;
+    std::unordered_map<std::filesystem::path, source_id> prepared_g0_by_path;
+    std::vector<std::unique_ptr<source_physical_storage>>
+        prepared_g0_physical;
+    std::vector<std::vector<source_id>> prepared_g0_includes;
+    std::vector<std::vector<source_id>> prepared_g0_dependents;
+
     std::vector<source_change> change_records;
 
-    // Dense source_id -> (change_records position + 1) index. Zero means that
-    // the Source currently has no net physical change. This keeps acquisition
-    // bookkeeping O(1) instead of rescanning all prior changes for every Source.
+    // G0 uses a dense source_id index for bulk locality. Incremental updates
+    // use a sparse position map so touching one high source_id remains O(K).
     std::vector<std::uint32_t> change_positions;
+    std::unordered_map<std::uint32_t, std::uint32_t>
+        sparse_change_positions;
 
     std::uint32_t next_source_id = 1;
     std::uint64_t base_generation = 0;
@@ -247,6 +266,9 @@ private:
     bool committed = false;
     bool prepared = false;
     bool graph_validated = true;
+    bool prepared_g0_snapshot = false;
+    bool dense_change_positions = true;
+    bool roots_changed = false;
 
     // Reserves and constructs every potentially allocating publication
     // structure before the no-fail publish step mutates Source Manager.

@@ -15,6 +15,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <iterator>
 #include <thread>
 
@@ -144,6 +145,15 @@ status build_interface(
     }
 }
 
+std::uint64_t g0_elapsed_ns(
+    std::chrono::steady_clock::time_point begin,
+    std::chrono::steady_clock::time_point end) noexcept {
+
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            end - begin).count());
+}
+
 } // namespace
 
 source_frontend_generation::source_frontend_generation(
@@ -163,11 +173,60 @@ source_frontend_generation::source_frontend_generation(
 
 source_frontend_generation::source_state&
 source_frontend_generation::ensure(source_id source) {
+    if (cache != nullptr) {
+        return sparse_states.try_emplace(
+            source.value()).first->second;
+    }
+
     if (states.size() < source.value()) {
         states.resize(source.value());
     }
 
     return states[source.value() - 1];
+}
+
+source_frontend_generation::source_state*
+source_frontend_generation::find_state(
+    source_id source) noexcept {
+
+    if (!source) {
+        return nullptr;
+    }
+
+    if (cache != nullptr) {
+        const auto found =
+            sparse_states.find(source.value());
+
+        return found == sparse_states.end()
+            ? nullptr
+            : &found->second;
+    }
+
+    return source.value() <= states.size()
+        ? &states[source.value() - 1]
+        : nullptr;
+}
+
+const source_frontend_generation::source_state*
+source_frontend_generation::find_state(
+    source_id source) const noexcept {
+
+    if (!source) {
+        return nullptr;
+    }
+
+    if (cache != nullptr) {
+        const auto found =
+            sparse_states.find(source.value());
+
+        return found == sparse_states.end()
+            ? nullptr
+            : &found->second;
+    }
+
+    return source.value() <= states.size()
+        ? &states[source.value() - 1]
+        : nullptr;
 }
 
 void source_frontend_generation::fail_locked(
@@ -329,6 +388,7 @@ status source_frontend_generation::discover(
     if (!result.ok()) {
         return fail(result);
     }
+
 
     try {
         std::vector<parser_token> semantic_tokens;
@@ -574,9 +634,11 @@ status source_frontend_generation::discover(
             return failure;
         }
 
-        if (source.value() > states.size() ||
-            !states[source.value() - 1]
-                 .discovery_claimed) {
+        auto* current_state =
+            find_state(source);
+
+        if (current_state == nullptr ||
+            !current_state->discovery_claimed) {
             if (active_discoveries != 0) {
                 --active_discoveries;
             }
@@ -587,8 +649,7 @@ status source_frontend_generation::discover(
             };
         }
 
-        if (states[source.value() - 1]
-                .discovery_done) {
+        if (current_state->discovery_done) {
             if (active_discoveries != 0) {
                 --active_discoveries;
             }
@@ -598,10 +659,14 @@ status source_frontend_generation::discover(
         }
 
         for (const auto dependency : dependencies) {
-            ensure(dependency);
-
+            // ensure(dependency) may insert into sparse_states and rehash the
+            // unordered_map. Reacquire the owning Source state afterward so no
+            // pointer/reference survives a possible rehash.
             auto& dependency_state =
-                states[dependency.value() - 1];
+                ensure(dependency);
+
+            auto& source_state =
+                ensure(source);
 
             // Incremental generations reuse an unchanged dependency interface
             // directly from the committed COLD cache. A dependency already
@@ -619,8 +684,7 @@ status source_frontend_generation::discover(
             }
 
             if (!dependency_state.published) {
-                ++states[source.value() - 1]
-                      .remaining;
+                ++source_state.remaining;
             }
 
             dependency_state.dependents.push_back(
@@ -635,7 +699,7 @@ status source_frontend_generation::discover(
         }
 
         auto& state =
-            states[source.value() - 1];
+            ensure(source);
 
         state.dependencies =
             std::move(dependencies);
@@ -685,19 +749,144 @@ bool source_frontend_generation::take_semantic_ready(
     source = semantic_queue.front();
     semantic_queue.pop_front();
 
-    auto& state =
-        states[source.value() - 1];
+    auto* state =
+        find_state(source);
 
-    state.semantic_queued = false;
-
-    if (state.parse_claimed ||
-        state.parsed) {
+    if (state == nullptr) {
+        fail_locked({
+            status_code::invalid_state
+        });
         source = {};
         return false;
     }
 
-    state.parse_claimed = true;
+    state->semantic_queued = false;
+
+    if (state->parse_claimed ||
+        state->parsed) {
+        source = {};
+        return false;
+    }
+
+    state->parse_claimed = true;
     return true;
+}
+
+status source_frontend_generation::parse_and_capture_independent_g0(
+    source_id source,
+    operation_id operation,
+    source_context& context) noexcept {
+
+    try {
+        if (!source ||
+            cache != nullptr ||
+            transaction == nullptr ||
+            source.value() > states.size()) {
+            return {status_code::invalid_state};
+        }
+
+        auto& state =
+            states[source.value() - 1];
+
+        if (!state.parse_claimed ||
+            state.parsed ||
+            !state.discovery_done ||
+            state.remaining != 0 ||
+            !state.dependencies.empty() ||
+            !state.visibility.empty() ||
+            !state.dependents.empty()) {
+            return {status_code::invalid_state};
+        }
+
+        // Discovery is complete before these workers start. No Source Manager
+        // mutation occurs until all workers join, so concurrent get_view reads
+        // are against immutable candidate physical storage.
+        source_view view;
+
+        auto result =
+            transaction->sources().get_view(
+                source,
+                view);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        const std::vector<source_environment_import>
+            visible_imports;
+
+        const source_environment environment{
+            visible_imports
+        };
+
+        result =
+            backend->parse(
+                view,
+                state.tokens,
+                environment,
+                language,
+                operation,
+                context);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        auto published_interface =
+            std::make_unique<
+                source_environment_storage>();
+
+        const std::vector<
+            const source_environment_storage*>
+                dependency_interfaces;
+
+        result =
+            build_interface(
+                context,
+                *published_interface,
+                dependency_interfaces);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        auto build_entry =
+            std::make_unique<
+                source_build_entry>();
+
+        const parser_source_fact_batch batch{
+            source,
+            &context,
+            context.enums,
+            context.aggregates
+        };
+
+        result =
+            capture_source_facts(
+                batch,
+                *build_entry);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        // This source_state belongs exclusively to the current static worker
+        // partition. No shared queue/dependency counter needs synchronization.
+        state.interface =
+            std::move(published_interface);
+
+        state.build_entry =
+            std::move(build_entry);
+
+        state.parsed = true;
+        ++state.counts.parse;
+        return {};
+    }
+    catch (...) {
+        return {
+            status_code::initialization_failed
+        };
+    }
 }
 
 status source_frontend_generation::parse_and_capture(
@@ -731,30 +920,34 @@ status source_frontend_generation::parse_and_capture(
                 return failure;
             }
 
-            if (!source || source.value() > states.size()) {
+            const auto* state =
+                find_state(source);
+
+            if (state == nullptr ||
+                !state->parse_claimed ||
+                state->parsed ||
+                !state->discovery_done ||
+                state->remaining != 0) {
                 return {status_code::invalid_state};
             }
 
-            const auto& state = states[source.value() - 1];
+            tokens = state->tokens;
+            dependency_interfaces.reserve(
+                state->dependencies.size());
 
-            if (!state.parse_claimed ||
-                state.parsed ||
-                !state.discovery_done ||
-                state.remaining != 0) {
-                return {status_code::invalid_state};
-            }
+            for (const auto dependency :
+                 state->dependencies) {
+                const auto* dependency_state =
+                    find_state(dependency);
 
-            tokens = state.tokens;
-            dependency_interfaces.reserve(state.dependencies.size());
-
-            for (const auto dependency : state.dependencies) {
-                const auto& dependency_state =
-                    states[dependency.value() - 1];
+                if (dependency_state == nullptr) {
+                    return {status_code::invalid_state};
+                }
 
                 const auto* dependency_interface =
-                    dependency_state.interface
-                        ? dependency_state.interface.get()
-                        : dependency_state.cached_interface;
+                    dependency_state->interface
+                        ? dependency_state->interface.get()
+                        : dependency_state->cached_interface;
 
                 if (!dependency_interface) {
                     return {status_code::invalid_state};
@@ -763,16 +956,22 @@ status source_frontend_generation::parse_and_capture(
                 dependency_interfaces.push_back(dependency_interface);
             }
 
-            visible_imports.reserve(state.visibility.size());
+            visible_imports.reserve(
+                state->visibility.size());
 
-            for (const auto& item : state.visibility) {
-                const auto& dependency_state =
-                    states[item.dependency.value() - 1];
+            for (const auto& item :
+                 state->visibility) {
+                const auto* dependency_state =
+                    find_state(item.dependency);
+
+                if (dependency_state == nullptr) {
+                    return {status_code::invalid_state};
+                }
 
                 const auto* dependency_interface =
-                    dependency_state.interface
-                        ? dependency_state.interface.get()
-                        : dependency_state.cached_interface;
+                    dependency_state->interface
+                        ? dependency_state->interface.get()
+                        : dependency_state->cached_interface;
 
                 if (!dependency_interface) {
                     return {status_code::invalid_state};
@@ -835,25 +1034,50 @@ status source_frontend_generation::parse_and_capture(
         // From this point the Parser context is no longer referenced by build
         // state. Only source_id-owned interface/contribution data is published.
         std::lock_guard lock{mutex};
-        auto& state = states[source.value() - 1];
 
-        state.interface = std::move(published_interface);
-        state.build_entry = std::move(build_entry);
-        state.parsed = true;
-        ++state.counts.parse;
+        auto* state =
+            find_state(source);
 
-        if (semantic_scheduler_active && semantic_remaining != 0) {
+        if (state == nullptr) {
+            const status invalid{
+                status_code::invalid_state
+            };
+
+            fail_locked(invalid);
+            return invalid;
+        }
+
+        state->interface = std::move(published_interface);
+        state->build_entry = std::move(build_entry);
+        state->parsed = true;
+        ++state->counts.parse;
+
+        if (semantic_scheduler_active &&
+            semantic_remaining != 0) {
             --semantic_remaining;
         }
 
-        for (const auto dependent_id : state.dependents) {
-            auto& dependent = states[dependent_id.value() - 1];
+        for (const auto dependent_id :
+             state->dependents) {
+            auto* dependent =
+                find_state(dependent_id);
 
-            if (dependent.remaining != 0) {
-                --dependent.remaining;
+            if (dependent == nullptr) {
+                const status invalid{
+                    status_code::invalid_state
+                };
+
+                fail_locked(invalid);
+                return invalid;
             }
 
-            enqueue_ready_locked(dependent_id, dependent);
+            if (dependent->remaining != 0) {
+                --dependent->remaining;
+            }
+
+            enqueue_ready_locked(
+                dependent_id,
+                *dependent);
         }
 
         semantic_condition.notify_all();
@@ -971,6 +1195,9 @@ source_rebuild_result source_frontend_generation::rebuild(
                 status result{};
             };
 
+            const auto prepare_begin =
+                std::chrono::steady_clock::now();
+
             std::vector<acquisition_slot> acquisitions(
                 wave_sources.size());
 
@@ -989,12 +1216,20 @@ source_rebuild_result source_frontend_generation::rebuild(
                 }
             }
 
+            current_summary.g0_acquire_prepare_ns +=
+                g0_elapsed_ns(
+                    prepare_begin,
+                    std::chrono::steady_clock::now());
+
             {
                 std::lock_guard lock{mutex};
                 if (!failure.ok()) {
                     break;
                 }
             }
+
+            const auto acquire_execute_begin =
+                std::chrono::steady_clock::now();
 
             const auto worker_count =
                 (std::min)(
@@ -1019,19 +1254,26 @@ source_rebuild_result source_frontend_generation::rebuild(
                  ++worker_index) {
                 workers.emplace_back([&, worker_index]() {
                     for (;;) {
-                        const auto index = next_index.fetch_add(
-                            1,
-                            std::memory_order_relaxed);
+                        const auto index =
+                            next_index.fetch_add(
+                                1,
+                                std::memory_order_relaxed);
 
-                        if (index >= acquisitions.size()) {
+                        if (index >=
+                            acquisitions.size()) {
                             break;
                         }
 
-                        auto& slot = acquisitions[index];
-                        slot.result = source_manager_update::execute_acquire(
-                            slot.job,
-                            local_telemetry[worker_index],
-                            slot.acquired);
+                        auto& slot =
+                            acquisitions[index];
+
+                        slot.result =
+                            source_manager_update::
+                                execute_acquire(
+                                    slot.job,
+                                    local_telemetry[
+                                        worker_index],
+                                    slot.acquired);
                     }
                 });
             }
@@ -1042,33 +1284,58 @@ source_rebuild_result source_frontend_generation::rebuild(
                 telemetry.merge_from(local);
             }
 
+            current_summary.g0_acquire_execute_ns +=
+                g0_elapsed_ns(
+                    acquire_execute_begin,
+                    std::chrono::steady_clock::now());
+
             bool wave_failed = false;
 
+            // Validate worker results first in deterministic source_id order.
             for (std::size_t index = 0;
                  index < acquisitions.size();
                  ++index) {
                 auto& slot = acquisitions[index];
                 const auto source = wave_sources[index];
 
-                if (!slot.result.ok()) {
-                    try {
-                        diagnostics.emit({
-                            diagnostics::source_acquisition_failed.id,
-                            diagnostics::source_acquisition_failed.default_severity,
-                            operation,
-                            {source, 0, 0},
-                            {}});
-                    }
-                    catch (...) {
-                        slot.result = {
-                            status_code::initialization_failed};
-                    }
-
-                    std::lock_guard lock{mutex};
-                    fail_locked(slot.result);
-                    wave_failed = true;
-                    break;
+                if (slot.result.ok()) {
+                    continue;
                 }
+
+                try {
+                    diagnostics.emit({
+                        diagnostics::source_acquisition_failed.id,
+                        diagnostics::source_acquisition_failed.default_severity,
+                        operation,
+                        {source, 0, 0},
+                        {}});
+                }
+                catch (...) {
+                    slot.result = {
+                        status_code::initialization_failed};
+                }
+
+                std::lock_guard lock{mutex};
+                fail_locked(slot.result);
+                wave_failed = true;
+                break;
+            }
+
+            if (wave_failed) {
+                break;
+            }
+
+            const auto apply_begin =
+                std::chrono::steady_clock::now();
+
+            // Coordinator applies all immutable worker results before parsing.
+            // Candidate state is still detached, so a later discovery failure
+            // cannot publish a partial generation.
+            for (std::size_t index = 0;
+                 index < acquisitions.size();
+                 ++index) {
+                auto& slot = acquisitions[index];
+                const auto source = wave_sources[index];
 
                 auto result = transaction->sources().apply_acquire(
                     slot.job,
@@ -1093,13 +1360,27 @@ source_rebuild_result source_frontend_generation::rebuild(
                     wave_failed = true;
                     break;
                 }
+            }
 
+            current_summary.g0_acquire_apply_ns +=
+                g0_elapsed_ns(
+                    apply_begin,
+                    std::chrono::steady_clock::now());
+
+            if (wave_failed) {
+                break;
+            }
+
+            const auto discovery_begin =
+                std::chrono::steady_clock::now();
+
+            for (const auto source : wave_sources) {
                 {
                     std::lock_guard lock{mutex};
                     ++active_discoveries;
                 }
 
-                result = discover(
+                const auto result = discover(
                     source,
                     operation,
                     diagnostics);
@@ -1109,6 +1390,11 @@ source_rebuild_result source_frontend_generation::rebuild(
                     break;
                 }
             }
+
+            current_summary.g0_discovery_ns +=
+                g0_elapsed_ns(
+                    discovery_begin,
+                    std::chrono::steady_clock::now());
 
             if (wave_failed) {
                 break;
@@ -1135,16 +1421,29 @@ source_rebuild_result source_frontend_generation::rebuild(
             return result;
         }
 
+        const auto validation_begin =
+            std::chrono::steady_clock::now();
+
         result =
             finish_discovery(
                 operation,
                 diagnostics);
 
+        current_summary.g0_validation_ns +=
+            g0_elapsed_ns(
+                validation_begin,
+                std::chrono::steady_clock::now());
+
         if (!result.ok()) {
             return result;
         }
 
+        const auto semantic_begin =
+            std::chrono::steady_clock::now();
+
         std::size_t semantic_count = 0;
+        bool independent_semantic = true;
+        std::vector<source_id> independent_sources;
 
         {
             std::lock_guard lock{mutex};
@@ -1153,10 +1452,31 @@ source_rebuild_result source_frontend_generation::rebuild(
                 return status{status_code::invalid_state};
             }
 
-            for (const auto& state : states) {
-                if (state.discovery_done && !state.parsed) {
-                    ++semantic_count;
+            independent_sources.reserve(states.size());
+
+            for (std::size_t index = 0;
+                 index < states.size();
+                 ++index) {
+                auto& state = states[index];
+
+                if (!state.discovery_done ||
+                    state.parsed) {
+                    continue;
                 }
+
+                ++semantic_count;
+
+                if (state.remaining != 0 ||
+                    !state.dependencies.empty()) {
+                    independent_semantic = false;
+                    continue;
+                }
+
+                independent_sources.push_back(
+                    source_id{
+                        static_cast<std::uint32_t>(
+                            index + 1)
+                    });
             }
 
             current_summary.affected =
@@ -1165,7 +1485,21 @@ source_rebuild_result source_frontend_generation::rebuild(
 
             semantic_scheduler_active = true;
             semantic_remaining =
-                static_cast<std::uint32_t>(semantic_count);
+                static_cast<std::uint32_t>(
+                    semantic_count);
+
+            if (independent_semantic) {
+                semantic_queue.clear();
+
+                for (const auto source :
+                     independent_sources) {
+                    auto& state =
+                        states[source.value() - 1];
+
+                    state.semantic_queued = false;
+                    state.parse_claimed = true;
+                }
+            }
         }
 
         
@@ -1189,6 +1523,86 @@ source_rebuild_result source_frontend_generation::rebuild(
             [&](std::size_t worker_index) {
                 source_context context;
 
+                const auto process =
+                    [&](source_id source) -> bool {
+                        const auto parse_result =
+                            independent_semantic
+                                ? parse_and_capture_independent_g0(
+                                      source,
+                                      operation,
+                                      context)
+                                : parse_and_capture(
+                                      source,
+                                      operation,
+                                      context);
+
+                        try {
+                            auto& output =
+                                worker_diagnostics[
+                                    worker_index];
+
+                            output.reserve(
+                                output.records().size() +
+                                context.diagnostics
+                                    .records().size());
+
+                            for (const auto& record :
+                                 context.diagnostics
+                                     .records()) {
+                                output.emit(record);
+                            }
+                        }
+                        catch (...) {
+                            std::lock_guard lock{mutex};
+
+                            fail_locked({
+                                status_code::
+                                    initialization_failed
+                            });
+
+                            return false;
+                        }
+
+                        context.reset();
+
+                        if (!parse_result.ok()) {
+                            std::lock_guard lock{mutex};
+
+                            if (failure.ok()) {
+                                fail_locked(
+                                    parse_result);
+                            }
+
+                            return false;
+                        }
+
+                        return true;
+                    };
+
+                if (independent_semantic) {
+                    const auto begin =
+                        independent_sources.size() *
+                        worker_index /
+                        worker_count;
+
+                    const auto end =
+                        independent_sources.size() *
+                        (worker_index + 1) /
+                        worker_count;
+
+                    for (auto index = begin;
+                         index < end;
+                         ++index) {
+                        if (!process(
+                                independent_sources[
+                                    index])) {
+                            break;
+                        }
+                    }
+
+                    return;
+                }
+
                 for (;;) {
                     source_id source;
 
@@ -1209,11 +1623,14 @@ source_rebuild_result source_frontend_generation::rebuild(
                             break;
                         }
 
-                        source = semantic_queue.front();
+                        source =
+                            semantic_queue.front();
+
                         semantic_queue.pop_front();
 
                         auto& state =
-                            states[source.value() - 1];
+                            states[
+                                source.value() - 1];
 
                         state.semantic_queued = false;
 
@@ -1225,42 +1642,7 @@ source_rebuild_result source_frontend_generation::rebuild(
                         state.parse_claimed = true;
                     }
 
-                    const auto parse_result =
-                        parse_and_capture(
-                            source,
-                            operation,
-                            context);
-
-                    try {
-                        auto& output =
-                            worker_diagnostics[worker_index];
-
-                        output.reserve(
-                            output.records().size() +
-                            context.diagnostics.records().size());
-
-                        for (const auto& record :
-                             context.diagnostics.records()) {
-                            output.emit(record);
-                        }
-                    }
-                    catch (...) {
-                        std::lock_guard lock{mutex};
-                        fail_locked({
-                            status_code::initialization_failed
-                        });
-                        break;
-                    }
-
-                    context.reset();
-
-                    if (!parse_result.ok()) {
-                        std::lock_guard lock{mutex};
-
-                        if (failure.ok()) {
-                            fail_locked(parse_result);
-                        }
-
+                    if (!process(source)) {
                         break;
                     }
                 }
@@ -1276,6 +1658,12 @@ source_rebuild_result source_frontend_generation::rebuild(
 
         {
             std::lock_guard lock{mutex};
+
+            if (independent_semantic &&
+                failure.ok()) {
+                semantic_remaining = 0;
+            }
+
             semantic_scheduler_active = false;
 
             if (failure.ok() && semantic_remaining != 0) {
@@ -1286,7 +1674,17 @@ source_rebuild_result source_frontend_generation::rebuild(
             semantic_remaining = 0;
         }
 
+        current_summary.g0_semantic_ns +=
+            g0_elapsed_ns(
+                semantic_begin,
+                std::chrono::steady_clock::now());
+
         if (result.ok()) {
+            const auto publish_begin =
+                std::chrono::steady_clock::now();
+
+            source_publish_scratch publish_scratch;
+
             // Canonical mutation is single-owner and deterministic. source_id is
             // the build-side ownership coordinate; worker completion order is
             // deliberately irrelevant to String/Entity/TypeRef allocation.
@@ -1302,7 +1700,8 @@ source_rebuild_result source_frontend_generation::rebuild(
                     *state.build_entry,
                     builder,
                     operation,
-                    diagnostics);
+                    diagnostics,
+                    publish_scratch);
 
                 if (!publish_result.ok()) {
                     result = publish_result;
@@ -1312,6 +1711,11 @@ source_rebuild_result source_frontend_generation::rebuild(
                 state.published = true;
                 ++state.counts.publish;
             }
+
+            current_summary.g0_publish_ns +=
+                g0_elapsed_ns(
+                    publish_begin,
+                    std::chrono::steady_clock::now());
         }
 
         try {
@@ -1346,8 +1750,63 @@ source_rebuild_result source_frontend_generation::rebuild(
             return result;
         }
 
+        const auto commit_begin =
+            std::chrono::steady_clock::now();
+
         result =
             transaction->commit();
+
+        current_summary.g0_commit_ns +=
+            g0_elapsed_ns(
+                commit_begin,
+                std::chrono::steady_clock::now());
+
+        const auto& transaction_timing =
+            transaction->timing();
+
+        current_summary.g0_tx_source_prepare_ns =
+            transaction_timing.source_prepare_ns;
+        current_summary.g0_tx_string_prepare_ns =
+            transaction_timing.string_prepare_ns;
+        current_summary.g0_tx_graph_prepare_ns =
+            transaction_timing.graph_prepare_ns;
+
+        current_summary.g0_graph_stable_id_canonicalization_ns =
+            transaction_timing.graph_stable_id_canonicalization_ns;
+        current_summary.g0_graph_pending_member_resolution_ns =
+            transaction_timing.graph_pending_member_resolution_ns;
+        current_summary.g0_graph_live_typeref_validation_ns =
+            transaction_timing.graph_live_typeref_validation_ns;
+        current_summary.g0_graph_canonical_typeref_rebuild_ns =
+            transaction_timing.graph_canonical_typeref_rebuild_ns;
+        current_summary.g0_graph_string_validation_ns =
+            transaction_timing.graph_string_validation_ns;
+        current_summary.g0_graph_definition_scan_ns =
+            transaction_timing.graph_definition_scan_ns;
+        current_summary.g0_graph_definition_materialization_ns =
+            transaction_timing.graph_definition_materialization_ns;
+        current_summary.g0_graph_rebuild_storage_ns =
+            transaction_timing.graph_rebuild_storage_ns;
+        current_summary.g0_graph_dependency_index_ns =
+            transaction_timing.graph_dependency_index_ns;
+        current_summary.g0_graph_final_prepare_ns =
+            transaction_timing.graph_final_prepare_ns;
+
+        current_summary.g0_tx_string_retention_ns =
+            transaction_timing.string_retention_ns;
+        current_summary.g0_tx_string_compaction_ns =
+            transaction_timing.string_compaction_ns;
+        current_summary.g0_tx_contribution_prepare_ns =
+            transaction_timing.contribution_prepare_ns;
+
+        current_summary.g0_tx_source_publish_ns =
+            transaction_timing.source_publish_ns;
+        current_summary.g0_tx_string_publish_ns =
+            transaction_timing.string_publish_ns;
+        current_summary.g0_tx_contribution_publish_ns =
+            transaction_timing.contribution_publish_ns;
+        current_summary.g0_tx_graph_publish_ns =
+            transaction_timing.graph_publish_ns;
 
         source_rebuild_result completed;
         completed.semantic = result;
@@ -1412,26 +1871,47 @@ source_frontend_summary source_frontend_generation::summary() const noexcept {
     result.lex = 0;
     result.parse = 0;
     result.publish = 0;
+    result.working_states =
+        static_cast<std::uint32_t>(
+            cache != nullptr
+                ? sparse_states.size()
+                : states.size());
 
-    for (const auto& state : states) {
-        result.discovery += state.counts.discovery;
-        result.lex += state.counts.lex;
-        result.parse += state.counts.parse;
-        result.publish += state.counts.publish;
+    const auto accumulate =
+        [&](const source_state& state) noexcept {
+            result.discovery += state.counts.discovery;
+            result.lex += state.counts.lex;
+            result.parse += state.counts.parse;
+            result.publish += state.counts.publish;
+        };
+
+    if (cache != nullptr) {
+        for (const auto& [source, state] :
+             sparse_states) {
+            (void)source;
+            accumulate(state);
+        }
+    }
+    else {
+        for (const auto& state : states) {
+            accumulate(state);
+        }
     }
 
     return result;
 }
+
 source_frontend_counts source_frontend_generation::counts(
     source_id source) const noexcept {
 
     std::lock_guard lock{mutex};
 
-    return
-        source &&
-        source.value() <= states.size()
-            ? states[source.value() - 1].counts
-            : source_frontend_counts{};
+    const auto* state =
+        find_state(source);
+
+    return state != nullptr
+        ? state->counts
+        : source_frontend_counts{};
 }
 
 std::uint32_t source_frontend_generation::remaining_dependencies(
@@ -1439,11 +1919,12 @@ std::uint32_t source_frontend_generation::remaining_dependencies(
 
     std::lock_guard lock{mutex};
 
-    return
-        source &&
-        source.value() <= states.size()
-            ? states[source.value() - 1].remaining
-            : 0;
+    const auto* state =
+        find_state(source);
+
+    return state != nullptr
+        ? state->remaining
+        : 0;
 }
 
 bool source_frontend_generation::published(
@@ -1451,10 +1932,11 @@ bool source_frontend_generation::published(
 
     std::lock_guard lock{mutex};
 
-    return
-        source &&
-        source.value() <= states.size() &&
-        states[source.value() - 1].published;
+    const auto* state =
+        find_state(source);
+
+    return state != nullptr &&
+        state->published;
 }
 
 const source_environment_storage*
@@ -1463,17 +1945,16 @@ source_frontend_generation::interface(
 
     std::lock_guard lock{mutex};
 
-    if (!source ||
-        source.value() > states.size()) {
+    const auto* state =
+        find_state(source);
+
+    if (state == nullptr) {
         return nullptr;
     }
 
-    const auto& state =
-        states[source.value() - 1];
-
-    return state.interface
-        ? state.interface.get()
-        : state.cached_interface;
+    return state->interface
+        ? state->interface.get()
+        : state->cached_interface;
 }
 
 bool source_frontend_generation::failed() const noexcept {

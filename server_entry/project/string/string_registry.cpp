@@ -301,6 +301,7 @@ status string_registry_update::intern(
     }
 }
 
+
 std::optional<std::string_view> string_registry_update::get(
     string_id id) const noexcept {
 
@@ -432,6 +433,48 @@ status string_registry_update::prepare_rebuild_compaction(
 
     if (retained.size() <= candidate_size) {
         return failure = {status_code::invalid_state};
+    }
+
+    // Compaction is a no-op when every candidate string remains reachable.
+    // This is the common initial-G0 case. Avoid rebuilding the complete
+    // storage/index a second time after deterministic interning has already
+    // produced the exact canonical String Registry.
+    bool compaction_required = false;
+
+    for (std::size_t value = 1;
+         value <= candidate_size;
+         ++value) {
+        if (retained[value] == 0) {
+            compaction_required = true;
+            break;
+        }
+    }
+
+    if (!compaction_required) {
+        // Initial G0 has no committed String Registry. All candidate strings
+        // are retained, so prepare the exact committed containers now and let
+        // publish_prepared() adopt them only through no-fail swaps.
+        //
+        // std::list splice preserves string object addresses, so every
+        // string_view key in added_lookup and every pointer in added_records
+        // remains valid after ownership moves into rebuilt_storage.
+        if (owner->storage.empty() &&
+            owner->records.empty() &&
+            owner->lookup_index.empty()) {
+            rebuilt_storage.splice(
+                rebuilt_storage.end(),
+                added_storage);
+
+            rebuilt_records.swap(
+                added_records);
+
+            rebuilt_lookup.swap(
+                added_lookup);
+
+            rebuild_compaction_prepared = true;
+        }
+
+        return {};
     }
 
     try {

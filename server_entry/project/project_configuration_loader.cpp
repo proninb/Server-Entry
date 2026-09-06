@@ -148,6 +148,17 @@ std::filesystem::path path_from_utf8(std::string_view value) {
 // configuration directly, without building an intermediate JSON DOM.
 class project_configuration_handler final : public json_event_handler {
 public:
+    explicit project_configuration_handler(
+        std::size_t reserve_hint) noexcept {
+
+        try {
+            candidate.project.reserve(reserve_hint);
+        }
+        catch (...) {
+            internal_failure_flag = true;
+        }
+    }
+
     void location(std::size_t offset) noexcept override {
         current_offset = offset;
     }
@@ -648,7 +659,15 @@ static status load_project_configuration_impl(
     project_configuration& output) noexcept {
 
     try {
-        project_configuration_handler handler;
+        // Rough capacity only; correctness never depends on the estimate.
+        // Typical project[] entries are materially larger than 48 bytes.
+        const auto reserve_hint =
+            text.size() / 48;
+
+        project_configuration_handler handler{
+            reserve_hint
+        };
+
         json_error json_failure;
         json_parser parser{text};
 
@@ -833,12 +852,52 @@ status load_project_configuration_file(
             return {status_code::configuration_failed};
         }
 
-        std::string text{
-            std::istreambuf_iterator<char>{input},
-            std::istreambuf_iterator<char>{}
-        };
+        input.seekg(0, std::ios::end);
 
-        if (input.bad()) {
+        const auto end = input.tellg();
+
+        if (end < 0) {
+            try_emit(
+                diagnostics,
+                diagnostics::project_configuration_read_failed,
+                operation,
+                "project configuration file size could not be determined");
+
+            return {status_code::configuration_failed};
+        }
+
+        const auto signed_size =
+            static_cast<std::streamoff>(end);
+
+        const auto size =
+            static_cast<std::uintmax_t>(
+                signed_size);
+
+        if (size >
+            static_cast<std::uintmax_t>(
+                std::numeric_limits<std::size_t>::max())) {
+            try_emit(
+                diagnostics,
+                diagnostics::project_configuration_read_failed,
+                operation,
+                "project configuration file is too large");
+
+            return {status_code::configuration_failed};
+        }
+
+        std::string text;
+        text.resize(static_cast<std::size_t>(size));
+
+        input.seekg(0, std::ios::beg);
+
+        if (!text.empty()) {
+            input.read(
+                text.data(),
+                static_cast<std::streamsize>(
+                    text.size()));
+        }
+
+        if (!input && !input.eof()) {
             try_emit(
                 diagnostics,
                 diagnostics::project_configuration_read_failed,

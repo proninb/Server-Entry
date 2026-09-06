@@ -46,7 +46,7 @@ public:
     [[nodiscard]] status drain(
         source_change_batch& output,
         std::chrono::milliseconds grace =
-            std::chrono::milliseconds{2}) noexcept;
+            std::chrono::milliseconds{0}) noexcept;
 
     void require_rescan() noexcept;
     void stop() noexcept;

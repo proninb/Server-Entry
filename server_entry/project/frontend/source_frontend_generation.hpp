@@ -15,6 +15,7 @@
 #include <mutex>
 #include <optional>
 #include <span>
+#include <unordered_map>
 #include <vector>
 
 namespace cw::server {
@@ -34,11 +35,50 @@ struct source_frontend_summary {
     std::uint32_t dirty = 0;
     std::uint32_t checked = 0;
     std::uint32_t affected = 0;
+    std::uint32_t working_states = 0;
     std::uint32_t discovery = 0;
     std::uint32_t lex = 0;
     std::uint32_t parse = 0;
     std::uint32_t publish = 0;
     bool reconciliation = false;
+
+    // G0 wall-time decomposition. These timers are build-level only; they add
+    // no per-Source timing calls and therefore do not perturb hot loops.
+    std::uint64_t g0_acquire_prepare_ns = 0;
+    std::uint64_t g0_acquire_execute_ns = 0;
+    std::uint64_t g0_acquire_apply_ns = 0;
+    std::uint64_t g0_discovery_ns = 0;
+    std::uint64_t g0_validation_ns = 0;
+    std::uint64_t g0_semantic_ns = 0;
+    std::uint64_t g0_publish_ns = 0;
+    std::uint64_t g0_commit_ns = 0;
+
+    std::uint64_t g0_tx_source_prepare_ns = 0;
+    std::uint64_t g0_tx_string_prepare_ns = 0;
+    std::uint64_t g0_tx_graph_prepare_ns = 0;
+
+    std::uint64_t g0_graph_stable_id_canonicalization_ns = 0;
+    std::uint64_t g0_graph_pending_member_resolution_ns = 0;
+    std::uint64_t g0_graph_live_typeref_validation_ns = 0;
+    std::uint64_t g0_graph_canonical_typeref_rebuild_ns = 0;
+    std::uint64_t g0_graph_string_validation_ns = 0;
+    std::uint64_t g0_graph_definition_scan_ns = 0;
+    std::uint64_t g0_graph_definition_materialization_ns = 0;
+    std::uint64_t g0_graph_rebuild_storage_ns = 0;
+    std::uint64_t g0_graph_dependency_index_ns = 0;
+    std::uint64_t g0_graph_final_prepare_ns = 0;
+
+    std::uint64_t g0_tx_string_retention_ns = 0;
+    std::uint64_t g0_tx_string_compaction_ns = 0;
+    std::uint64_t g0_tx_contribution_prepare_ns = 0;
+
+    std::uint64_t g0_tx_source_publish_ns = 0;
+    std::uint64_t g0_tx_string_publish_ns = 0;
+    std::uint64_t g0_tx_contribution_publish_ns = 0;
+    std::uint64_t g0_tx_graph_publish_ns = 0;
+
+    std::uint64_t g0_cache_publish_ns = 0;
+    std::uint64_t g0_tracker_init_ns = 0;
 };
 
 // Reports semantic build status separately from optional persistence work.
@@ -175,6 +215,20 @@ private:
 
     source_state& ensure(source_id source);
 
+    [[nodiscard]] source_state* find_state(
+        source_id source) noexcept;
+
+    [[nodiscard]] const source_state* find_state(
+        source_id source) const noexcept;
+
+    // G0 fast path used only after discovery proved that the Source has no
+    // dependency edges. Workers own disjoint dense source_state slots, while
+    // Source Manager candidate bytes are immutable until semantic workers join.
+    [[nodiscard]] status parse_and_capture_independent_g0(
+        source_id source,
+        operation_id operation,
+        source_context& context) noexcept;
+
     void fail_locked(status result) noexcept;
 
     void enqueue_ready_locked(
@@ -194,7 +248,10 @@ private:
     bool semantic_scheduler_active = false;
     std::uint32_t semantic_remaining = 0;
 
+    // G0 uses dense storage for bulk locality. Incremental generations use
+    // sparse storage so source_id magnitude never determines K-path work.
     std::vector<source_state> states;
+    std::unordered_map<std::uint32_t, source_state> sparse_states;
     std::deque<source_id> discovery_queue;
     std::deque<source_id> semantic_queue;
 

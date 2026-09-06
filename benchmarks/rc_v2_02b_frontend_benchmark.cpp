@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -58,6 +59,24 @@ std::uint64_t counter_delta(
         before.counter(id).value;
 }
 
+double duration_delta_ms(
+    const metrics_snapshot& before,
+    const metrics_snapshot& after,
+    metric_id id) {
+
+    const auto before_ns =
+        before.duration(id).total_ns;
+
+    const auto after_ns =
+        after.duration(id).total_ns;
+
+    return static_cast<double>(
+        after_ns - before_ns) / 1000000.0;
+}
+
+double ns_to_ms(std::uint64_t value) {
+    return static_cast<double>(value) / 1000000.0;
+}
 metric_delta source_delta(
     const metrics_snapshot& before,
     const metrics_snapshot& after) {
@@ -187,7 +206,9 @@ void print_row(
     std::string_view scenario,
     double total_ms,
     const metric_delta& metrics,
-    const source_frontend_summary& frontend) {
+    const source_frontend_summary& frontend,
+    const metrics_snapshot& before,
+    const metrics_snapshot& after) {
 
     std::cout
         << count << ','
@@ -201,10 +222,77 @@ void print_row(
         << frontend.dirty << ','
         << frontend.checked << ','
         << frontend.affected << ','
+        << frontend.working_states << ','
         << frontend.lex << ','
         << frontend.parse << ','
         << frontend.publish << ','
-        << (frontend.reconciliation ? 1 : 0)
+        << (frontend.reconciliation ? 1 : 0) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::project_configuration_load_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::project_composition_resolve_duration) << ','
+        << ns_to_ms(frontend.g0_acquire_prepare_ns) << ','
+        << ns_to_ms(frontend.g0_acquire_execute_ns) << ','
+        << ns_to_ms(frontend.g0_acquire_apply_ns) << ','
+        << ns_to_ms(frontend.g0_discovery_ns) << ','
+        << ns_to_ms(frontend.g0_validation_ns) << ','
+        << ns_to_ms(frontend.g0_semantic_ns) << ','
+        << ns_to_ms(frontend.g0_publish_ns) << ','
+        << ns_to_ms(frontend.g0_commit_ns) << ','
+        << ns_to_ms(frontend.g0_cache_publish_ns) << ','
+        << ns_to_ms(frontend.g0_tracker_init_ns) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::runtime_attach_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::source_file_open_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::source_observe_before_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::source_read_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::source_observe_after_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::source_sha256_duration) << ','
+        << duration_delta_ms(
+               before,
+               after,
+               metric_id::source_candidate_update_duration) << ','
+        << ns_to_ms(frontend.g0_tx_source_prepare_ns) << ','
+        << ns_to_ms(frontend.g0_tx_string_prepare_ns) << ','
+        << ns_to_ms(frontend.g0_tx_graph_prepare_ns) << ','
+        << ns_to_ms(frontend.g0_tx_string_retention_ns) << ','
+        << ns_to_ms(frontend.g0_tx_string_compaction_ns) << ','
+        << ns_to_ms(frontend.g0_tx_contribution_prepare_ns) << ','
+        << ns_to_ms(frontend.g0_tx_source_publish_ns) << ','
+        << ns_to_ms(frontend.g0_tx_string_publish_ns) << ','
+        << ns_to_ms(frontend.g0_tx_contribution_publish_ns) << ','
+        << ns_to_ms(frontend.g0_tx_graph_publish_ns) << ','
+        << ns_to_ms(frontend.g0_graph_stable_id_canonicalization_ns) << ','
+        << ns_to_ms(frontend.g0_graph_pending_member_resolution_ns) << ','
+        << ns_to_ms(frontend.g0_graph_live_typeref_validation_ns) << ','
+        << ns_to_ms(frontend.g0_graph_canonical_typeref_rebuild_ns) << ','
+        << ns_to_ms(frontend.g0_graph_string_validation_ns) << ','
+        << ns_to_ms(frontend.g0_graph_definition_scan_ns) << ','
+        << ns_to_ms(frontend.g0_graph_definition_materialization_ns) << ','
+        << ns_to_ms(frontend.g0_graph_rebuild_storage_ns) << ','
+        << ns_to_ms(frontend.g0_graph_dependency_index_ns) << ','
+        << ns_to_ms(frontend.g0_graph_final_prepare_ns)
         << '\n';
 }
 
@@ -220,6 +308,7 @@ bool gate_no_change(
         frontend.dirty == 0 &&
         frontend.checked == 0 &&
         frontend.affected == 0 &&
+        frontend.working_states == 0 &&
         frontend.lex == 0 &&
         frontend.parse == 0 &&
         frontend.publish == 0 &&
@@ -236,6 +325,7 @@ bool gate_modify_one(
         frontend.dirty == 1 &&
         frontend.checked == 1 &&
         frontend.affected == 1 &&
+        frontend.working_states == 1 &&
         frontend.lex == 1 &&
         frontend.parse == 1 &&
         frontend.publish == 1 &&
@@ -255,6 +345,33 @@ bool run_workload(
 
     logger log;
     metrics_store metrics;
+
+#ifdef _WIN32
+    char* deep_profile = nullptr;
+    std::size_t deep_profile_size = 0;
+
+    if (_dupenv_s(
+            &deep_profile,
+            &deep_profile_size,
+            "CW_G0_DEEP_PROFILE") == 0) {
+        if (deep_profile != nullptr &&
+            std::string_view{deep_profile} != "0") {
+            metrics.set_mode(
+                metrics_mode::detailed);
+        }
+
+        std::free(deep_profile);
+    }
+#else
+    if (const auto* deep_profile =
+            std::getenv("CW_G0_DEEP_PROFILE");
+        deep_profile != nullptr &&
+        std::string_view{deep_profile} != "0") {
+        metrics.set_mode(
+            metrics_mode::detailed);
+    }
+#endif
+
     project_context project;
 
     if (!project.initialize(
@@ -286,7 +403,9 @@ bool run_workload(
             "g0_initial",
             elapsed_ms(begin, end),
             source_delta(before, after),
-            project.last_frontend_summary());
+            project.last_frontend_summary(),
+            before,
+            after);
     }
 
     {
@@ -313,7 +432,9 @@ bool run_workload(
             "g1_no_change",
             elapsed_ms(begin, end),
             delta,
-            frontend);
+            frontend,
+            before,
+            after);
 
         if (!gate_no_change(delta, frontend)) {
             std::cerr
@@ -362,7 +483,9 @@ bool run_workload(
             "g2_modify_one",
             elapsed_ms(begin, end),
             delta,
-            frontend);
+            frontend,
+            before,
+            after);
 
         if (!gate_modify_one(delta, frontend)) {
             std::cerr
@@ -398,7 +521,27 @@ int main() {
     std::cout
         << "sources,scenario,total_ms,"
         << "acquisitions,fast_paths,content_reads,bytes_read,"
-        << "dirty,checked,affected,lex,parse,publish,reconciliation\n";
+        << "dirty,checked,affected,working_states,lex,parse,publish,reconciliation,"
+        << "config_ms,composition_ms,g0_prepare_ms,g0_io_ms,g0_apply_ms,"
+        << "g0_discovery_ms,g0_validate_ms,g0_semantic_ms,g0_publish_ms,"
+        << "g0_commit_ms,g0_cache_ms,g0_tracker_ms,runtime_attach_ms,"
+        << "io_open_sum_ms,io_observe_before_sum_ms,io_read_sum_ms,"
+        << "io_observe_after_sum_ms,io_hash_sum_ms,candidate_update_sum_ms,"
+        << "tx_source_prepare_ms,tx_string_prepare_ms,tx_graph_prepare_ms,"
+        << "tx_string_retention_ms,tx_string_compaction_ms,"
+        << "tx_contribution_prepare_ms,tx_source_publish_ms,"
+        << "tx_string_publish_ms,tx_contribution_publish_ms,"
+        << "tx_graph_publish_ms,"
+        << "graph_stable_id_canonicalization_ms,"
+        << "graph_pending_member_resolution_ms,"
+        << "graph_live_typeref_validation_ms,"
+        << "graph_canonical_typeref_rebuild_ms,"
+        << "graph_string_validation_ms,"
+        << "graph_definition_scan_ms,"
+        << "graph_definition_materialization_ms,"
+        << "graph_rebuild_storage_ms,"
+        << "graph_dependency_index_ms,"
+        << "graph_final_prepare_ms\n";
 
     std::uint64_t operation_value = 1;
 

@@ -56,6 +56,9 @@ public:
     source_frontend_cache_update& operator=(
         source_frontend_cache_update&&) = delete;
 
+    // Replacements are submitted in strictly increasing source_id order.
+    // G0 and sparse publication both already publish deterministically in this
+    // order, allowing duplicate detection without an O(K^2) linear scan.
     [[nodiscard]] status replace(
         source_id source,
         std::unique_ptr<source_environment_storage> interface) noexcept;

@@ -6,10 +6,20 @@
 #include "../graph/graph.hpp"
 
 #include <span>
+#include <vector>
 
 namespace cw::server {
 
 class graph_build_transaction;
+
+// Reusable COLD conversion storage for deterministic single-owner publication.
+// It owns no canonical state and is reusable immediately after each synchronous
+// Builder call completes.
+struct project_builder_scratch {
+    std::vector<enum_value_build> enum_values;
+    std::vector<member_build> members;
+    std::vector<type_modifier_build> modifiers;
+};
 
 // Converts canonical source facts into canonical Graph state.
 // Parser/source_publisher must already have resolved source-language names before
@@ -30,9 +40,19 @@ public:
         graph_update::source_replacement& replacement,
         const enum_source_fact& fact) const noexcept;
 
+    [[nodiscard]] status build_enum(
+        graph_update::source_replacement& replacement,
+        const enum_source_fact& fact,
+        project_builder_scratch& scratch) const noexcept;
+
     [[nodiscard]] status build_aggregate(
         graph_update::source_replacement& replacement,
         const aggregate_source_fact& fact) const noexcept;
+
+    [[nodiscard]] status build_aggregate(
+        graph_update::source_replacement& replacement,
+        const aggregate_source_fact& fact,
+        project_builder_scratch& scratch) const noexcept;
 };
 
 } // namespace cw::server

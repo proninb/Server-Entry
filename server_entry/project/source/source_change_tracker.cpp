@@ -24,8 +24,11 @@ namespace {
 std::wstring path_key(
     const std::filesystem::path& path) {
 
+    // Source Manager and Project Context hand the tracker normalized absolute
+    // paths. Directory notifications append only an OS-provided relative name,
+    // so repeating lexically_normal() for every Source is pure G0 overhead.
     auto key =
-        path.lexically_normal().native();
+        path.native();
 
     std::transform(
         key.begin(),
@@ -86,12 +89,91 @@ public:
             project_key =
                 path_key(project_configuration);
 
-            const auto records = sources.sources();
+            const auto records =
+                sources.sources();
+
+            // initialize() runs before the watcher worker starts, so bulk
+            // registration requires no per-Source mutex acquisition.
+            source_by_path.reserve(records.size());
+
+            std::vector<std::filesystem::path>
+                directories;
+
+            directories.reserve(
+                (std::min)(
+                    records.size() + std::size_t{1},
+                    std::size_t{64}));
+
+            std::unordered_set<std::wstring>
+                directory_keys;
+
+            directory_keys.reserve(
+                (std::min)(
+                    records.size() + std::size_t{1},
+                    std::size_t{256}));
+
+            std::filesystem::path
+                previous_directory;
+
+            bool has_previous_directory = false;
 
             for (const auto& record : records) {
-                auto result = add_source(
-                    record.id,
-                    record.path);
+                if (!record.id ||
+                    record.path.empty()) {
+                    stop();
+                    return {
+                        status_code::configuration_failed
+                    };
+                }
+
+                source_by_path.emplace(
+                    path_key(record.path),
+                    record.id);
+
+                const auto directory =
+                    record.path.parent_path();
+
+                // Project composition normally groups Sources by directory.
+                // Avoid rebuilding/lowercasing the same directory key for each
+                // Source; the set still handles non-contiguous repeats.
+                if (has_previous_directory &&
+                    directory == previous_directory) {
+                    continue;
+                }
+
+                auto directory_key =
+                    path_key(directory);
+
+                if (directory_keys.insert(
+                        directory_key).second) {
+                    directories.push_back(
+                        directory);
+                }
+
+                previous_directory = directory;
+                has_previous_directory = true;
+            }
+
+            const auto project_directory =
+                project_configuration.parent_path();
+
+            auto project_directory_key =
+                path_key(project_directory);
+
+            if (directory_keys.insert(
+                    project_directory_key).second) {
+                directories.push_back(
+                    project_directory);
+            }
+
+            watches.reserve(directories.size());
+            watch_by_directory.reserve(
+                directories.size());
+
+            for (const auto& directory :
+                 directories) {
+                const auto result =
+                    ensure_watch(directory);
 
                 if (!result.ok()) {
                     stop();
@@ -100,14 +182,6 @@ public:
             }
 
             known_source_count = records.size();
-
-            auto result = ensure_watch(
-                project_configuration.parent_path());
-
-            if (!result.ok()) {
-                stop();
-                return result;
-            }
 
             stopping = false;
             running = true;

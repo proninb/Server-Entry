@@ -69,14 +69,9 @@ status source_frontend_cache_update::replace(
     }
 
     try {
-        const auto duplicate = std::find_if(
-            replacements.begin(),
-            replacements.end(),
-            [source](const replacement& item) noexcept {
-                return item.source == source;
-            });
-
-        if (duplicate != replacements.end()) {
+        if (!replacements.empty() &&
+            replacements.back().source.value() >=
+                source.value()) {
             failure = {status_code::invalid_state};
             return failure;
         }

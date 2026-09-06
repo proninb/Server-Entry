@@ -106,6 +106,52 @@ status resolve_project_composition(
             return {status_code::configuration_failed};
         }
 
+        // Root-only composition has no Project-reference graph to discover,
+        // deduplicate, schedule, or cycle-check. Publish the already normalized
+        // typed root items directly while preserving deterministic item order.
+        bool has_nested_projects = false;
+
+        for (const auto& item :
+             root_configuration.project) {
+            if (item.role ==
+                project_item_role::project) {
+                has_nested_projects = true;
+                break;
+            }
+        }
+
+        if (!has_nested_projects) {
+            for (const auto& item :
+                 root_configuration.project) {
+                const auto published =
+                    roots.add(
+                        item.path,
+                        item.role);
+
+                if (!published.ok()) {
+                    try_emit(
+                        diagnostics,
+                        published.code ==
+                                status_code::initialization_failed
+                            ? diagnostics::project_initialization_failed
+                            : diagnostics::project_composition_failed,
+                        operation);
+
+                    return published;
+                }
+            }
+
+            if (statistics) {
+                *statistics = {};
+            }
+
+            metrics.set(
+                metric_id::project_composition_max_parallel_workers,
+                0);
+
+            return {};
+        }
+
         using node_ptr = std::shared_ptr<cached_project>;
 
         std::unordered_map<std::filesystem::path, node_ptr> cache;

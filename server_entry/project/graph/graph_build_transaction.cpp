@@ -2,10 +2,22 @@
 
 #include "graph_manager.hpp"
 
+#include <chrono>
 #include <utility>
 #include <vector>
 
 namespace cw::server {
+namespace {
+
+std::uint64_t transaction_elapsed_ns(
+    std::chrono::steady_clock::time_point begin) noexcept {
+
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - begin).count());
+}
+
+} // namespace
 
 graph_build_transaction::graph_build_transaction(
     graph_manager& graph_manager,
@@ -36,6 +48,7 @@ graph_build_transaction::graph_build_transaction(
       contribution_update(std::move(other.contribution_update)),
       graph_update_state(std::move(other.graph_update_state)),
       owner(std::exchange(other.owner, nullptr)),
+      timings(other.timings),
       state(std::exchange(
           other.state,
           graph_build_transaction_state::failed))
@@ -85,8 +98,14 @@ status graph_build_transaction::prepare() noexcept {
     }
 #endif
 
+    auto phase_begin =
+        std::chrono::steady_clock::now();
+
     auto result =
         source_update.prepare_publish();
+
+    timings.source_prepare_ns =
+        transaction_elapsed_ns(phase_begin);
 
     if (!result.ok()) {
         fail(result);
@@ -104,8 +123,14 @@ status graph_build_transaction::prepare() noexcept {
     }
 #endif
 
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     result =
         string_update.prepare_publish();
+
+    timings.string_prepare_ns =
+        transaction_elapsed_ns(phase_begin);
 
     if (!result.ok()) {
         fail(result);
@@ -123,10 +148,40 @@ status graph_build_transaction::prepare() noexcept {
     }
 #endif
 
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     result =
         graph_update_state.prepare_publish(
             source_update,
             string_update);
+
+    timings.graph_prepare_ns =
+        transaction_elapsed_ns(phase_begin);
+
+    const auto& graph_timing =
+        graph_update_state.prepare_phase_telemetry();
+
+    timings.graph_stable_id_canonicalization_ns =
+        graph_timing.stable_id_canonicalization_ns;
+    timings.graph_pending_member_resolution_ns =
+        graph_timing.pending_member_resolution_ns;
+    timings.graph_live_typeref_validation_ns =
+        graph_timing.live_typeref_validation_ns;
+    timings.graph_canonical_typeref_rebuild_ns =
+        graph_timing.canonical_typeref_rebuild_ns;
+    timings.graph_string_validation_ns =
+        graph_timing.string_validation_ns;
+    timings.graph_definition_scan_ns =
+        graph_timing.definition_scan_ns;
+    timings.graph_definition_materialization_ns =
+        graph_timing.definition_materialization_ns;
+    timings.graph_rebuild_storage_ns =
+        graph_timing.rebuild_storage_ns;
+    timings.graph_dependency_index_ns =
+        graph_timing.dependency_index_ns;
+    timings.graph_final_prepare_ns =
+        graph_timing.final_prepare_ns;
 
     if (!result.ok()) {
         fail(result);
@@ -145,9 +200,16 @@ status graph_build_transaction::prepare() noexcept {
 #endif
 
     std::vector<std::uint8_t> retained_strings;
+
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     result = graph_update_state.collect_rebuild_string_retention(
         string_update.candidate_size_for_validation(),
         retained_strings);
+
+    timings.string_retention_ns =
+        transaction_elapsed_ns(phase_begin);
 
     if (!result.ok()) {
         fail(result);
@@ -155,8 +217,14 @@ status graph_build_transaction::prepare() noexcept {
     }
 
     if (!retained_strings.empty()) {
+        phase_begin =
+            std::chrono::steady_clock::now();
+
         result = string_update.prepare_rebuild_compaction(
             retained_strings);
+
+        timings.string_compaction_ns =
+            transaction_elapsed_ns(phase_begin);
 
         if (!result.ok()) {
             fail(result);
@@ -164,7 +232,13 @@ status graph_build_transaction::prepare() noexcept {
         }
     }
 
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     result = contribution_update.prepare_publish();
+
+    timings.contribution_prepare_ns =
+        transaction_elapsed_ns(phase_begin);
 
     if (!result.ok()) {
         fail(result);
@@ -182,10 +256,37 @@ void graph_build_transaction::publish_prepared() noexcept {
     // Publication order is part of the transaction contract. Graph validation
     // has already observed the prepared Source Manager and String Registry
     // candidates, so those dependencies become committed before Graph itself.
+    auto phase_begin =
+        std::chrono::steady_clock::now();
+
     source_update.publish_prepared();
+
+    timings.source_publish_ns =
+        transaction_elapsed_ns(phase_begin);
+
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     string_update.publish_prepared();
+
+    timings.string_publish_ns =
+        transaction_elapsed_ns(phase_begin);
+
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     contribution_update.publish_prepared();
+
+    timings.contribution_publish_ns =
+        transaction_elapsed_ns(phase_begin);
+
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     graph_update_state.publish_prepared();
+
+    timings.graph_publish_ns =
+        transaction_elapsed_ns(phase_begin);
 
     state =
         graph_build_transaction_state::committed;

@@ -8,6 +8,9 @@
 #include <algorithm>
 #include <array>
 #include <cassert>
+#include <chrono>
+#include <cstdio>
+#include <cstdlib>
 #include <limits>
 #include <new>
 #include <stdexcept>
@@ -16,6 +19,14 @@
 
 namespace cw::server {
 namespace {
+
+std::uint64_t graph_prepare_elapsed_ns(
+    std::chrono::steady_clock::time_point begin) noexcept {
+
+    return static_cast<std::uint64_t>(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - begin).count());
+}
 
 constexpr std::size_t sparse_capacity_floor = 64;
 
@@ -1034,6 +1045,7 @@ graph_update::graph_update(
       full_reconstruction(reconstruct_all_sources) {}
 
 graph_update::~graph_update() = default;
+
 
 graph_update::graph_update(graph_update&& other) noexcept
     : owner(std::exchange(other.owner, nullptr)),
@@ -2962,7 +2974,8 @@ status graph_update::build_rebuild_storage() noexcept {
                 continue;
             }
 
-            const auto& candidate = owner->candidate_types[handle];
+            auto& candidate = owner->candidate_types[handle];
+
             if (candidate.generation != candidate_generation ||
                 candidate.kind != candidate_type_kind::replacement ||
                 !candidate.value) {
@@ -2970,8 +2983,12 @@ status graph_update::build_rebuild_storage() noexcept {
                 continue;
             }
 
+            // All fallible semantic/type validation has completed before this
+            // detached G0 materialization step. Transfer candidate ownership
+            // instead of allocating and copying one type_storage per type.
             rebuilt_types[handle - 1] =
-                std::make_unique<graph::type_storage>(*candidate.value);
+                std::move(candidate.value);
+
             ++rebuilt_type_count;
         }
 
@@ -3363,21 +3380,29 @@ status graph_update::canonicalize_new_stable_ids(
             static_cast<std::size_t>(
                 next_stable_id - base);
 
+        auto phase_begin =
+            std::chrono::steady_clock::now();
+
         std::vector<string_id> names(
+            provisional_count);
+
+        std::vector<source_contribution_record*>
+            new_contributions;
+        new_contributions.reserve(
             provisional_count);
 
         // Each surviving new canonical Entity has at least one source
         // contribution. Use that canonical string_id to obtain deterministic
         // lexical bytes without depending on string_id allocation order.
         for (auto source : changed_sources) {
-            const auto* state_ptr =
+            auto* state_ptr =
                 contributions->candidate(source_id{source});
             if (!state_ptr) {
                 return failure = {status_code::invalid_state};
             }
-            const auto& state = *state_ptr;
+            auto& state = *state_ptr;
 
-            for (const auto& contribution : state.named) {
+            for (auto& contribution : state.named) {
                 const auto raw =
                     contribution.entity.value();
 
@@ -3385,9 +3410,17 @@ status graph_update::canonicalize_new_stable_ids(
                     raw < next_stable_id) {
                     names[raw - base] =
                         contribution.name;
+                    new_contributions.push_back(
+                        &contribution);
                 }
             }
         }
+
+        const auto collect_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
 
         struct assignment {
             string_id name{};
@@ -3422,6 +3455,12 @@ status graph_update::canonicalize_new_stable_ids(
             });
         }
 
+        const auto assignment_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
+
         std::sort(
             assignments.begin(),
             assignments.end(),
@@ -3429,6 +3468,12 @@ status graph_update::canonicalize_new_stable_ids(
                const assignment& right) {
                 return left.bytes < right.bytes;
             });
+
+        const auto sort_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
 
         std::vector<std::uint32_t> remap(
             provisional_count,
@@ -3442,6 +3487,12 @@ status graph_update::canonicalize_new_stable_ids(
                 static_cast<std::uint32_t>(
                     base + index);
         }
+
+        const auto remap_build_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
 
         std::vector<graph::candidate_entity_slot>
             old_entities(provisional_count);
@@ -3496,39 +3547,51 @@ status graph_update::canonicalize_new_stable_ids(
                 stable_id{final_id};
         }
 
+        const auto entity_permutation_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
+
         auto construction_remap =
             contributions->remap_new_entities(base, remap);
         if (!construction_remap.ok()) {
             return failure = construction_remap;
         }
 
-        for (auto source : changed_sources) {
-            auto* state_ptr =
-                contributions->candidate(source_id{source});
-            if (!state_ptr) {
-                return failure = {status_code::invalid_state};
+        const auto contribution_cache_remap_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
+
+        for (auto* contribution : new_contributions) {
+            const auto raw =
+                contribution->entity.value();
+
+            if (raw < base ||
+                raw >= base + provisional_count) {
+                return failure =
+                    {status_code::configuration_failed};
             }
-            auto& state = *state_ptr;
 
-            for (auto& contribution : state.named) {
-                const auto raw =
-                    contribution.entity.value();
+            const auto mapped =
+                remap[raw - base];
 
-                if (raw >= base &&
-                    raw < base + provisional_count) {
-                    const auto mapped =
-                        remap[raw - base];
-
-                    if (!mapped) {
-                        return failure =
-                            {status_code::configuration_failed};
-                    }
-
-                    contribution.entity =
-                        stable_id{mapped};
-                }
+            if (!mapped) {
+                return failure =
+                    {status_code::configuration_failed};
             }
+
+            contribution->entity =
+                stable_id{mapped};
         }
+
+        const auto contribution_record_remap_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        phase_begin =
+            std::chrono::steady_clock::now();
 
         std::vector<std::uint32_t>
             remapped_changed_entities;
@@ -3566,6 +3629,44 @@ status graph_update::canonicalize_new_stable_ids(
                 next_stable_id);
         }
 
+        const auto changed_entity_remap_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        static const bool profile_enabled = []() noexcept {
+            char* value = nullptr;
+            std::size_t size = 0;
+
+            if (_dupenv_s(
+                    &value,
+                    &size,
+                    "CW_G0_GRAPH_PROFILE") != 0 ||
+                !value) {
+                return false;
+            }
+
+            const bool enabled =
+                value[0] == '1' &&
+                value[1] == '\0';
+
+            std::free(value);
+            return enabled;
+        }();
+
+        if (profile_enabled) {
+            std::fprintf(
+                stderr,
+                "G0_CANON,%zu,%llu,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n",
+                provisional_count,
+                static_cast<unsigned long long>(collect_ns),
+                static_cast<unsigned long long>(assignment_ns),
+                static_cast<unsigned long long>(sort_ns),
+                static_cast<unsigned long long>(remap_build_ns),
+                static_cast<unsigned long long>(entity_permutation_ns),
+                static_cast<unsigned long long>(contribution_cache_remap_ns),
+                static_cast<unsigned long long>(contribution_record_remap_ns),
+                static_cast<unsigned long long>(changed_entity_remap_ns));
+        }
+
         return {};
     }
     catch (...) {
@@ -3578,6 +3679,8 @@ status graph_update::canonicalize_new_stable_ids(
 // publish_prepared() mutates the committed Graph.
 status graph_update::prepare_publish(const source_manager_update& sources,
     const string_registry_update& strings) noexcept {
+
+    prepare_telemetry = {};
 
     if (!failure.ok()) {
         return failure;
@@ -3601,12 +3704,21 @@ status graph_update::prepare_publish(const source_manager_update& sources,
         return result;
     }
 
+    auto phase_begin =
+        std::chrono::steady_clock::now();
+
     result =
         canonicalize_new_stable_ids(strings);
+
+    prepare_telemetry.stable_id_canonicalization_ns =
+        graph_prepare_elapsed_ns(phase_begin);
 
     if (!result.ok()) {
         return result;
     }
+
+    phase_begin =
+        std::chrono::steady_clock::now();
 
     for (auto handle : changed_types) {
         auto& candidate =
@@ -3628,17 +3740,35 @@ status graph_update::prepare_publish(const source_manager_update& sources,
         }
     }
 
+    prepare_telemetry.pending_member_resolution_ns =
+        graph_prepare_elapsed_ns(phase_begin);
+
+    phase_begin =
+        std::chrono::steady_clock::now();
+
     result = validate_live_member_type_refs();
+
+    prepare_telemetry.live_typeref_validation_ns =
+        graph_prepare_elapsed_ns(phase_begin);
 
     if (!result.ok()) {
         return result;
     }
+
+    phase_begin =
+        std::chrono::steady_clock::now();
 
     result = rebuild_canonical_type_table();
 
+    prepare_telemetry.canonical_typeref_rebuild_ns =
+        graph_prepare_elapsed_ns(phase_begin);
+
     if (!result.ok()) {
         return result;
     }
+
+    phase_begin =
+        std::chrono::steady_clock::now();
 
     for (auto source : changed_sources) {
         if (!sources.contains_for_validation(source_id{source})) {
@@ -3665,6 +3795,12 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             }
         }
     }
+
+    prepare_telemetry.string_validation_ns =
+        graph_prepare_elapsed_ns(phase_begin);
+
+    phase_begin =
+        std::chrono::steady_clock::now();
 
     std::size_t added_member_count = 0;
     std::size_t added_enum_value_count = 0;
@@ -3695,6 +3831,12 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             }
         }
     }
+
+    prepare_telemetry.definition_scan_ns =
+        graph_prepare_elapsed_ns(phase_begin);
+
+    phase_begin =
+        std::chrono::steady_clock::now();
 
     try {
         if (full_reconstruction) {
@@ -3734,8 +3876,10 @@ status graph_update::prepare_publish(const source_manager_update& sources,
 
                     rebuilt_member_records.insert(
                         rebuilt_member_records.end(),
-                        candidate.build->members.begin(),
-                        candidate.build->members.end());
+                        std::make_move_iterator(
+                            candidate.build->members.begin()),
+                        std::make_move_iterator(
+                            candidate.build->members.end()));
                 }
                 else {
                     candidate.value->record.definition = {
@@ -3745,22 +3889,42 @@ status graph_update::prepare_publish(const source_manager_update& sources,
 
                     rebuilt_enum_value_records.insert(
                         rebuilt_enum_value_records.end(),
-                        candidate.build->enumerators.begin(),
-                        candidate.build->enumerators.end());
+                        std::make_move_iterator(
+                            candidate.build->enumerators.begin()),
+                        std::make_move_iterator(
+                            candidate.build->enumerators.end()));
                 }
             }
         }
 
+        prepare_telemetry.definition_materialization_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
         if (full_reconstruction) {
+            phase_begin =
+                std::chrono::steady_clock::now();
+
             result = build_rebuild_storage();
             if (!result.ok()) {
                 return result;
             }
 
+            prepare_telemetry.rebuild_storage_ns =
+                graph_prepare_elapsed_ns(phase_begin);
+
+            phase_begin =
+                std::chrono::steady_clock::now();
+
             result = build_rebuild_dependency_index();
             if (!result.ok()) {
                 return result;
             }
+
+            prepare_telemetry.dependency_index_ns =
+                graph_prepare_elapsed_ns(phase_begin);
+
+            phase_begin =
+                std::chrono::steady_clock::now();
 
             reserve_sparse_capacity(rebuilt_identity, rebuilt_identity.size());
             reserve_sparse_capacity(rebuilt_entities, rebuilt_entities.size());
@@ -3773,8 +3937,14 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             reserve_sparse_capacity(
                 rebuilt_reverse_type_dependents,
                 rebuilt_reverse_type_dependents.size());
+
+            prepare_telemetry.final_prepare_ns =
+                graph_prepare_elapsed_ns(phase_begin);
         }
         else {
+            phase_begin =
+                std::chrono::steady_clock::now();
+
             result = prepare_dependency_index_updates();
 
             if (!result.ok()) {
@@ -3859,6 +4029,9 @@ status graph_update::prepare_publish(const source_manager_update& sources,
                 sparse_capacity(
                     owner->derived_type_index.size() +
                     added_derived_type_index.size()));
+
+            prepare_telemetry.final_prepare_ns =
+                graph_prepare_elapsed_ns(phase_begin);
 
 #if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
             growth_after(

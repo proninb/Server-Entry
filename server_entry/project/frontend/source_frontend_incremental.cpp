@@ -14,6 +14,7 @@
 #include <algorithm>
 #include <atomic>
 #include <thread>
+#include <unordered_set>
 #include <vector>
 
 namespace cw::server {
@@ -123,10 +124,6 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
         current_summary = {};
         current_summary.reconciliation = reconcile_all;
 
-        std::vector<std::uint8_t> selected(
-            initial_source_count + 1,
-            0);
-
         std::vector<source_id> observation_sources;
 
         if (reconcile_all) {
@@ -141,10 +138,12 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
             }
         }
         else {
-            observation_sources.reserve(
-                dirty_sources.size());
+            observation_sources.assign(
+                dirty_sources.begin(),
+                dirty_sources.end());
 
-            for (const auto source : dirty_sources) {
+            for (const auto source :
+                 observation_sources) {
                 if (!source ||
                     source.value() >
                         initial_source_count) {
@@ -152,13 +151,6 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                         status_code::invalid_state
                     };
                 }
-
-                if (selected[source.value()] != 0) {
-                    continue;
-                }
-
-                selected[source.value()] = 1;
-                observation_sources.push_back(source);
             }
 
             std::sort(
@@ -167,6 +159,12 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                 [](source_id left, source_id right) noexcept {
                     return left.value() < right.value();
                 });
+
+            observation_sources.erase(
+                std::unique(
+                    observation_sources.begin(),
+                    observation_sources.end()),
+                observation_sources.end());
         }
 
         current_summary.dirty =
@@ -175,9 +173,11 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                     ? dirty_sources.size()
                     : observation_sources.size());
 
-        std::vector<std::uint8_t> checked(
-            initial_source_count + 1,
-            0);
+        std::unordered_set<std::uint32_t>
+            checked_sources;
+
+        checked_sources.reserve(
+            observation_sources.size() + 8);
 
         struct observation_slot {
             source_id source{};
@@ -314,35 +314,29 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                 return result;
             }
 
-            checked[slot.source.value()] = 1;
+            checked_sources.insert(
+                slot.source.value());
         }
 
         current_summary.checked =
             static_cast<std::uint32_t>(
                 observations.size());
 
-        std::vector<std::uint8_t> affected(
-            initial_source_count + 1,
-            0);
+        std::unordered_set<std::uint32_t>
+            affected_values;
+
+        affected_values.reserve(
+            transaction->sources().changes().size() +
+            8);
 
         std::vector<source_id> affected_sources;
         std::vector<source_id> dependents;
 
         const auto mark_affected =
             [&](source_id source) {
-                if (!source) {
-                    return;
-                }
-
-                if (affected.size() <= source.value()) {
-                    affected.resize(
-                        static_cast<std::size_t>(
-                            source.value()) + 1,
-                        0);
-                }
-
-                if (affected[source.value()] == 0) {
-                    affected[source.value()] = 1;
+                if (source &&
+                    affected_values.insert(
+                        source.value()).second) {
                     affected_sources.push_back(source);
                 }
             };
@@ -425,14 +419,13 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                 break;
             }
 
-            if (checked.size() <= source.value()) {
-                checked.resize(
-                    static_cast<std::size_t>(
-                        source.value()) + 1,
-                    0);
-            }
-
-            if (checked[source.value()] == 0) {
+            // Committed dependents are reparsed because an imported interface
+            // changed, but their physical bytes are already authoritative and
+            // must not be reacquired. Only genuinely new Sources discovered
+            // during this generation require an additional filesystem read.
+            if (source.value() > initial_source_count &&
+                !checked_sources.contains(
+                    source.value())) {
                 auto result =
                     transaction->sources().acquire(
                         source,
@@ -452,17 +445,11 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                     return result;
                 }
 
-                checked[source.value()] = 1;
+                checked_sources.insert(
+                    source.value());
 
-                if (affected.size() <= source.value()) {
-                    affected.resize(
-                        static_cast<std::size_t>(
-                            source.value()) + 1,
-                        0);
-                }
-
-                if (affected[source.value()] == 0) {
-                    affected[source.value()] = 1;
+                if (affected_values.insert(
+                        source.value()).second) {
                     ++current_summary.affected;
                 }
             }
@@ -531,7 +518,10 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
                 return failure;
             }
 
-            for (const auto& state : states) {
+            for (const auto& [source, state] :
+                 sparse_states) {
+                (void)source;
+
                 if (state.discovery_claimed &&
                     state.discovery_done &&
                     !state.parsed) {
@@ -545,13 +535,29 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
             }
         }
 
-        for (std::size_t index = 0;
-             index < states.size();
-             ++index) {
-            auto& state = states[index];
+        std::vector<std::uint32_t>
+            publication_sources;
 
-            if (!state.build_entry ||
-                state.published) {
+        publication_sources.reserve(
+            sparse_states.size());
+
+        for (const auto& [source, state] :
+             sparse_states) {
+            if (state.build_entry) {
+                publication_sources.push_back(source);
+            }
+        }
+
+        std::sort(
+            publication_sources.begin(),
+            publication_sources.end());
+
+        for (const auto value :
+             publication_sources) {
+            auto& state =
+                sparse_states.at(value);
+
+            if (state.published) {
                 continue;
             }
 
@@ -572,21 +578,16 @@ source_rebuild_result source_frontend_generation::rebuild_incremental(
 
         diagnostics.sort_deterministic();
 
-        auto cache_update = cache->begin_update(false);
+        auto cache_update =
+            cache->begin_update(false);
 
-        for (std::size_t index = 0;
-             index < states.size();
-             ++index) {
-            auto& state = states[index];
-
-            if (!state.build_entry) {
-                continue;
-            }
+        for (const auto value :
+             publication_sources) {
+            auto& state =
+                sparse_states.at(value);
 
             result = cache_update.replace(
-                source_id{
-                    static_cast<std::uint32_t>(index + 1)
-                },
+                source_id{value},
                 state.removed
                     ? std::unique_ptr<
                           source_environment_storage>{}

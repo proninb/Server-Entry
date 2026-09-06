@@ -22,6 +22,7 @@ class project_builder;
 class source_frontend_generation;
 struct parser_source_fact_batch;
 class source_build_entry;
+struct source_publish_scratch;
 
 [[nodiscard]] status publish_source_facts(
     graph_build_transaction& transaction,
@@ -37,6 +38,39 @@ class source_build_entry;
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics) noexcept;
+[[nodiscard]] status publish_source_entry(
+    graph_build_transaction& transaction,
+    const source_build_entry& entry,
+    const project_builder& builder,
+    operation_id operation,
+    diagnostic_buffer& diagnostics,
+    source_publish_scratch& scratch) noexcept;
+
+struct graph_build_transaction_timing {
+    std::uint64_t source_prepare_ns = 0;
+    std::uint64_t string_prepare_ns = 0;
+    std::uint64_t graph_prepare_ns = 0;
+
+    std::uint64_t graph_stable_id_canonicalization_ns = 0;
+    std::uint64_t graph_pending_member_resolution_ns = 0;
+    std::uint64_t graph_live_typeref_validation_ns = 0;
+    std::uint64_t graph_canonical_typeref_rebuild_ns = 0;
+    std::uint64_t graph_string_validation_ns = 0;
+    std::uint64_t graph_definition_scan_ns = 0;
+    std::uint64_t graph_definition_materialization_ns = 0;
+    std::uint64_t graph_rebuild_storage_ns = 0;
+    std::uint64_t graph_dependency_index_ns = 0;
+    std::uint64_t graph_final_prepare_ns = 0;
+
+    std::uint64_t string_retention_ns = 0;
+    std::uint64_t string_compaction_ns = 0;
+    std::uint64_t contribution_prepare_ns = 0;
+
+    std::uint64_t source_publish_ns = 0;
+    std::uint64_t string_publish_ns = 0;
+    std::uint64_t contribution_publish_ns = 0;
+    std::uint64_t graph_publish_ns = 0;
+};
 
 // Describes the lifecycle of one coordinated Project build transaction.
 // Only active transactions may be prepared; prepared transactions either publish
@@ -76,6 +110,11 @@ public:
 
     [[nodiscard]] status commit() noexcept;
 
+    [[nodiscard]] const graph_build_transaction_timing&
+        timing() const noexcept {
+        return timings;
+    }
+
 private:
     friend class graph_manager;
     friend class graph_build_transaction_test_access;
@@ -96,6 +135,13 @@ private:
         const project_builder& builder,
         operation_id operation,
         diagnostic_buffer& diagnostics) noexcept;
+    friend status publish_source_entry(
+        graph_build_transaction& transaction,
+        const source_build_entry& entry,
+        const project_builder& builder,
+        operation_id operation,
+        diagnostic_buffer& diagnostics,
+        source_publish_scratch& scratch) noexcept;
 
     explicit graph_build_transaction(graph_manager& owner, graph_build_mode mode) noexcept;
 
@@ -117,6 +163,7 @@ private:
     graph_update graph_update_state;
 
     graph_manager* owner = nullptr;
+    graph_build_transaction_timing timings;
     graph_build_transaction_state state =
         graph_build_transaction_state::active;
 

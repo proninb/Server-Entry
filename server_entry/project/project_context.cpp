@@ -8,6 +8,7 @@
 #include "../metrics/scoped_timer.hpp"
 #include "../metrics/source_acquisition_telemetry.hpp"
 
+#include <chrono>
 #include <string>
 #include <string_view>
 
@@ -196,6 +197,20 @@ status project_context::load_project(
     auto transaction =
         graphs.begin_build(graph_build_mode::rebuild);
 
+    result =
+        transaction.sources().reserve_initial_sources(
+            configuration.project.size());
+
+    if (!result.ok()) {
+        try_emit(
+            diagnostic_records,
+            diagnostics::source_initialization_failed,
+            operation,
+            "while reserving initial Source capacity");
+
+        return result;
+    }
+
     result = resolve_project_composition(
         configuration_path,
         configuration,
@@ -233,8 +248,17 @@ status project_context::load_project(
         return rebuilt.semantic;
     }
 
+    const auto cache_begin =
+        std::chrono::steady_clock::now();
+
     const auto cache_result =
         frontend.populate_cache(frontend_cache);
+
+    frontend_summary.g0_cache_publish_ns =
+        static_cast<std::uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() -
+                cache_begin).count());
 
     if (!cache_result.ok()) {
         frontend_cache.invalidate();
@@ -272,10 +296,19 @@ status project_context::load_project(
 
     if (!active_configuration_path.empty() &&
         frontend_cache.complete()) {
+        const auto tracker_begin =
+            std::chrono::steady_clock::now();
+
         const auto tracking_result =
             change_tracker.initialize(
                 graphs.sources(),
                 active_configuration_path);
+
+        frontend_summary.g0_tracker_init_ns =
+            static_cast<std::uint64_t>(
+                std::chrono::duration_cast<std::chrono::nanoseconds>(
+                    std::chrono::steady_clock::now() -
+                    tracker_begin).count());
 
         change_tracking_ready =
             tracking_result.ok();

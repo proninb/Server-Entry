@@ -18,37 +18,93 @@ namespace cw::server {
 namespace {
 void set_net_change(
     std::vector<source_change>& changes,
-    std::vector<std::uint32_t>& positions,
+    std::vector<std::uint32_t>& dense_positions,
+    std::unordered_map<std::uint32_t, std::uint32_t>&
+        sparse_positions,
+    bool dense,
     source_id id,
     std::optional<source_change_kind> kind) {
 
-    if (positions.size() <= id.value()) {
-        positions.resize(
-            static_cast<std::size_t>(id.value()) + 1,
-            0);
+    if (dense) {
+        if (dense_positions.size() <= id.value()) {
+            dense_positions.resize(
+                static_cast<std::size_t>(
+                    id.value()) + 1,
+                0);
+        }
+
+        auto& encoded_position =
+            dense_positions[id.value()];
+
+        if (encoded_position != 0) {
+            const auto position =
+                static_cast<std::size_t>(
+                    encoded_position - 1);
+
+            if (kind) {
+                changes[position].kind = *kind;
+                return;
+            }
+
+            const auto last =
+                changes.size() - 1;
+
+            if (position != last) {
+                changes[position] =
+                    std::move(changes[last]);
+
+                dense_positions[
+                    changes[position].source.value()] =
+                        static_cast<std::uint32_t>(
+                            position + 1);
+            }
+
+            changes.pop_back();
+            encoded_position = 0;
+            return;
+        }
+
+        if (!kind) {
+            return;
+        }
+
+        changes.push_back({id, *kind});
+
+        encoded_position =
+            static_cast<std::uint32_t>(
+                changes.size());
+
+        return;
     }
 
-    auto& encoded_position = positions[id.value()];
+    const auto found =
+        sparse_positions.find(id.value());
 
-    if (encoded_position != 0) {
+    if (found != sparse_positions.end()) {
         const auto position =
-            static_cast<std::size_t>(encoded_position - 1);
+            static_cast<std::size_t>(
+                found->second - 1);
 
         if (kind) {
             changes[position].kind = *kind;
             return;
         }
 
-        const auto last = changes.size() - 1;
+        const auto last =
+            changes.size() - 1;
 
         if (position != last) {
-            changes[position] = std::move(changes[last]);
-            positions[changes[position].source.value()] =
-                static_cast<std::uint32_t>(position + 1);
+            changes[position] =
+                std::move(changes[last]);
+
+            sparse_positions[
+                changes[position].source.value()] =
+                    static_cast<std::uint32_t>(
+                        position + 1);
         }
 
         changes.pop_back();
-        encoded_position = 0;
+        sparse_positions.erase(found);
         return;
     }
 
@@ -57,8 +113,11 @@ void set_net_change(
     }
 
     changes.push_back({id, *kind});
-    encoded_position =
-        static_cast<std::uint32_t>(changes.size());
+
+    sparse_positions.emplace(
+        id.value(),
+        static_cast<std::uint32_t>(
+            changes.size()));
 }
 
 std::optional<source_change_kind> classify_change(
@@ -99,10 +158,15 @@ struct source_physical_delta {
 };
 
 source_manager_update::~source_manager_update() = default;
-source_manager_update::source_manager_update(source_manager& owner,
-                                             std::uint32_t next_source_id,
-                                             std::uint64_t base_generation) noexcept
-    : owner(&owner), next_source_id(next_source_id), base_generation(base_generation) {
+source_manager_update::source_manager_update(
+    source_manager& owner,
+    std::uint32_t next_source_id,
+    std::uint64_t base_generation) noexcept
+    : owner(&owner),
+      next_source_id(next_source_id),
+      base_generation(base_generation),
+      dense_change_positions(
+          owner.source_records.empty()) {
 }
 source_manager::source_manager() = default;
 source_manager::~source_manager() = default;
@@ -115,14 +179,26 @@ source_manager_update::source_manager_update(source_manager_update&& other) noex
       physical_delta(std::move(other.physical_delta)),
       include_delta(std::move(other.include_delta)),
       prepared_dependents(std::move(other.prepared_dependents)),
+      prepared_g0_sources(std::move(other.prepared_g0_sources)),
+      prepared_g0_roots(std::move(other.prepared_g0_roots)),
+      prepared_g0_by_path(std::move(other.prepared_g0_by_path)),
+      prepared_g0_physical(std::move(other.prepared_g0_physical)),
+      prepared_g0_includes(std::move(other.prepared_g0_includes)),
+      prepared_g0_dependents(std::move(other.prepared_g0_dependents)),
       change_records(std::move(other.change_records)),
       change_positions(std::move(other.change_positions)),
+      sparse_change_positions(
+          std::move(other.sparse_change_positions)),
       next_source_id(other.next_source_id),
       base_generation(other.base_generation),
       failure(other.failure),
       committed(other.committed),
       prepared(other.prepared),
-      graph_validated(other.graph_validated) {
+      graph_validated(other.graph_validated),
+      prepared_g0_snapshot(other.prepared_g0_snapshot),
+      dense_change_positions(
+          other.dense_change_positions),
+      roots_changed(other.roots_changed) {
 }
 
 status source_manager_update::get_physical_state(
@@ -231,9 +307,14 @@ bool source_manager_update::contains_for_validation(
     const auto offset =
         id.value() - owner->source_records.size() - 1;
 
+    const auto& candidate_sources =
+        prepared_g0_snapshot
+            ? prepared_g0_sources
+            : added_sources;
+
     return
-        offset < added_sources.size() &&
-        added_sources[offset].id == id;
+        offset < candidate_sources.size() &&
+        candidate_sources[offset].id == id;
 }
 
 void source_manager_update::record_candidate_metrics(
@@ -473,6 +554,8 @@ status source_manager_update::apply_acquire(
             set_net_change(
                 change_records,
                 change_positions,
+                sparse_change_positions,
+                dense_change_positions,
                 job.source,
                 classify_change(
                     job.has_committed,
@@ -492,6 +575,8 @@ status source_manager_update::apply_acquire(
                 set_net_change(
                     change_records,
                     change_positions,
+                    sparse_change_positions,
+                    dense_change_positions,
                     job.source,
                     std::nullopt);
             }
@@ -516,6 +601,8 @@ status source_manager_update::apply_acquire(
                 set_net_change(
                     change_records,
                     change_positions,
+                    sparse_change_positions,
+                    dense_change_positions,
                     job.source,
                     classify_change(
                         job.has_committed,
@@ -538,6 +625,8 @@ status source_manager_update::apply_acquire(
                 set_net_change(
                     change_records,
                     change_positions,
+                    sparse_change_positions,
+                    dense_change_positions,
                     job.source,
                     classify_change(
                         job.has_committed,
@@ -591,11 +680,86 @@ status source_manager_update::acquire(
 
     return apply_acquire(job, std::move(acquired), metrics);
 }
+status source_manager_update::reserve_initial_sources(
+    std::size_t count) noexcept {
 
-status source_manager_update::add(const std::filesystem::path& path,
-                                  project_item_role role) noexcept {
+    if (!failure.ok()) {
+        return failure;
+    }
+
+    if (owner == nullptr ||
+        committed ||
+        prepared ||
+        !dense_change_positions) {
+        return {status_code::invalid_state};
+    }
+
+    try {
+        added_sources.reserve(
+            added_sources.size() + count);
+
+        root_records.reserve(
+            root_records.size() + count);
+
+        added_by_path.reserve(
+            added_by_path.size() + count);
+
+        physical_delta.reserve(
+            physical_delta.size() + count);
+
+        include_delta.reserve(
+            include_delta.size() + count);
+
+        change_records.reserve(
+            change_records.size() + count);
+
+        const auto required_positions =
+            static_cast<std::size_t>(
+                next_source_id) +
+            count;
+
+        if (change_positions.size() <
+            required_positions) {
+            change_positions.resize(
+                required_positions,
+                0);
+        }
+
+        return {};
+    }
+    catch (const std::bad_alloc&) {
+        failure = {
+            status_code::initialization_failed
+        };
+    }
+    catch (const std::length_error&) {
+        failure = {
+            status_code::initialization_failed
+        };
+    }
+    catch (...) {
+        failure = {
+            status_code::initialization_failed
+        };
+    }
+
+    return failure;
+}
+
+status source_manager_update::add(
+    const std::filesystem::path& path,
+    project_item_role role) noexcept {
+
     source_id ignored;
-    return resolve(path, role, ignored);
+
+    const auto result =
+        resolve(path, role, ignored);
+
+    if (result.ok()) {
+        roots_changed = true;
+    }
+
+    return result;
 }
 
 status source_manager_update::resolve(
@@ -1027,30 +1191,55 @@ std::span<const source_id> source_manager::dependents(source_id source) const no
         : std::span<const source_id>{};
 }
 
-status source_manager::collect_dependents(source_id source,
-                                          std::vector<source_id>& output) const noexcept {
-    if (stable_view) return stable_view->dependencies(source, true, output);
+status source_manager::collect_dependents(
+    source_id source,
+    std::vector<source_id>& output) const noexcept {
+
+    if (stable_view) {
+        return stable_view->dependencies(
+            source,
+            true,
+            output);
+    }
+
     output.clear();
-    if (!find(source)) return {status_code::invalid_state};
+
+    if (!find(source)) {
+        return {status_code::invalid_state};
+    }
+
     try {
-        std::vector<bool> visited(source_records.size() + 1);
-        visited[source.value()] = true;
-        for (const auto dependent : dependents(source)) {
-            visited[dependent.value()] = true;
-            output.push_back(dependent);
-        }
-        for (std::size_t index = 0; index < output.size(); ++index) {
-            for (const auto dependent : dependents(output[index])) {
-                if (visited[dependent.value()]) continue;
-                visited[dependent.value()] = true;
+        std::unordered_set<std::uint32_t> visited;
+        visited.reserve(16);
+        visited.insert(source.value());
+
+        for (const auto dependent :
+             dependents(source)) {
+            if (visited.insert(
+                    dependent.value()).second) {
                 output.push_back(dependent);
             }
         }
+
+        for (std::size_t index = 0;
+             index < output.size();
+             ++index) {
+            for (const auto dependent :
+                 dependents(output[index])) {
+                if (visited.insert(
+                        dependent.value()).second) {
+                    output.push_back(dependent);
+                }
+            }
+        }
+
         return {};
     }
     catch (...) {
         output.clear();
-        return {status_code::initialization_failed};
+        return {
+            status_code::initialization_failed
+        };
     }
 }
 
@@ -1142,6 +1331,128 @@ status source_manager_update::prepare_publish() noexcept {
     if (!graph_validated)
         return failure = {status_code::configuration_failed};
     try {
+        if (owner->source_records.empty()) {
+            if (!owner->root_records.empty() ||
+                !owner->by_path.empty() ||
+                !owner->physical_records.empty() ||
+                !owner->include_edges.empty() ||
+                !owner->dependent_edges.empty()) {
+                return failure = {
+                    status_code::invalid_state
+                };
+            }
+
+            const auto count =
+                added_sources.size();
+
+            if (next_source_id !=
+                static_cast<std::uint32_t>(count + 1)) {
+                return failure = {
+                    status_code::invalid_state
+                };
+            }
+
+            prepared_g0_sources =
+                std::move(added_sources);
+
+            prepared_g0_roots =
+                std::move(root_records);
+
+            prepared_g0_by_path =
+                std::move(added_by_path);
+
+            prepared_g0_physical.clear();
+            prepared_g0_includes.clear();
+            prepared_g0_dependents.clear();
+
+            prepared_g0_physical.resize(count);
+            prepared_g0_includes.resize(count);
+            prepared_g0_dependents.resize(count);
+
+            for (auto& [value, delta] :
+                 physical_delta) {
+                if (value == 0 ||
+                    value > count ||
+                    !delta ||
+                    delta->observation_only ||
+                    !delta->replacement) {
+                    return failure = {
+                        status_code::invalid_state
+                    };
+                }
+
+                auto& destination =
+                    prepared_g0_physical[
+                        value - 1];
+
+                if (destination) {
+                    return failure = {
+                        status_code::invalid_state
+                    };
+                }
+
+                destination =
+                    std::move(delta->replacement);
+            }
+
+            for (std::size_t index = 0;
+                 index < count;
+                 ++index) {
+                if (prepared_g0_sources[index].id.value() !=
+                        index + 1 ||
+                    !prepared_g0_physical[index]) {
+                    return failure = {
+                        status_code::invalid_state
+                    };
+                }
+            }
+
+            for (auto& [parent_value, includes] :
+                 include_delta) {
+                if (parent_value == 0 ||
+                    parent_value > count) {
+                    return failure = {
+                        status_code::invalid_state
+                    };
+                }
+
+                auto& destination =
+                    prepared_g0_includes[
+                        parent_value - 1];
+
+                destination =
+                    std::move(includes);
+            }
+
+            for (std::uint32_t parent_value = 1;
+                 parent_value <= count;
+                 ++parent_value) {
+                const auto& includes =
+                    prepared_g0_includes[
+                        parent_value - 1];
+
+                for (const auto child : includes) {
+                    if (!child ||
+                        child.value() > count) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    prepared_g0_dependents[
+                        child.value() - 1]
+                        .push_back(
+                            source_id{
+                                parent_value
+                            });
+                }
+            }
+
+            prepared_g0_snapshot = true;
+            prepared = true;
+            return {};
+        }
+
         owner->source_records.reserve(owner->source_records.size() + added_sources.size());
         owner->by_path.reserve(owner->by_path.size() + added_by_path.size());
         owner->physical_records.reserve(owner->source_records.size() + added_sources.size());
@@ -1182,12 +1493,42 @@ status source_manager_update::prepare_publish() noexcept {
 // After publication generation advances and the update becomes permanently closed.
 void source_manager_update::publish_prepared() noexcept {
     assert(prepared && !committed && owner != nullptr);
+
+    if (prepared_g0_snapshot) {
+        owner->source_records.swap(
+            prepared_g0_sources);
+
+        owner->root_records.swap(
+            prepared_g0_roots);
+
+        owner->by_path.swap(
+            prepared_g0_by_path);
+
+        owner->physical_records.swap(
+            prepared_g0_physical);
+
+        owner->include_edges.swap(
+            prepared_g0_includes);
+
+        owner->dependent_edges.swap(
+            prepared_g0_dependents);
+
+        owner->next_source_id =
+            next_source_id;
+
+        ++owner->generation;
+        committed = true;
+        return;
+    }
     owner->physical_records.resize(owner->source_records.size() + added_sources.size());
     owner->include_edges.resize(owner->source_records.size() + added_sources.size());
     owner->dependent_edges.resize(owner->source_records.size() + added_sources.size());
     for (auto& source : added_sources) owner->source_records.push_back(std::move(source));
     owner->by_path.merge(added_by_path);
-    owner->root_records.swap(root_records);
+    if (roots_changed) {
+        owner->root_records.swap(root_records);
+    }
+
     for (auto& [value, includes] : include_delta)
         owner->include_edges[value - 1].swap(includes);
     for (auto& [value, dependents] : prepared_dependents)

@@ -215,7 +215,8 @@ status publish_source_entry(
     const source_build_entry& entry,
     const project_builder& builder,
     const operation_id operation,
-    diagnostic_buffer& diagnostics) noexcept {
+    diagnostic_buffer& diagnostics,
+    source_publish_scratch& scratch) noexcept {
 
     const auto abort = [&](status result) noexcept {
         transaction.fail(result);
@@ -279,9 +280,13 @@ status publish_source_entry(
                 : abort(result);
         }
 
-        std::vector<enum_value_fact> enum_values;
-        std::vector<aggregate_source_fact::member_fact> members;
-        std::vector<canonical_type_modifier> modifiers;
+        auto& enum_values = scratch.enum_values;
+        auto& members = scratch.members;
+        auto& modifiers = scratch.modifiers;
+
+        enum_values.clear();
+        members.clear();
+        modifiers.clear();
 
         for (const auto& fact : entry.enums) {
             string_id canonical_name;
@@ -339,7 +344,10 @@ status publish_source_entry(
                 enum_values
             };
 
-            result = builder.build_enum(replacement, canonical);
+            result = builder.build_enum(
+                replacement,
+                canonical,
+                scratch.builder);
             if (!result.ok()) {
                 if (result.code == status_code::configuration_failed) {
                     const auto emitted = emit(
@@ -448,7 +456,8 @@ status publish_source_entry(
                     fact.definition_state,
                     members,
                     modifiers
-                });
+                },
+                scratch.builder);
 
             if (!result.ok()) {
                 if (result.code == status_code::configuration_failed) {
@@ -470,6 +479,24 @@ status publish_source_entry(
     catch (...) {
         return infrastructure();
     }
+}
+
+status publish_source_entry(
+    graph_build_transaction& transaction,
+    const source_build_entry& entry,
+    const project_builder& builder,
+    const operation_id operation,
+    diagnostic_buffer& diagnostics) noexcept {
+
+    source_publish_scratch scratch;
+
+    return publish_source_entry(
+        transaction,
+        entry,
+        builder,
+        operation,
+        diagnostics,
+        scratch);
 }
 
 status publish_source_facts(

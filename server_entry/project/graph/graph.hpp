@@ -25,6 +25,19 @@ namespace cw::server {
 class graph_build_transaction;
 class graph_build_transaction_test_access;
 class graph_update;
+
+struct graph_prepare_phase_telemetry {
+    std::uint64_t stable_id_canonicalization_ns = 0;
+    std::uint64_t pending_member_resolution_ns = 0;
+    std::uint64_t live_typeref_validation_ns = 0;
+    std::uint64_t canonical_typeref_rebuild_ns = 0;
+    std::uint64_t string_validation_ns = 0;
+    std::uint64_t definition_scan_ns = 0;
+    std::uint64_t definition_materialization_ns = 0;
+    std::uint64_t rebuild_storage_ns = 0;
+    std::uint64_t dependency_index_ns = 0;
+    std::uint64_t final_prepare_ns = 0;
+};
 class source_manager_update;
 class source_contribution_cache;
 class source_contribution_cache_update;
@@ -445,6 +458,11 @@ public:
     [[nodiscard]] std::span<const enum_value_record> enum_values(
         type_handle handle) const noexcept;
 
+    [[nodiscard]] const graph_prepare_phase_telemetry&
+        prepare_phase_telemetry() const noexcept {
+        return prepare_telemetry;
+    }
+
 private:
     friend class graph;
     friend class graph_build_transaction;
@@ -487,6 +505,8 @@ private:
     [[nodiscard]] status prepare_publish(
         const source_manager_update& sources,
         const string_registry_update& strings) noexcept;
+
+    graph_prepare_phase_telemetry prepare_telemetry{};
 
     void publish_prepared() noexcept;
     void cancel() noexcept;
