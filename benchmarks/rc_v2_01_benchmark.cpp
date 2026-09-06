@@ -26,7 +26,10 @@ struct row {
     double setup_ms = 0;
     double prepare_ms = 0;
     double publish_ms = 0;
+    graph_build_transaction_timing timing{};
     graph_storage_prepare_telemetry graph{};
+    string_registry_storage_snapshot strings_before{};
+    string_registry_storage_snapshot strings_after{};
     bool contribution_reallocated = false;
     std::size_t contribution_relocation_bytes = 0;
 };
@@ -44,6 +47,22 @@ void require(bool condition, const char* message) {
 
 double milliseconds(clock_type::duration value) {
     return std::chrono::duration<double, std::milli>(value).count();
+}
+
+double milliseconds(std::uint64_t nanoseconds) noexcept {
+    return static_cast<double>(nanoseconds) / 1'000'000.0;
+}
+
+std::uint64_t prepare_accounted_ns(
+    const graph_build_transaction_timing& timing) noexcept {
+
+    return
+        timing.source_prepare_ns +
+        timing.string_prepare_ns +
+        timing.graph_prepare_ns +
+        timing.string_retention_ns +
+        timing.string_compaction_ns +
+        timing.contribution_prepare_ns;
 }
 
 std::filesystem::path source_path(std::size_t index) {
@@ -197,7 +216,8 @@ row finish_row(
     const char* scenario,
     clock_type::time_point started,
     clock_type::time_point setup_done,
-    source_contribution_storage_snapshot contribution_before) {
+    source_contribution_storage_snapshot contribution_before,
+    string_registry_storage_snapshot strings_before) {
 
     const auto prepared =
         access::prepare(transaction);
@@ -207,8 +227,14 @@ row finish_row(
 
     require(prepared.ok(), "Transaction prepare failed");
 
+    const auto timing =
+        transaction.timing();
+
     const auto graph_telemetry =
         access::graph_telemetry(transaction);
+
+    const auto strings_after_prepare =
+        access::string_storage(manager);
 
     const auto contribution_after_prepare =
         access::contribution_storage(manager);
@@ -230,7 +256,10 @@ row finish_row(
     result.prepare_ms = milliseconds(prepare_done - setup_done);
     result.publish_ms = milliseconds(publish_done - prepare_done);
     result.total_ms = milliseconds(publish_done - started);
+    result.timing = timing;
     result.graph = graph_telemetry;
+    result.strings_before = strings_before;
+    result.strings_after = strings_after_prepare;
     result.contribution_reallocated =
         rc_v2_01a::contribution_reallocated(
             contribution_before,
@@ -259,10 +288,18 @@ row g0_initial(
 
     const auto contribution_before =
         access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
 
     // Physical Source setup is deliberately outside the measured interval.
     // RC-V2-01 measures canonical String/Entity/Graph construction only.
     const auto started = clock_type::now();
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(count)
+            .ok(),
+        "G0 String Registry bulk reserve failed");
 
     for (std::size_t index = 0;
          index < count;
@@ -294,7 +331,8 @@ row g0_initial(
         "g0_initial",
         started,
         setup_done,
-        contribution_before);
+        contribution_before,
+        strings_before);
 }
 
 row g1_modify_one(
@@ -305,6 +343,8 @@ row g1_modify_one(
 
     const auto contribution_before =
         access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
     const auto started = clock_type::now();
 
     auto transaction =
@@ -324,7 +364,8 @@ row g1_modify_one(
         "g1_modify_one",
         started,
         setup_done,
-        contribution_before);
+        contribution_before,
+        strings_before);
 }
 
 row g2_remove_one(
@@ -334,6 +375,8 @@ row g2_remove_one(
 
     const auto contribution_before =
         access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
     const auto started = clock_type::now();
 
     auto transaction =
@@ -350,7 +393,8 @@ row g2_remove_one(
         "g2_remove_one",
         started,
         setup_done,
-        contribution_before);
+        contribution_before,
+        strings_before);
 }
 
 row g3_add_one(
@@ -361,6 +405,8 @@ row g3_add_one(
 
     const auto contribution_before =
         access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
     const auto started = clock_type::now();
 
     auto transaction =
@@ -386,7 +432,8 @@ row g3_add_one(
         "g3_add_one",
         started,
         setup_done,
-        contribution_before);
+        contribution_before,
+        strings_before);
 }
 
 row g0_rebuild_after_churn(
@@ -397,10 +444,18 @@ row g0_rebuild_after_churn(
 
     const auto contribution_before =
         access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
     const auto started = clock_type::now();
 
     auto transaction =
         manager.begin_build(graph_build_mode::rebuild);
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(count)
+            .ok(),
+        "Rebuild String Registry bulk reserve failed");
 
     for (std::size_t index = 0;
          index < count;
@@ -442,7 +497,8 @@ row g0_rebuild_after_churn(
         "g0_rebuild_after_churn",
         started,
         setup_done,
-        contribution_before);
+        contribution_before,
+        strings_before);
 }
 
 void require_incremental_gates(
@@ -770,6 +826,24 @@ void dependency_chain_gate() {
 void print_header() {
     std::cout
         << "types,scenario,total_ms,setup_ms,prepare_ms,publish_ms,"
+        << "prepare_accounted_ms,source_prepare_ms,string_prepare_ms,"
+        << "graph_prepare_ms,string_retention_ms,string_compaction_ms,"
+        << "contribution_prepare_ms,"
+        << "graph_pending_member_resolution_ms,"
+        << "graph_live_typeref_validation_ms,"
+        << "graph_canonical_typeref_rebuild_ms,"
+        << "graph_string_validation_ms,"
+        << "graph_definition_scan_ms,"
+        << "graph_definition_materialization_ms,"
+        << "graph_rebuild_storage_ms,"
+        << "graph_dependency_index_ms,"
+        << "graph_final_prepare_ms,"
+        << "string_records_size_before,string_records_size_after,"
+        << "string_records_capacity_before,string_records_capacity_after,"
+        << "string_records_reallocated,string_records_relocation_bytes,"
+        << "string_lookup_size_before,string_lookup_size_after,"
+        << "string_lookup_buckets_before,string_lookup_buckets_after,"
+        << "string_lookup_rehashed,string_lookup_entries_rehashed,"
         << "changed_sources,changed_entities,changed_types,"
         << "validation_visited_types,validation_visited_type_refs,"
         << "validation_dependency_edges,graph_reallocated,"
@@ -778,6 +852,27 @@ void print_header() {
 }
 
 void print_row(const row& value) {
+    const auto string_records_reallocated =
+        value.strings_before.records_data !=
+        value.strings_after.records_data;
+
+    const auto string_records_relocation_bytes =
+        string_records_reallocated
+            ? value.strings_before.records_size *
+                sizeof(const void*)
+            : 0;
+
+    const auto string_lookup_rehashed =
+        value.strings_before.lookup_bucket_count !=
+        value.strings_after.lookup_bucket_count;
+
+    const auto string_lookup_entries_rehashed =
+        string_lookup_rehashed
+            ? value.strings_before.lookup_size
+            : 0;
+
+    const auto& timing = value.timing;
+
     std::cout
         << value.types << ','
         << value.scenario << ','
@@ -786,6 +881,34 @@ void print_row(const row& value) {
         << value.setup_ms << ','
         << value.prepare_ms << ','
         << value.publish_ms << ','
+        << milliseconds(prepare_accounted_ns(timing)) << ','
+        << milliseconds(timing.source_prepare_ns) << ','
+        << milliseconds(timing.string_prepare_ns) << ','
+        << milliseconds(timing.graph_prepare_ns) << ','
+        << milliseconds(timing.string_retention_ns) << ','
+        << milliseconds(timing.string_compaction_ns) << ','
+        << milliseconds(timing.contribution_prepare_ns) << ','
+        << milliseconds(timing.graph_pending_member_resolution_ns) << ','
+        << milliseconds(timing.graph_live_typeref_validation_ns) << ','
+        << milliseconds(timing.graph_canonical_typeref_rebuild_ns) << ','
+        << milliseconds(timing.graph_string_validation_ns) << ','
+        << milliseconds(timing.graph_definition_scan_ns) << ','
+        << milliseconds(timing.graph_definition_materialization_ns) << ','
+        << milliseconds(timing.graph_rebuild_storage_ns) << ','
+        << milliseconds(timing.graph_dependency_index_ns) << ','
+        << milliseconds(timing.graph_final_prepare_ns) << ','
+        << value.strings_before.records_size << ','
+        << value.strings_after.records_size << ','
+        << value.strings_before.records_capacity << ','
+        << value.strings_after.records_capacity << ','
+        << (string_records_reallocated ? 1 : 0) << ','
+        << string_records_relocation_bytes << ','
+        << value.strings_before.lookup_size << ','
+        << value.strings_after.lookup_size << ','
+        << value.strings_before.lookup_bucket_count << ','
+        << value.strings_after.lookup_bucket_count << ','
+        << (string_lookup_rehashed ? 1 : 0) << ','
+        << string_lookup_entries_rehashed << ','
         << value.graph.changed_sources << ','
         << value.graph.changed_entities << ','
         << value.graph.changed_types << ','
@@ -853,6 +976,16 @@ void run_matrix(std::size_t count) {
 
     require_incremental_gates(add);
 
+    require(
+        add.strings_before.lookup_bucket_count ==
+            add.strings_after.lookup_bucket_count,
+        "G3 String Registry rehashed after bulk-reserved G0");
+
+    require(
+        add.strings_before.records_data ==
+            add.strings_after.records_data,
+        "G3 String Registry records relocated after bulk-reserved G0");
+
     const auto rebuild =
         g0_rebuild_after_churn(
             manager,
@@ -890,6 +1023,6 @@ int main() {
         run_matrix(count);
     }
 
-    std::cout << "RC-V2-01A PASS\n";
+    std::cout << "RC-V2-02A G0 BULK RESERVE PASS\n";
     return 0;
 }

@@ -20,6 +20,18 @@ class graph_build_transaction;
 class graph_build_transaction_test_access;
 class graph_update;
 
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+
+struct string_registry_storage_snapshot {
+    const void* records_data = nullptr;
+    std::size_t records_size = 0;
+    std::size_t records_capacity = 0;
+    std::size_t lookup_size = 0;
+    std::size_t lookup_bucket_count = 0;
+};
+
+#endif
+
 // Owns the canonical interned strings used by Graph construction and access.
 // String bytes remain at stable addresses so registry lookup keys and returned
 // string_views stay valid until the registry is reinitialized or replaced.

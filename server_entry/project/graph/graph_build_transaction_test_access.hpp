@@ -42,6 +42,18 @@ public:
         return transaction.graph_update_state.storage_telemetry;
     }
 
+    [[nodiscard]] static string_registry_storage_snapshot string_storage(
+        const graph_manager& manager) noexcept {
+
+        return {
+            manager.string_registry_state.records.data(),
+            manager.string_registry_state.records.size(),
+            manager.string_registry_state.records.capacity(),
+            manager.string_registry_state.lookup_index.size(),
+            manager.string_registry_state.lookup_index.bucket_count()
+        };
+    }
+
     [[nodiscard]] static graph_storage_snapshot graph_storage(
         const graph_manager& manager) noexcept {
 
