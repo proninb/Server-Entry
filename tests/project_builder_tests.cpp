@@ -100,6 +100,7 @@ bool test_named_enum_materialization() {
     diagnostic_buffer diagnostics;
 
     if (!manager.initialize().ok()) {
+        std::cerr << "NAMED_ENUM FAIL 1 initialize\n";
         return false;
     }
 
@@ -110,9 +111,18 @@ bool test_named_enum_materialization() {
     string_id enum_name;
     string_id value_name;
 
-    if (!resolve_source(transaction, source_a, source) ||
-        !intern(transaction, "N::Mode", enum_name) ||
-        !intern(transaction, "Ready", value_name)) {
+    if (!resolve_source(transaction, source_a, source)) {
+        std::cerr << "NAMED_ENUM FAIL 2 resolve source\n";
+        return false;
+    }
+
+    if (!intern(transaction, "N::Mode", enum_name)) {
+        std::cerr << "NAMED_ENUM FAIL 3 intern enum name\n";
+        return false;
+    }
+
+    if (!intern(transaction, "Ready", value_name)) {
+        std::cerr << "NAMED_ENUM FAIL 4 intern value name\n";
         return false;
     }
 
@@ -146,43 +156,132 @@ bool test_named_enum_materialization() {
             builder,
             transaction,
             batches,
-            diagnostics) ||
-        !transaction.commit().ok()) {
+            diagnostics)) {
+        std::cerr << "NAMED_ENUM FAIL 5 build_batches\n";
+        return false;
+    }
+
+    const auto commit_result = transaction.commit();
+
+    if (!commit_result.ok()) {
+        std::cerr
+            << "NAMED_ENUM FAIL 6 commit code="
+            << static_cast<int>(commit_result.code)
+            << '\n';
         return false;
     }
 
     const auto identity =
         manager.compiled_graph().find_id(enum_name);
 
+    if (!identity) {
+        std::cerr << "NAMED_ENUM FAIL 7 identity is zero\n";
+        return false;
+    }
+
     const auto* entity =
         manager.compiled_graph().find(identity);
 
+    if (!entity) {
+        std::cerr
+            << "NAMED_ENUM FAIL 8 entity missing id="
+            << identity.value()
+            << '\n';
+        return false;
+    }
+
+    if (entity->kind != entity_kind::enum_type) {
+        std::cerr << "NAMED_ENUM FAIL 9 entity kind\n";
+        return false;
+    }
+
     const auto* type =
-        entity
-            ? manager.compiled_graph().find(entity->type)
-            : nullptr;
+        manager.compiled_graph().find(entity->type);
+
+    if (!type) {
+        std::cerr
+            << "NAMED_ENUM FAIL 10 type missing handle="
+            << entity->type.value()
+            << '\n';
+        return false;
+    }
+
+    if (type->kind != user_type_kind::enumeration) {
+        std::cerr << "NAMED_ENUM FAIL 11 type kind\n";
+        return false;
+    }
+
+    if (!type->enumeration.scoped) {
+        std::cerr << "NAMED_ENUM FAIL 12 scoped=false\n";
+        return false;
+    }
+
+    if (!type->enumeration.fixed_underlying) {
+        std::cerr << "NAMED_ENUM FAIL 13 fixed=false\n";
+        return false;
+    }
+
+    if (type->enumeration.underlying != builtin_type::integer) {
+        std::cerr << "NAMED_ENUM FAIL 14 underlying\n";
+        return false;
+    }
+
+    if (!type->definition) {
+        std::cerr
+            << "NAMED_ENUM FAIL 15 no definition begin="
+            << type->definition.begin
+            << " count="
+            << type->definition.count
+            << '\n';
+        return false;
+    }
 
     const auto materialized =
-        entity
-            ? manager.compiled_graph().enum_values(entity->type)
-            : std::span<const enum_value_record>{};
+        manager.compiled_graph().enum_values(entity->type);
 
-    return
-        identity &&
-        entity &&
-        entity->kind == entity_kind::enum_type &&
-        type &&
-        type->kind == user_type_kind::enumeration &&
-        type->enumeration.scoped &&
-        type->enumeration.fixed_underlying &&
-        type->enumeration.underlying == builtin_type::integer &&
-        type->definition &&
-        materialized.size() == 1 &&
-        materialized[0].name == value_name &&
-        materialized[0].bits == 7 &&
-        access::contribution_count(manager, source) == 1;
+    if (materialized.size() != 1) {
+        std::cerr
+            << "NAMED_ENUM FAIL 16 enum_values size="
+            << materialized.size()
+            << " begin="
+            << type->definition.begin
+            << " count="
+            << type->definition.count
+            << '\n';
+        return false;
+    }
+
+    if (materialized[0].name != value_name) {
+        std::cerr
+            << "NAMED_ENUM FAIL 17 value name expected="
+            << value_name.value()
+            << " actual="
+            << materialized[0].name.value()
+            << '\n';
+        return false;
+    }
+
+    if (materialized[0].bits != 7) {
+        std::cerr
+            << "NAMED_ENUM FAIL 18 bits="
+            << materialized[0].bits
+            << '\n';
+        return false;
+    }
+
+    const auto contributions =
+        access::contribution_count(manager, source);
+
+    if (contributions != 1) {
+        std::cerr
+            << "NAMED_ENUM FAIL 19 contribution_count="
+            << contributions
+            << '\n';
+        return false;
+    }
+
+    return true;
 }
-
 bool test_duplicate_source_diagnostic_is_fail_closed() {
     graph_manager manager;
     project_builder builder;

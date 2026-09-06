@@ -557,8 +557,6 @@ private:
     [[nodiscard]] status build_rebuild_dependency_index() noexcept;
     void rollback_prepared_owner_growth() noexcept;
 
-    [[nodiscard]] status canonicalize_new_stable_ids(
-        const string_registry_update& strings) noexcept;
 
     [[nodiscard]] status prepare_full_reconstruction() noexcept;
     [[nodiscard]] status rebuild_canonical_type_table() noexcept;

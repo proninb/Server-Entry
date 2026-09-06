@@ -146,9 +146,6 @@ public:
 
     [[nodiscard]] canonical_entity_construction_state& touch_entity(stable_id entity);
     [[nodiscard]] const canonical_entity_construction_state* candidate_entity(stable_id entity) const noexcept;
-    [[nodiscard]] status remap_new_entities(
-        std::uint32_t base,
-        std::span<const std::uint32_t> remap) noexcept;
 
     [[nodiscard]] const std::vector<std::uint32_t>& changed_sources() const noexcept {
         return changed;
