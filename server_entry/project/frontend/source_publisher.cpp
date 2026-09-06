@@ -391,6 +391,31 @@ status publish_source_entry_impl(
                 : abort(result);
         }
 
+        std::size_t named_count =
+            entry.aggregates.size();
+        std::size_t anonymous_count = 0;
+
+        for (const auto& fact : entry.enums) {
+            if (fact.anonymous) {
+                ++anonymous_count;
+            }
+            else {
+                ++named_count;
+            }
+        }
+
+        result =
+            replacement.reserve(
+                named_count,
+                anonymous_count,
+                entry.enum_values.size());
+
+        if (!result.ok()) {
+            return result.code ==
+                    status_code::initialization_failed
+                ? infrastructure()
+                : abort(result);
+        }
         auto& enum_values = scratch.enum_values;
         auto& members = scratch.members;
         auto& modifiers = scratch.modifiers;

@@ -4,6 +4,7 @@
 #include "../graph/graph_build_transaction.hpp"
 
 #include <chrono>
+#include <limits>
 #include <new>
 #include <vector>
 
@@ -25,34 +26,11 @@ status build_enum_impl(
     project_builder_scratch& scratch) noexcept {
 
     try {
-        auto& values = scratch.enum_values;
-
-        std::chrono::steady_clock::time_point copy_begin{};
-
-        if constexpr (Detailed) {
-            copy_begin = std::chrono::steady_clock::now();
-        }
-
-        values.clear();
-        values.reserve(fact.enumerators.size());
-
-        for (const auto& value : fact.enumerators) {
-            values.push_back({
-                value.name,
-                value.value
-            });
-        }
-
-        if constexpr (Detailed) {
-            scratch.enum_value_copy_ns +=
-                builder_elapsed_ns(copy_begin);
-        }
-
         const enum_build_data data{
             fact.definition_state,
             fact.scoped,
             fact.explicit_underlying,
-            values
+            fact.enumerators
         };
 
         type_handle type;
@@ -249,7 +227,6 @@ status project_builder::build(
             }
         }
 
-        std::vector<enum_value_build> enumerators;
 
         for (const auto& batch : sources) {
             graph_update::source_replacement replacement;
@@ -281,24 +258,47 @@ status project_builder::build(
                 return abort(opened);
             }
 
-            for (const auto& fact : batch.enums) {
-                enumerators.clear();
-                enumerators.reserve(
-                    fact.enumerators.size());
+            std::size_t named_count =
+                batch.aggregates.size();
+            std::size_t anonymous_count = 0;
+            std::size_t enum_value_count = 0;
 
-                for (const auto& value :
-                     fact.enumerators) {
-                    enumerators.push_back({
-                        value.name,
-                        value.value
+            for (const auto& fact : batch.enums) {
+                if (fact.anonymous) {
+                    ++anonymous_count;
+                }
+                else {
+                    ++named_count;
+                }
+
+                if (fact.enumerators.size() >
+                    (std::numeric_limits<std::size_t>::max)() -
+                        enum_value_count) {
+                    return abort({
+                        status_code::initialization_failed
                     });
                 }
 
+                enum_value_count +=
+                    fact.enumerators.size();
+            }
+
+            const auto reserved =
+                replacement.reserve(
+                    named_count,
+                    anonymous_count,
+                    enum_value_count);
+
+            if (!reserved.ok()) {
+                return abort(reserved);
+            }
+
+            for (const auto& fact : batch.enums) {
                 const enum_build_data data{
                     fact.definition_state,
                     fact.scoped,
                     fact.explicit_underlying,
-                    enumerators
+                    fact.enumerators
                 };
 
                 type_handle type{};

@@ -2,7 +2,7 @@
 
 #include "../../source_id.hpp"
 #include "../../string_id.hpp"
-#include "../graph/builtin_type.hpp"
+#include "../graph/enum_build.hpp"
 #include "../graph/type_ref.hpp"
 #include "../language/aggregate_semantics.hpp"
 #include "../language/enum_semantics.hpp"
@@ -12,13 +12,9 @@
 
 namespace cw::server {
 
-// Builder-ready representation of one enum value.
-// name is already interned in String Registry; value retains the interpreted
-// source-language integral constant until Graph applies target-ABI semantics.
-struct enum_value_fact {
-    string_id name{};
-    integral_constant value{};
-};
+// Builder-ready enum values use the same canonical construction seam consumed
+// by Graph, so Builder never copies a second representation of the same value.
+using enum_value_fact = enum_value_build;
 
 // Builder-ready representation of one enum declaration or definition.
 // canonical_name is already the resolved/interned source-language name.

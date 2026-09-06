@@ -177,27 +177,35 @@ std::uint64_t convert_integral(integral_constant value, builtin_type target,
     return converted & bit_mask(builtin_bit_width(target, abi));
 }
 
-bool same_source_definition(
-    const std::shared_ptr<const source_definition_payload>& left,
-    const std::shared_ptr<const source_definition_payload>& right) noexcept {
+bool source_definition_values(
+    const source_contribution_state& state,
+    source_definition_range range,
+    std::span<const enum_value_record>& output) noexcept {
 
-    if (left == right) {
-        return true;
-    }
+    output = {};
 
-    if (!left || !right ||
-        left->underlying != right->underlying ||
-        left->values.size() != right->values.size()) {
+    if (!range) {
         return false;
     }
 
-    for (std::size_t index = 0;
-         index < left->values.size();
-         ++index) {
-        if (left->values[index].name != right->values[index].name ||
-            left->values[index].bits != right->values[index].bits) {
-            return false;
-        }
+    const auto begin =
+        static_cast<std::size_t>(
+            range.begin - 1);
+
+    const auto count =
+        static_cast<std::size_t>(
+            range.count);
+
+    if (begin > state.enum_values.size() ||
+        count > state.enum_values.size() - begin) {
+        return false;
+    }
+
+    if (count != 0) {
+        output = {
+            state.enum_values.data() + begin,
+            count
+        };
     }
 
     return true;
@@ -205,20 +213,34 @@ bool same_source_definition(
 
 bool same_enum_contribution(
     const source_contribution_record& left,
-    const source_contribution_record& right) noexcept {
+    std::span<const enum_value_record> left_values,
+    const source_contribution_record& right,
+    std::span<const enum_value_record> right_values) noexcept {
 
-    return
-        left.entity == right.entity &&
-        left.name == right.name &&
-        left.kind == entity_kind::enum_type &&
-        right.kind == entity_kind::enum_type &&
-        left.state == right.state &&
-        left.scoped == right.scoped &&
-        left.fixed == right.fixed &&
-        left.underlying == right.underlying &&
-        same_source_definition(
-            left.definition,
-            right.definition);
+    if (left.entity != right.entity ||
+        left.name != right.name ||
+        left.kind != entity_kind::enum_type ||
+        right.kind != entity_kind::enum_type ||
+        left.state != right.state ||
+        left.scoped != right.scoped ||
+        left.fixed != right.fixed ||
+        left.underlying != right.underlying ||
+        static_cast<bool>(left.definition) !=
+            static_cast<bool>(right.definition) ||
+        left_values.size() != right_values.size()) {
+        return false;
+    }
+
+    for (std::size_t index = 0;
+         index < left_values.size();
+         ++index) {
+        if (left_values[index].name != right_values[index].name ||
+            left_values[index].bits != right_values[index].bits) {
+            return false;
+        }
+    }
+
+    return true;
 }
 
 } // namespace
@@ -235,16 +257,10 @@ std::size_t graph::derived_type_key_hash::operator()(const derived_type_key& key
     return hash;
 }
 
-// Committed payload behind one type_handle. Construction-only data is kept in
-// graph_update::candidate state and never survives publication into canonical G.
-struct graph::type_storage {
-    type_entry record;
-};
 
 // Transaction-local construction payload for one candidate type. This state is
 // discarded after publication and is never persisted or exposed to Runtime.
 struct graph::type_build_state {
-    std::vector<enum_value_record> enumerators;
     std::vector<member_record> members;
     std::vector<member_build> pending_members;
     std::vector<type_modifier_build> pending_modifiers;
@@ -275,11 +291,15 @@ enum class candidate_type_kind : std::uint8_t {
 struct graph::candidate_type_slot {
     std::uint64_t generation = 0;
     candidate_type_kind kind = candidate_type_kind::unchanged;
-    std::unique_ptr<type_storage> value;
+    std::optional<type_storage> value;
     std::unique_ptr<type_build_state> build;
 
-    // G0 has a dense type_handle namespace; its named TypeRef is recovered
-    // directly from this generation-local slot, never through a hash lookup.
+    // Enum construction points back to one Source-local contiguous definition
+    // range instead of copying values into a per-type build vector.
+    source_id enum_definition_source{};
+    source_definition_range enum_definition{};
+
+    // G0 creates this only on actual reference demand before prepare().
     TypeRef named_ref{};
 };
 
@@ -527,7 +547,7 @@ status graph::rebuild_dependency_index() noexcept {
              raw <= types.size();
              ++raw) {
             const auto* storage =
-                types[raw - 1].get();
+                types[raw - 1] ? &*types[raw - 1] : nullptr;
 
             if (!storage ||
                 storage->record.kind !=
@@ -706,7 +726,7 @@ status graph::import_compiled(
             imported_members.push_back({string_id{member.name}, TypeRef{member.type_ref}});
         }
 
-        std::vector<std::unique_ptr<type_storage>> imported_types(input.types.size());
+        std::vector<std::optional<type_storage>> imported_types(input.types.size());
         std::vector<std::uint32_t> imported_free_types;
         std::size_t imported_type_count = 0;
 
@@ -753,9 +773,8 @@ status graph::import_compiled(
                 }
             }
 
-            auto type = std::make_unique<type_storage>();
-            type->record = source.record;
-            imported_types[index] = std::move(type);
+            imported_types[index].emplace();
+            imported_types[index]->record = source.record;
             ++imported_type_count;
         }
 
@@ -1098,7 +1117,6 @@ graph_update::~graph_update() = default;
 graph_update::graph_update(graph_update&& other) noexcept
     : owner(std::exchange(other.owner, nullptr)),
       contributions(std::exchange(other.contributions, nullptr)),
-      owned_types(std::move(other.owned_types)),
       changed_identities(std::move(other.changed_identities)),
       changed_entities(std::move(other.changed_entities)),
       changed_types(std::move(other.changed_types)),
@@ -1208,6 +1226,8 @@ graph::candidate_type_slot& graph_update::touch_type(std::uint32_t handle) {
 
         slot.value.reset();
         slot.build.reset();
+        slot.enum_definition_source = {};
+        slot.enum_definition = {};
         slot.named_ref = {};
 
         changed_types.push_back(handle);
@@ -1216,6 +1236,80 @@ graph::candidate_type_slot& graph_update::touch_type(std::uint32_t handle) {
     return slot;
 }
 
+status graph_update::reserve_rebuild(
+    std::size_t source_slots,
+    std::size_t name_slots,
+    std::size_t entity_count,
+    std::size_t type_count) noexcept {
+
+    if (!owner ||
+        !contributions ||
+        prepared ||
+        committed ||
+        !full_reconstruction) {
+        return failure =
+            {status_code::invalid_state};
+    }
+
+    try {
+        const auto maximum =
+            (std::numeric_limits<std::size_t>::max)();
+
+        if (owner->identity.size() >= maximum ||
+            name_slots > maximum - owner->identity.size() - 1 ||
+            static_cast<std::size_t>(next_stable_id) >
+                maximum - entity_count ||
+            static_cast<std::size_t>(next_type_slot) >
+                maximum - type_count) {
+            return failure =
+                {status_code::initialization_failed};
+        }
+
+        const auto identity_target =
+            owner->identity.size() +
+            name_slots +
+            1;
+
+        const auto entity_target =
+            static_cast<std::size_t>(next_stable_id) +
+            entity_count;
+
+        const auto type_target =
+            static_cast<std::size_t>(next_type_slot) +
+            type_count;
+
+        if (owner->candidate_identities.size() <
+            identity_target) {
+            owner->candidate_identities.resize(
+                identity_target);
+        }
+
+        if (owner->candidate_entities.size() <
+            entity_target) {
+            owner->candidate_entities.resize(
+                entity_target);
+        }
+
+        if (owner->candidate_types.size() <
+            type_target) {
+            owner->candidate_types.resize(
+                type_target);
+        }
+
+        changed_sources.reserve(source_slots);
+        changed_identities.reserve(entity_count);
+        changed_entities.reserve(entity_count);
+        changed_types.reserve(type_count);
+
+        return contributions->reserve_rebuild(
+            source_slots,
+            entity_target);
+    }
+    catch (...) {
+        return failure =
+            {status_code::initialization_failed};
+    }
+}
 status graph_update::replace_source(source_id source, source_replacement& replacement) noexcept {
 
     replacement.update = nullptr;
@@ -1245,6 +1339,33 @@ status graph_update::replace_source(source_id source, source_replacement& replac
     return {};
 }
 
+status graph_update::source_replacement::reserve(
+    std::size_t named_count,
+    std::size_t anonymous_count,
+    std::size_t enum_value_count) noexcept {
+
+    if (!update || !source || !update->contributions) {
+        return {status_code::invalid_state};
+    }
+
+    auto* state =
+        update->contributions->candidate(source);
+
+    if (!state) {
+        return {status_code::invalid_state};
+    }
+
+    try {
+        state->named.reserve(named_count);
+        state->anonymous_types.reserve(anonymous_count);
+        state->enum_values.reserve(enum_value_count);
+        return {};
+    }
+    catch (...) {
+        return update->failure =
+            {status_code::initialization_failed};
+    }
+}
 status graph_update::source_replacement::add_named_enum(string_id name, const enum_build_data& data,
     stable_id& entity, type_handle& type) noexcept {
 
@@ -1611,16 +1732,21 @@ status graph_update::get_or_create_derived(derived_type_kind kind, TypeRef child
     }
 }
 
-status graph_update::build_contribution(const enum_build_data& data,
+status graph_update::build_contribution(
+    source_contribution_state& state,
+    const enum_build_data& data,
     source_contribution_record& output) noexcept {
 
     output.kind = entity_kind::enum_type;
 
-    if (data.definition_state == enum_definition_state::opaque && !data.enumerators.empty()) {
+    if (data.definition_state ==
+            enum_definition_state::opaque &&
+        !data.enumerators.empty()) {
         return {status_code::configuration_failed};
     }
 
-    builtin_type underlying = builtin_type::integer;
+    builtin_type underlying =
+        builtin_type::integer;
 
     const auto& abi = owner->abi_config;
 
@@ -1635,11 +1761,16 @@ status graph_update::build_contribution(const enum_build_data& data,
         underlying = builtin_type::integer;
     }
     else {
-        if (data.definition_state == enum_definition_state::opaque) {
+        if (data.definition_state ==
+            enum_definition_state::opaque) {
             return {status_code::configuration_failed};
         }
 
-        const auto result = select_unscoped_enum_underlying_projected(data.enumerators, abi, underlying,
+        const auto result =
+            select_unscoped_enum_underlying_projected(
+                data.enumerators,
+                abi,
+                underlying,
                 [](const enum_value_build& value) noexcept {
                     return value.value;
                 });
@@ -1650,47 +1781,79 @@ status graph_update::build_contribution(const enum_build_data& data,
     }
 
     try {
-        std::shared_ptr<source_definition_payload> definition;
+        source_definition_range definition;
 
-        if (data.definition_state == enum_definition_state::defined) {
-            definition = std::make_shared< source_definition_payload>();
+        if (data.definition_state ==
+            enum_definition_state::defined) {
+            const auto begin =
+                state.enum_values.size();
 
-            definition->underlying = underlying;
+            if (begin >=
+                    (std::numeric_limits<std::uint32_t>::max)() ||
+                data.enumerators.size() >
+                    (std::numeric_limits<std::uint32_t>::max)()) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
 
-            definition->values.reserve(data.enumerators.size());
-
-            for (const auto& item : data.enumerators) {
-                const auto width = builtin_bit_width(item.value.type, abi);
+            for (const auto& item :
+                 data.enumerators) {
+                const auto width =
+                    builtin_bit_width(
+                        item.value.type,
+                        abi);
 
                 if (!item.name ||
                     !is_integral(item.value.type) ||
                     width == 0 ||
                     width > 64 ||
-                    (item.value.bits & ~bit_mask(width)) ||
-                    !fits_integral(item.value, underlying, abi)) {
+                    (item.value.bits &
+                     ~bit_mask(width)) ||
+                    !fits_integral(
+                        item.value,
+                        underlying,
+                        abi)) {
                     return {
-                        status_code::configuration_failed };
+                        status_code::configuration_failed
+                    };
                 }
 
-                definition->values.push_back({
-                    item.name, convert_integral(item.value, underlying, abi) });
+                state.enum_values.push_back({
+                    item.name,
+                    convert_integral(
+                        item.value,
+                        underlying,
+                        abi)
+                });
             }
+
+            definition = {
+                static_cast<std::uint32_t>(
+                    begin + 1),
+                static_cast<std::uint32_t>(
+                    data.enumerators.size())
+            };
         }
 
-        output.state = data.definition_state;
-
-        output.scoped = data.scoped;
-
-        output.fixed = data.explicit_underlying.has_value() || data.scoped;
-
-        output.underlying = underlying;
-
-        output.definition = std::move(definition);
+        output.state =
+            data.definition_state;
+        output.scoped =
+            data.scoped;
+        output.fixed =
+            data.explicit_underlying.has_value() ||
+            data.scoped;
+        output.underlying =
+            underlying;
+        output.definition =
+            definition;
 
         return {};
     }
     catch (...) {
-        return {status_code::initialization_failed};
+        return {
+            status_code::initialization_failed
+        };
     }
 }
 
@@ -1731,9 +1894,10 @@ status graph_update::add_delta(source_id source, stable_id id,
             return {status_code::configuration_failed};
         }
 
-        const auto underlying_index = static_cast<std::size_t>(contribution.underlying);
-
-        if (contribution.fixed && aggregate.active_fixed && aggregate.underlying[underlying_index] == 0) {
+        if (contribution.fixed &&
+            aggregate.fixed != 0 &&
+            aggregate.active_type !=
+                contribution.underlying) {
             return {status_code::configuration_failed};
         }
 
@@ -1743,19 +1907,30 @@ status graph_update::add_delta(source_id source, stable_id id,
 
         ++aggregate.declarations;
 
-        ++(contribution.scoped ? aggregate.scoped : aggregate.unscoped);
+        ++(contribution.scoped
+            ? aggregate.scoped
+            : aggregate.unscoped);
 
-        ++(contribution.fixed ? aggregate.fixed : aggregate.nonfixed);
+        if (contribution.fixed) {
+            if (aggregate.fixed == 0) {
+                aggregate.active_type =
+                    contribution.underlying;
+            }
 
-        if (contribution.fixed && aggregate.underlying[underlying_index]++ == 0) {
-            ++aggregate.active_fixed;
-            aggregate.active_type = contribution.underlying;
+            ++aggregate.fixed;
+        }
+        else {
+            ++aggregate.nonfixed;
         }
 
-        if (contribution.state == enum_definition_state::defined) {
+        if (contribution.state ==
+            enum_definition_state::defined) {
             aggregate.definitions = 1;
+            aggregate.definition_type =
+                contribution.underlying;
             aggregate.definition_source = source;
-            aggregate.definition = contribution.definition;
+            aggregate.definition =
+                contribution.definition;
         }
 
         return {};
@@ -1788,23 +1963,38 @@ status graph_update::remove_delta(source_id source, const source_contribution_re
 
         --aggregate.declarations;
 
-        --(contribution.scoped ? aggregate.scoped : aggregate.unscoped);
-
-        --(contribution.fixed ? aggregate.fixed : aggregate.nonfixed);
+        --(contribution.scoped
+            ? aggregate.scoped
+            : aggregate.unscoped);
 
         if (contribution.fixed) {
-            auto& count = aggregate.underlying[ static_cast<std::size_t>(contribution.underlying)];
+            assert(aggregate.fixed != 0);
+            assert(
+                aggregate.active_type ==
+                contribution.underlying);
 
-            if (--count == 0) {
-                --aggregate.active_fixed;
+            --aggregate.fixed;
+
+            if (aggregate.fixed == 0) {
+                aggregate.active_type =
+                    builtin_type::integer;
             }
         }
+        else {
+            assert(aggregate.nonfixed != 0);
+            --aggregate.nonfixed;
+        }
 
-        if (contribution.state == enum_definition_state::defined) {
-            assert(aggregate.definition_source == source);
+        if (contribution.state ==
+            enum_definition_state::defined) {
+            assert(
+                aggregate.definition_source ==
+                source);
 
             aggregate.definitions = 0;
-            aggregate.definition.reset();
+            aggregate.definition_type =
+                builtin_type::integer;
+            aggregate.definition = {};
             aggregate.definition_source = {};
         }
 
@@ -1819,7 +2009,7 @@ template <bool Detailed>
 status graph_update::assign_type_impl(
     stable_id id,
     graph::entity_slot& entity,
-    std::unique_ptr<graph::type_storage> type,
+    graph::type_storage type,
     graph_named_enum_telemetry* telemetry) noexcept {
 
     std::chrono::steady_clock::time_point phase_begin{};
@@ -1879,100 +2069,46 @@ status graph_update::assign_type_impl(
         }
 
         begin_phase();
-        candidate.kind = candidate_type_kind::replacement;
-        candidate.value = std::move(type);
+
+        candidate.kind =
+            candidate_type_kind::replacement;
+        candidate.value =
+            std::move(type);
+
         if constexpr (Detailed) {
-            end_phase(telemetry->assign_type_candidate_store_ns);
+            end_phase(
+                telemetry->
+                    assign_type_candidate_store_ns);
+        }
+
+        // G0 creates temporary named TypeRefs lazily only for actual references.
+        // The final G0 canonical namespace is rebuilt once at prepare().
+        if (full_reconstruction) {
+            return {};
         }
 
         begin_phase();
 
+        TypeRef ignored;
         const auto result =
-            [&]() noexcept -> status {
-                if (!full_reconstruction) {
-                    TypeRef ignored;
-
-                    if constexpr (Detailed) {
-                        return get_or_create_named_type_ref_sampled(
-                            entity.record.type,
-                            ignored,
-                            *telemetry);
-                    }
-                    else {
-                        return get_or_create_named_type_ref(
-                            entity.record.type,
-                            ignored);
-                    }
+            [&]() noexcept {
+                if constexpr (Detailed) {
+                    return get_or_create_named_type_ref_sampled(
+                        entity.record.type,
+                        ignored,
+                        *telemetry);
                 }
-
-                if (!candidate.value) {
-                    return failure =
-                        {status_code::configuration_failed};
-                }
-
-                if (candidate.named_ref) {
-                    return {};
-                }
-
-                try {
-                    const auto raw =
-                        owner->canonical_types.size() +
-                        added_canonical_types.size();
-
-                    if (raw >
-                        (std::numeric_limits<std::uint32_t>::max)()) {
-                        return failure =
-                            {status_code::initialization_failed};
-                    }
-
-                    const TypeRef named_ref{
-                        static_cast<std::uint32_t>(raw)
-                    };
-
-                    graph::canonical_type_record record;
-                    record.kind = canonical_type_kind::named;
-                    record.named = type_handle{handle};
-
-                    if constexpr (Detailed) {
-                        const auto canonical_begin =
-                            std::chrono::steady_clock::now();
-
-                        added_canonical_types.push_back(record);
-
-                        telemetry->named_type_ref_canonical_append_ns +=
-                            graph_prepare_elapsed_ns(canonical_begin);
-
-                        const auto mapping_begin =
-                            std::chrono::steady_clock::now();
-
-                        added_named_type_refs.push_back({
-                            handle,
-                            named_ref
-                        });
-
-                        telemetry->named_type_ref_mapping_append_ns +=
-                            graph_prepare_elapsed_ns(mapping_begin);
-                    }
-                    else {
-                        added_canonical_types.push_back(record);
-
-                        added_named_type_refs.push_back({
-                            handle,
-                            named_ref
-                        });
-                    }
-
-                    candidate.named_ref = named_ref;
-                    return {};
-                }
-                catch (...) {
-                    return failure =
-                        {status_code::initialization_failed};
+                else {
+                    return get_or_create_named_type_ref(
+                        entity.record.type,
+                        ignored);
                 }
             }();
 
         if constexpr (Detailed) {
-            end_phase(telemetry->assign_type_named_type_ref_ns);
+            end_phase(
+                telemetry->
+                    assign_type_named_type_ref_ns);
         }
 
         return result;
@@ -1985,7 +2121,7 @@ status graph_update::assign_type_impl(
 status graph_update::assign_type(
     stable_id id,
     graph::entity_slot& entity,
-    std::unique_ptr<graph::type_storage> type) noexcept {
+    graph::type_storage type) noexcept {
 
     return assign_type_impl<false>(
         id,
@@ -1997,7 +2133,7 @@ status graph_update::assign_type(
 status graph_update::assign_type_sampled(
     stable_id id,
     graph::entity_slot& entity,
-    std::unique_ptr<graph::type_storage> type,
+    graph::type_storage type,
     graph_named_enum_telemetry& telemetry) noexcept {
 
     return assign_type_impl<true>(
@@ -2078,7 +2214,7 @@ status graph_update::materialize_impl(
                     committed_entity.record.type == handle &&
                     handle.value() <= owner->types.size()) {
                     const auto* committed_type =
-                        owner->types[handle.value() - 1].get();
+                        owner->types[handle.value() - 1] ? &*owner->types[handle.value() - 1] : nullptr;
 
                     if (committed_type &&
                         committed_type->record.kind ==
@@ -2098,11 +2234,10 @@ status graph_update::materialize_impl(
                 }
             }
 
-            auto type =
-                std::make_unique<graph::type_storage>();
-
-            type->record.kind = user_type_kind::aggregate;
-            type->record.definition = {};
+            graph::type_storage type;
+            type.record.kind =
+                user_type_kind::aggregate;
+            type.record.definition = {};
 
             auto build = std::make_unique<graph::type_build_state>();
             build->definition_pending = defined;
@@ -2130,9 +2265,13 @@ status graph_update::materialize_impl(
             return {};
         }
 
-        const bool defined = aggregate.definitions != 0;
+        const bool defined =
+            aggregate.definitions != 0;
+
         const auto underlying =
-            defined ? aggregate.definition->underlying : aggregate.active_type;
+            defined
+                ? aggregate.definition_type
+                : aggregate.active_type;
 
         if (!defined &&
             !full_reconstruction &&
@@ -2149,7 +2288,7 @@ status graph_update::materialize_impl(
                 committed_entity.record.type == handle &&
                 handle.value() <= owner->types.size()) {
                 const auto* committed_type =
-                    owner->types[handle.value() - 1].get();
+                    owner->types[handle.value() - 1] ? &*owner->types[handle.value() - 1] : nullptr;
 
                 if (committed_type &&
                     committed_type->record.kind ==
@@ -2177,16 +2316,15 @@ status graph_update::materialize_impl(
 
         begin_phase();
 
-        auto type =
-            std::make_unique<graph::type_storage>();
-
-        type->record.kind = user_type_kind::enumeration;
-        type->record.enumeration = {
+        graph::type_storage type;
+        type.record.kind =
+            user_type_kind::enumeration;
+        type.record.enumeration = {
             aggregate.scoped != 0,
             aggregate.fixed != 0,
             underlying
         };
-        type->record.definition = {};
+        type.record.definition = {};
 
         if constexpr (Detailed) {
             end_phase(telemetry->materialize_type_storage_ns);
@@ -2194,15 +2332,10 @@ status graph_update::materialize_impl(
 
         begin_phase();
 
-        auto build = std::make_unique<graph::type_build_state>();
-        build->definition_pending = defined;
-
-        if (defined) {
-            build->enumerators = aggregate.definition->values;
-        }
-
         if constexpr (Detailed) {
-            end_phase(telemetry->materialize_build_state_ns);
+            end_phase(
+                telemetry->
+                    materialize_build_state_ns);
         }
 
         slot.entity.record.kind = entity_kind::enum_type;
@@ -2236,9 +2369,20 @@ status graph_update::materialize_impl(
 
         begin_phase();
 
-        owner->candidate_types[
-            slot.entity.record.type.value()
-        ].build = std::move(build);
+        auto& enum_candidate =
+            owner->candidate_types[
+                slot.entity.record.type.value()
+            ];
+
+        enum_candidate.enum_definition_source =
+            defined
+                ? aggregate.definition_source
+                : source_id{};
+
+        enum_candidate.enum_definition =
+            defined
+                ? aggregate.definition
+                : source_definition_range{};
 
         if constexpr (Detailed) {
             end_phase(telemetry->materialize_attach_ns);
@@ -2404,19 +2548,47 @@ status graph_update::reconcile_retained_enum(
     const auto& old =
         previous->named.front();
 
-    if (!same_enum_contribution(old, contribution)) {
-        return flush_retained_source_replacement(source);
-    }
-
     auto* candidate =
         contributions->candidate(source);
 
     if (!candidate) {
-        return failure = {status_code::invalid_state};
+        return failure =
+            {status_code::invalid_state};
+    }
+
+    std::span<const enum_value_record> old_values;
+    std::span<const enum_value_record> new_values;
+
+    if (old.definition &&
+        !source_definition_values(
+            *previous,
+            old.definition,
+            old_values)) {
+        return failure =
+            {status_code::configuration_failed};
+    }
+
+    if (contribution.definition &&
+        !source_definition_values(
+            *candidate,
+            contribution.definition,
+            new_values)) {
+        return failure =
+            {status_code::configuration_failed};
+    }
+
+    if (!same_enum_contribution(
+            old,
+            old_values,
+            contribution,
+            new_values)) {
+        return flush_retained_source_replacement(source);
     }
 
     try {
-        candidate->named.push_back(old);
+        // Definition ranges are Source-local, so retain the newly built record
+        // that addresses the candidate Source arena rather than the old range.
+        candidate->named.push_back(contribution);
     }
     catch (...) {
         return failure = {status_code::initialization_failed};
@@ -2521,7 +2693,19 @@ status graph_update::declare_named_enum(
 
         begin_phase();
 
-        result = build_contribution(data, contribution);
+        auto* source_state =
+            contributions->candidate(source);
+
+        if (!source_state) {
+            return failure =
+                {status_code::invalid_state};
+        }
+
+        result =
+            build_contribution(
+                *source_state,
+                data,
+                contribution);
 
         if (sampled) {
             end_phase(telemetry->contribution_build_ns);
@@ -2754,27 +2938,37 @@ status graph_update::add_anonymous_enum(source_id source, const enum_build_data&
 
         source_contribution_record contribution;
 
-        result = build_contribution(data, contribution);
+        auto* source_state =
+            contributions->candidate(source);
 
-        if (!result.ok() || data.definition_state != enum_definition_state::defined) {
+        if (!source_state) {
+            return failure =
+                {status_code::invalid_state};
+        }
+
+        result =
+            build_contribution(
+                *source_state,
+                data,
+                contribution);
+
+        if (!result.ok() ||
+            data.definition_state !=
+                enum_definition_state::defined) {
             return failure = result.ok() ? status{
                           status_code::configuration_failed }
                     : result;
         }
 
-        auto storage = std::make_unique< graph::type_storage>();
-
-        storage->record.kind = user_type_kind::enumeration;
-        storage->record.enumeration = {
+        graph::type_storage storage;
+        storage.record.kind =
+            user_type_kind::enumeration;
+        storage.record.enumeration = {
             data.scoped,
             contribution.fixed,
             contribution.underlying
         };
-        storage->record.definition = {};
-
-        auto build = std::make_unique<graph::type_build_state>();
-        build->definition_pending = true;
-        build->enumerators = contribution.definition->values;
+        storage.record.definition = {};
 
         std::uint32_t handle = 0;
 
@@ -2790,12 +2984,17 @@ status graph_update::add_anonymous_enum(source_id source, const enum_build_data&
 
         auto& candidate = touch_type(handle);
 
-        candidate.kind = candidate_type_kind::replacement;
+        candidate.kind =
+            candidate_type_kind::replacement;
+        candidate.value =
+            std::move(storage);
+        candidate.enum_definition_source =
+            source;
+        candidate.enum_definition =
+            contribution.definition;
 
-        candidate.value = std::move(storage);
-        candidate.build = std::move(build);
-
-        contributions->candidate(source)->anonymous_types.push_back(handle);
+        contributions->candidate(source)
+            ->anonymous_types.push_back(handle);
 
         type = type_handle{handle};
 
@@ -2891,8 +3090,33 @@ std::span<const enum_value_record> graph_update::enum_values(type_handle handle)
                 return {};
             }
 
-            if (slot.kind == candidate_type_kind::replacement && slot.build) {
-                return slot.build->enumerators;
+            if (slot.kind ==
+                    candidate_type_kind::replacement &&
+                slot.value &&
+                slot.value->record.kind ==
+                    user_type_kind::enumeration &&
+                slot.enum_definition) {
+                const auto* state =
+                    contributions->candidate(
+                        slot.enum_definition_source);
+
+                if (!state) {
+                    state =
+                        contributions->committed(
+                            slot.enum_definition_source);
+                }
+
+                std::span<const enum_value_record> values;
+
+                if (!state ||
+                    !source_definition_values(
+                        *state,
+                        slot.enum_definition,
+                        values)) {
+                    return {};
+                }
+
+                return values;
             }
         }
     }
@@ -3096,14 +3320,17 @@ status graph_update::validate_live_member_type_refs() noexcept {
 
                         if (candidate.kind ==
                             candidate_type_kind::replacement) {
-                            return candidate.value != nullptr;
+                            return static_cast<bool>(
+                                candidate.value);
                         }
                     }
                 }
 
                 return !full_reconstruction &&
                     handle.value() <= owner->types.size() &&
-                    owner->types[handle.value() - 1] != nullptr;
+                    static_cast<bool>(
+                        owner->types[
+                            handle.value() - 1]);
             };
 
         std::size_t visited_type_refs = 0;
@@ -3165,7 +3392,7 @@ status graph_update::validate_live_member_type_refs() noexcept {
 
                         if (candidate.kind ==
                             candidate_type_kind::replacement) {
-                            storage = candidate.value.get();
+                            storage = &*candidate.value;
                             replacement = true;
                         }
                     }
@@ -3179,7 +3406,7 @@ status graph_update::validate_live_member_type_refs() noexcept {
                     }
 
                     storage =
-                        owner->types[raw_handle - 1].get();
+                        &*owner->types[raw_handle - 1];
                 }
 
                 if (storage->record.kind !=
@@ -3627,7 +3854,7 @@ status graph_update::build_rebuild_dependency_index() noexcept {
              handle <= rebuilt_types.size();
              ++handle) {
             const auto* storage =
-                rebuilt_types[handle - 1].get();
+                rebuilt_types[handle - 1] ? &*rebuilt_types[handle - 1] : nullptr;
 
             if (!storage ||
                 storage->record.kind !=
@@ -3853,14 +4080,17 @@ status graph_update::rebuild_canonical_type_table() noexcept {
                             return false;
                         }
 
-                        if (candidate.kind == candidate_type_kind::replacement) {
-                            return candidate.value != nullptr;
+                        if (candidate.kind ==
+                            candidate_type_kind::replacement) {
+                            return static_cast<bool>(
+                                candidate.value);
                         }
                     }
                 }
 
                 return handle <= owner->types.size() &&
-                    owner->types[handle - 1] != nullptr;
+                    static_cast<bool>(
+                        owner->types[handle - 1]);
             };
 
         // Every live user type gets exactly one named TypeRef, even when the
@@ -4257,15 +4487,29 @@ status graph_update::prepare_publish(const source_manager_update& sources,
         }
 
         for (const auto& contribution : state->named) {
-            if (!strings.get_for_validation(contribution.name)) {
-                return failure = {status_code::configuration_failed};
+            if (!strings.get_for_validation(
+                    contribution.name)) {
+                return failure =
+                    {status_code::configuration_failed};
             }
 
             if (contribution.definition) {
-                for (const auto& value : contribution.definition->values) {
-                    if (!strings.get_for_validation(value.name)) {
+                std::span<const enum_value_record> values;
+
+                if (!source_definition_values(
+                        *state,
+                        contribution.definition,
+                        values)) {
+                    return failure =
+                        {status_code::configuration_failed};
+                }
+
+                for (const auto& value : values) {
+                    if (!strings.get_for_validation(
+                            value.name)) {
                         return failure = {
-                            status_code::configuration_failed };
+                            status_code::configuration_failed
+                        };
                     }
                 }
             }
@@ -4288,21 +4532,56 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             continue;
         }
 
-        if (candidate.value->record.kind == user_type_kind::aggregate) {
-            added_member_count += candidate.build->members.size();
+        if (candidate.value->record.kind ==
+            user_type_kind::aggregate) {
+            if (!candidate.build) {
+                return failure =
+                    {status_code::configuration_failed};
+            }
 
-            for (const auto& member : candidate.build->members) {
-                if (!strings.get_for_validation(member.name) || !member.type) {
-                    return failure = {status_code::configuration_failed};
+            added_member_count +=
+                candidate.build->members.size();
+
+            for (const auto& member :
+                 candidate.build->members) {
+                if (!strings.get_for_validation(
+                        member.name) ||
+                    !member.type) {
+                    return failure =
+                        {status_code::configuration_failed};
                 }
             }
         }
-        else {
-            added_enum_value_count += candidate.build->enumerators.size();
+        else if (candidate.enum_definition) {
+            const auto* state =
+                contributions->candidate(
+                    candidate.enum_definition_source);
 
-            for (const auto& value : candidate.build->enumerators) {
-                if (!strings.get_for_validation(value.name)) {
-                    return failure = {status_code::configuration_failed};
+            if (!state) {
+                state =
+                    contributions->committed(
+                        candidate.enum_definition_source);
+            }
+
+            std::span<const enum_value_record> values;
+
+            if (!state ||
+                !source_definition_values(
+                    *state,
+                    candidate.enum_definition,
+                    values)) {
+                return failure =
+                    {status_code::configuration_failed};
+            }
+
+            added_enum_value_count +=
+                values.size();
+
+            for (const auto& value : values) {
+                if (!strings.get_for_validation(
+                        value.name)) {
+                    return failure =
+                        {status_code::configuration_failed};
                 }
             }
         }
@@ -4340,14 +4619,18 @@ status graph_update::prepare_publish(const source_manager_update& sources,
 
                 candidate.value->record.definition = {};
 
-                if (!candidate.build || !candidate.build->definition_pending) {
-                    continue;
-                }
+                if (candidate.value->record.kind ==
+                    user_type_kind::aggregate) {
+                    if (!candidate.build ||
+                        !candidate.build->definition_pending) {
+                        continue;
+                    }
 
-                if (candidate.value->record.kind == user_type_kind::aggregate) {
                     candidate.value->record.definition = {
-                        static_cast<std::uint32_t>(rebuilt_member_records.size() + 1),
-                        static_cast<std::uint32_t>(candidate.build->members.size())
+                        static_cast<std::uint32_t>(
+                            rebuilt_member_records.size() + 1),
+                        static_cast<std::uint32_t>(
+                            candidate.build->members.size())
                     };
 
                     rebuilt_member_records.insert(
@@ -4358,17 +4641,42 @@ status graph_update::prepare_publish(const source_manager_update& sources,
                             candidate.build->members.end()));
                 }
                 else {
+                    if (!candidate.enum_definition) {
+                        continue;
+                    }
+
+                    const auto* state =
+                        contributions->candidate(
+                            candidate.enum_definition_source);
+
+                    if (!state) {
+                        state =
+                            contributions->committed(
+                                candidate.enum_definition_source);
+                    }
+
+                    std::span<const enum_value_record> values;
+
+                    if (!state ||
+                        !source_definition_values(
+                            *state,
+                            candidate.enum_definition,
+                            values)) {
+                        return failure =
+                            {status_code::configuration_failed};
+                    }
+
                     candidate.value->record.definition = {
-                        static_cast<std::uint32_t>(rebuilt_enum_value_records.size() + 1),
-                        static_cast<std::uint32_t>(candidate.build->enumerators.size())
+                        static_cast<std::uint32_t>(
+                            rebuilt_enum_value_records.size() + 1),
+                        static_cast<std::uint32_t>(
+                            values.size())
                     };
 
                     rebuilt_enum_value_records.insert(
                         rebuilt_enum_value_records.end(),
-                        std::make_move_iterator(
-                            candidate.build->enumerators.begin()),
-                        std::make_move_iterator(
-                            candidate.build->enumerators.end()));
+                        values.begin(),
+                        values.end());
                 }
             }
         }
@@ -4607,7 +4915,7 @@ void graph_update::publish_prepared() noexcept {
     for (auto handle : changed_types) {
         auto& candidate = owner->candidate_types[handle];
 
-        const bool was_live = owner->types[handle - 1] != nullptr;
+        const bool was_live = static_cast<bool>(owner->types[handle - 1]);
 
         const bool will_live = candidate.kind == candidate_type_kind::replacement || (candidate.kind ==
                  candidate_type_kind::unchanged && was_live);
@@ -4621,40 +4929,74 @@ void graph_update::publish_prepared() noexcept {
             }
         }
 
-        if (candidate.kind == candidate_type_kind::replacement) {
+        if (candidate.kind ==
+            candidate_type_kind::replacement) {
             candidate.value->record.definition = {};
 
-            if (candidate.build && candidate.build->definition_pending) {
-                if (candidate.value->record.kind == user_type_kind::aggregate) {
+            if (candidate.value->record.kind ==
+                user_type_kind::aggregate) {
+                if (candidate.build &&
+                    candidate.build->definition_pending) {
                     candidate.value->record.definition = {
-                        static_cast<std::uint32_t>(owner->member_records.size() + 1),
-                        static_cast<std::uint32_t>(candidate.build->members.size())
+                        static_cast<std::uint32_t>(
+                            owner->member_records.size() + 1),
+                        static_cast<std::uint32_t>(
+                            candidate.build->members.size())
                     };
 
                     owner->member_records.insert(
                         owner->member_records.end(),
-                        std::make_move_iterator(candidate.build->members.begin()),
-                        std::make_move_iterator(candidate.build->members.end()));
+                        std::make_move_iterator(
+                            candidate.build->members.begin()),
+                        std::make_move_iterator(
+                            candidate.build->members.end()));
                 }
-                else {
+            }
+            else if (candidate.enum_definition) {
+                const auto* state =
+                    contributions->committed(
+                        candidate.enum_definition_source);
+
+                std::span<const enum_value_record> values;
+
+                assert(state);
+
+                const auto valid_definition =
+                    state &&
+                    source_definition_values(
+                        *state,
+                        candidate.enum_definition,
+                        values);
+
+                assert(valid_definition);
+
+                if (valid_definition) {
                     candidate.value->record.definition = {
-                        static_cast<std::uint32_t>(owner->enum_value_records.size() + 1),
-                        static_cast<std::uint32_t>(candidate.build->enumerators.size())
+                        static_cast<std::uint32_t>(
+                            owner->enum_value_records.size() + 1),
+                        static_cast<std::uint32_t>(
+                            values.size())
                     };
 
                     owner->enum_value_records.insert(
                         owner->enum_value_records.end(),
-                        std::make_move_iterator(candidate.build->enumerators.begin()),
-                        std::make_move_iterator(candidate.build->enumerators.end()));
+                        values.begin(),
+                        values.end());
                 }
             }
 
             candidate.build.reset();
-            owner->types[handle - 1].swap(candidate.value);
+            candidate.enum_definition_source = {};
+            candidate.enum_definition = {};
+            owner->types[handle - 1].swap(
+                candidate.value);
         }
-        else if (candidate.kind == candidate_type_kind::removed) {
+        else if (candidate.kind ==
+                 candidate_type_kind::removed) {
             owner->types[handle - 1].reset();
             candidate.build.reset();
+            candidate.enum_definition_source = {};
+            candidate.enum_definition = {};
 
             owner->free_type_slots.push_back(handle);
         }

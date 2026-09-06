@@ -17,7 +17,6 @@ class graph_build_transaction;
 // It owns no canonical state and is reusable immediately after each synchronous
 // Builder call completes.
 struct project_builder_scratch {
-    std::vector<enum_value_build> enum_values;
     std::vector<member_build> members;
     std::vector<type_modifier_build> modifiers;
 

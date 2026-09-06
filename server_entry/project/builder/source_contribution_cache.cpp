@@ -204,6 +204,42 @@ void source_contribution_cache_update::release_previous(
     }
 }
 
+status source_contribution_cache_update::reserve_rebuild(
+    std::size_t source_slots,
+    std::size_t entity_slots) noexcept {
+
+    if (!owner ||
+        prepared ||
+        committed_update ||
+        !full_reconstruction) {
+        return failure =
+            {status_code::invalid_state};
+    }
+
+    try {
+        if (source_slots ==
+            (std::numeric_limits<std::size_t>::max)()) {
+            return failure =
+                {status_code::initialization_failed};
+        }
+
+        grow_contribution_vector(
+            owner->candidates,
+            source_slots + 1);
+
+        grow_contribution_vector(
+            owner->candidate_entities,
+            entity_slots);
+
+        changed.reserve(source_slots);
+        changed_entities.reserve(entity_slots);
+        return {};
+    }
+    catch (...) {
+        return failure =
+            {status_code::initialization_failed};
+    }
+}
 status source_contribution_cache_update::replace(
     source_id source,
     source_contribution_state*& output) noexcept {
@@ -225,7 +261,12 @@ status source_contribution_cache_update::replace(
 
         auto& slot = owner->candidates[source.value()];
         slot.generation = candidate_generation;
-        slot.value = {};
+
+        // Preserve Source-local vector capacity across candidate generations.
+        slot.value.named.clear();
+        slot.value.anonymous_types.clear();
+        slot.value.enum_values.clear();
+
         slot.previous_retained = false;
         changed.push_back(source.value());
         output = &slot.value;
@@ -348,6 +389,7 @@ void source_contribution_cache_update::publish_prepared() noexcept {
         for (auto& state : owner->states) {
             state.named.clear();
             state.anonymous_types.clear();
+            state.enum_values.clear();
         }
         for (auto& state : owner->entity_states) {
             state = {};

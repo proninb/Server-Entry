@@ -1689,6 +1689,8 @@ source_rebuild_result source_frontend_generation::rebuild(
 
             std::size_t string_reserve_hint = 0;
             std::size_t string_byte_reserve_hint = 0;
+            std::size_t entity_reserve_hint = 0;
+            std::size_t type_reserve_hint = 0;
 
             const auto maximum =
                 (std::numeric_limits<std::size_t>::max)();
@@ -1721,6 +1723,56 @@ source_rebuild_result source_frontend_generation::rebuild(
 
                 string_byte_reserve_hint +=
                     entry.name_bytes_size();
+
+                if (entry.enums.size() >
+                        maximum - type_reserve_hint ||
+                    entry.aggregates.size() >
+                        maximum -
+                            type_reserve_hint -
+                            entry.enums.size()) {
+                    result = {
+                        status_code::
+                            initialization_failed
+                    };
+                    break;
+                }
+
+                type_reserve_hint +=
+                    entry.enums.size() +
+                    entry.aggregates.size();
+
+                if (entry.aggregates.size() >
+                    maximum - entity_reserve_hint) {
+                    result = {
+                        status_code::
+                            initialization_failed
+                    };
+                    break;
+                }
+
+                entity_reserve_hint +=
+                    entry.aggregates.size();
+
+                for (const auto& fact : entry.enums) {
+                    if (fact.anonymous) {
+                        continue;
+                    }
+
+                    if (entity_reserve_hint ==
+                        maximum) {
+                        result = {
+                            status_code::
+                                initialization_failed
+                        };
+                        break;
+                    }
+
+                    ++entity_reserve_hint;
+                }
+
+                if (!result.ok()) {
+                    break;
+                }
             }
 
             current_summary.g0_publish_reserve_scan_ns +=
@@ -1744,6 +1796,15 @@ source_rebuild_result source_frontend_generation::rebuild(
                         std::chrono::steady_clock::now());
             }
 
+            if (result.ok()) {
+                result =
+                    transaction->graph_state().
+                        reserve_rebuild(
+                            states.size(),
+                            string_reserve_hint,
+                            entity_reserve_hint,
+                            type_reserve_hint);
+            }
             source_publish_scratch publish_scratch;
             publish_scratch.telemetry.enabled =
                 telemetry.mode() == metrics_mode::detailed;

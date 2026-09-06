@@ -4,20 +4,22 @@
 #include "../../status.hpp"
 #include "../graph/graph.hpp"
 
-#include <array>
 #include <cstddef>
 #include <cstdint>
-#include <memory>
 #include <span>
 #include <vector>
 
 namespace cw::server {
 
-// Immutable payload shared by build-side Source contributions that provide one
-// enum definition. This is construction/cache state, not committed G state.
-struct source_definition_payload {
-    builtin_type underlying = builtin_type::integer;
-    std::vector<enum_value_record> values;
+// One-based slice into source_contribution_state::enum_values.
+// The coordinate is Source-local construction state and is never Runtime-visible.
+struct source_definition_range {
+    std::uint32_t begin = 0;
+    std::uint32_t count = 0;
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return begin != 0;
+    }
 };
 
 // One canonical declaration/definition contributed by one Source.
@@ -30,7 +32,7 @@ struct source_contribution_record {
     bool scoped = false;
     bool fixed = false;
     builtin_type underlying = builtin_type::integer;
-    std::shared_ptr<const source_definition_payload> definition;
+    source_definition_range definition{};
 };
 
 
@@ -44,15 +46,14 @@ struct canonical_entity_construction_state {
     std::uint32_t fixed = 0;
     std::uint32_t nonfixed = 0;
     std::uint32_t definitions = 0;
-    std::uint32_t active_fixed = 0;
     std::uint32_t aggregate_declarations = 0;
     std::uint32_t aggregate_definitions = 0;
 
-    std::array<std::uint32_t, static_cast<std::size_t>(builtin_type::void_type) + 1> underlying{};
-
+    // All active fixed declarations for one Entity must agree on one type.
     builtin_type active_type = builtin_type::integer;
+    builtin_type definition_type = builtin_type::integer;
     source_id definition_source{};
-    std::shared_ptr<const source_definition_payload> definition;
+    source_definition_range definition{};
     source_id aggregate_definition_source{};
 };
 
@@ -60,6 +61,10 @@ struct canonical_entity_construction_state {
 struct source_contribution_state {
     std::vector<source_contribution_record> named;
     std::vector<std::uint32_t> anonymous_types;
+
+    // All enum definitions contributed by this Source share one dense arena.
+    // Individual source_contribution_record values address it by range.
+    std::vector<enum_value_record> enum_values;
 };
 
 // Non-authoritative incremental build cache keyed by source_id.
@@ -143,6 +148,10 @@ public:
 
     void release_previous(source_id source) noexcept;
 
+    // G0 bulk reservation for reusable generation-local cache overlays.
+    [[nodiscard]] status reserve_rebuild(
+        std::size_t source_slots,
+        std::size_t entity_slots) noexcept;
     // Starts a new empty contribution for Source. Replacing a Source means its
     // old committed contribution is removed by Graph and this candidate is then
     // filled with the Source's new canonical contribution.

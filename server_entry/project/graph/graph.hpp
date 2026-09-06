@@ -9,6 +9,7 @@
 #include "../language/aggregate_semantics.hpp"
 #include "../language/enum_semantics.hpp"
 #include "builtin_type.hpp"
+#include "enum_build.hpp"
 #include "type_ref.hpp"
 
 #include <cstddef>
@@ -91,7 +92,6 @@ class source_contribution_cache;
 class source_contribution_cache_update;
 struct source_contribution_record;
 struct source_contribution_state;
-struct source_definition_payload;
 class string_registry_update;
 struct compiled_graph_state;
 
@@ -194,19 +194,6 @@ struct enum_value_record {
     std::uint64_t bits = 0;
 };
 
-// Builder input for one enum value before ABI conversion/materialization.
-struct enum_value_build {
-    string_id name{};
-    integral_constant value{};
-};
-
-// Builder input for one enum declaration or definition.
-struct enum_build_data {
-    enum_definition_state definition_state = enum_definition_state::defined;
-    bool scoped = false;
-    std::optional<builtin_type> explicit_underlying;
-    std::span<const enum_value_build> enumerators;
-};
 
 // One-based range into the definition arena selected by TypeEntry::kind.
 // begin == 0 is the only no-definition state; a defined empty type therefore
@@ -338,7 +325,12 @@ public:
 #endif
 
 private:
-    struct type_storage;
+    // Dense type_handle slot. Pointers returned by find(type_handle) are views
+    // into one committed Graph generation and do not survive publication.
+    struct type_storage {
+        type_entry record{};
+    };
+
     struct type_build_state;
     struct entity_slot;
     struct candidate_identity_slot;
@@ -375,7 +367,7 @@ private:
     friend class graph_build_transaction_test_access;
 
     // type_handle is one-based; slot N addresses types[N - 1].
-    std::vector<std::unique_ptr<type_storage>> types;
+    std::vector<std::optional<type_storage>> types;
     std::vector<std::uint32_t> free_type_slots;
 
     // stable_id values directly index entities; slot zero is not a live Entity.
@@ -434,6 +426,12 @@ public:
         source_replacement(source_replacement&&) noexcept = default;
         source_replacement& operator=(source_replacement&&) = delete;
 
+        // Reserves the complete Source-local contribution once before its
+        // deterministic per-fact publication loop.
+        [[nodiscard]] status reserve(
+            std::size_t named_count,
+            std::size_t anonymous_count,
+            std::size_t enum_value_count) noexcept;
         [[nodiscard]] status add_named_enum(
             string_id name,
             const enum_build_data& data,
@@ -506,6 +504,12 @@ public:
     graph_update(graph_update&& other) noexcept;
     graph_update& operator=(graph_update&&) = delete;
 
+    // Pre-sizes every dense G0 candidate overlay before canonical mutation.
+    [[nodiscard]] status reserve_rebuild(
+        std::size_t source_slots,
+        std::size_t name_slots,
+        std::size_t entity_count,
+        std::size_t type_count) noexcept;
     [[nodiscard]] status replace_source(
         source_id source,
         source_replacement& replacement) noexcept;
@@ -587,6 +591,7 @@ private:
     [[nodiscard]] status remove_named_entity_for_testing(stable_id id) noexcept;
 
     [[nodiscard]] status build_contribution(
+        source_contribution_state& state,
         const enum_build_data& data,
         source_contribution_record& output) noexcept;
 
@@ -617,19 +622,19 @@ private:
     [[nodiscard]] status assign_type(
         stable_id id,
         graph::entity_slot& entity,
-        std::unique_ptr<graph::type_storage> type) noexcept;
+        graph::type_storage type) noexcept;
 
     [[nodiscard]] status assign_type_sampled(
         stable_id id,
         graph::entity_slot& entity,
-        std::unique_ptr<graph::type_storage> type,
+        graph::type_storage type,
         graph_named_enum_telemetry& telemetry) noexcept;
 
     template <bool Detailed>
     [[nodiscard]] status assign_type_impl(
         stable_id id,
         graph::entity_slot& entity,
-        std::unique_ptr<graph::type_storage> type,
+        graph::type_storage type,
         graph_named_enum_telemetry* telemetry) noexcept;
 
     [[nodiscard]] status get_or_create_named_type_ref(
@@ -682,9 +687,6 @@ private:
     graph* owner = nullptr;
     source_contribution_cache_update* contributions = nullptr;
 
-    // Retained for the current update contract even though current materialization
-    // paths use candidate_type_slot ownership directly.
-    std::vector<std::unique_ptr<graph::type_storage>> owned_types;
 
     std::vector<std::uint32_t> changed_identities;
     std::vector<std::uint32_t> changed_entities;
@@ -698,7 +700,7 @@ private:
     // changed_* overlays remain an incremental Gn -> Gn+1 implementation detail.
     std::vector<stable_id> rebuilt_identity;
     std::vector<graph::entity_slot> rebuilt_entities;
-    std::vector<std::unique_ptr<graph::type_storage>> rebuilt_types;
+    std::vector<std::optional<graph::type_storage>> rebuilt_types;
     std::vector<std::uint32_t> rebuilt_free_type_slots;
     std::size_t rebuilt_entity_count = 0;
     std::size_t rebuilt_type_count = 0;
