@@ -1442,6 +1442,411 @@ void run_multi_root_dependency_matrix() {
     }
 }
 
+constexpr std::size_t edge_scaling_dependents = 256;
+constexpr std::size_t edge_scaling_region_size =
+    edge_scaling_dependents + 1;
+
+constexpr std::array<std::size_t, 5>
+    edge_scaling_fanins{
+        0,
+        1,
+        3,
+        15,
+        63
+    };
+
+struct edge_scaling_region {
+    source_id root_source{};
+    string_id root_name{};
+    std::size_t fanin = 0;
+};
+
+struct edge_scaling_baseline {
+    std::vector<edge_scaling_region> regions;
+};
+
+std::size_t edge_scaling_expected_edges(
+    std::size_t fanin) noexcept {
+
+    std::size_t edges =
+        edge_scaling_dependents;
+
+    for (std::size_t index = 0;
+         index < edge_scaling_dependents;
+         ++index) {
+        edges +=
+            std::min(
+                fanin,
+                index);
+    }
+
+    return edges;
+}
+
+const char* edge_scaling_scenario(
+    std::size_t fanin) noexcept {
+
+    switch (fanin) {
+    case 0:
+        return "edge_f0";
+    case 1:
+        return "edge_f1";
+    case 3:
+        return "edge_f3";
+    case 15:
+        return "edge_f15";
+    case 63:
+        return "edge_f63";
+    default:
+        return "edge_invalid";
+    }
+}
+
+void define_edge_scaling_aggregate(
+    graph_build_transaction& transaction,
+    source_id source,
+    std::size_t type_index,
+    std::size_t root_index,
+    std::size_t dependent_position,
+    std::size_t fanin) {
+
+    const auto prepared =
+        prepare_source(
+            transaction,
+            source,
+            type_name(type_index));
+
+    graph_update::source_replacement replacement;
+
+    require(
+        transaction.graph_state().replace_source(
+            prepared.source,
+            replacement).ok(),
+        "RC-V2-06 aggregate Source replacement failed");
+
+    stable_id entity;
+    type_handle type;
+
+    require(
+        replacement.add_named_type(
+            prepared.name,
+            aggregate_definition_state::defined,
+            entity,
+            type).ok(),
+        "RC-V2-06 aggregate creation failed");
+
+    const auto extra =
+        std::min(
+            fanin,
+            dependent_position);
+
+    std::vector<member_build> members;
+    members.reserve(extra + 1);
+
+    const auto append_member =
+        [&](std::size_t dependency_index,
+            std::size_t member_index) {
+            string_id dependency_name;
+
+            require(
+                transaction.strings().intern(
+                    type_name(dependency_index),
+                    dependency_name).ok(),
+                "RC-V2-06 dependency name interning failed");
+
+            string_id member_name;
+
+            require(
+                transaction.strings().intern(
+                    "edge_member_" +
+                        std::to_string(type_index) +
+                        "_" +
+                        std::to_string(member_index),
+                    member_name).ok(),
+                "RC-V2-06 member name interning failed");
+
+            members.push_back(
+                member_build{
+                    member_name,
+                    std::nullopt,
+                    dependency_name,
+                    0,
+                    0
+                });
+        };
+
+    append_member(
+        root_index,
+        0);
+
+    for (std::size_t offset = 0;
+         offset < extra;
+         ++offset) {
+        const auto dependency_index =
+            type_index - 1 - offset;
+
+        append_member(
+            dependency_index,
+            offset + 1);
+    }
+
+    require(
+        replacement.define_members(
+            type,
+            members,
+            {}).ok(),
+        "RC-V2-06 aggregate member definition failed");
+}
+
+edge_scaling_baseline build_edge_scaling_baseline(
+    graph_manager& manager,
+    std::size_t count) {
+
+    const auto topology_types =
+        edge_scaling_region_size *
+        edge_scaling_fanins.size();
+
+    require(
+        count >= topology_types,
+        "RC-V2-06 N smaller than topology");
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::rebuild);
+
+    auto sources =
+        prepare_physical_sources(
+            transaction,
+            count);
+
+    std::size_t topology_edges = 0;
+
+    for (const auto fanin :
+         edge_scaling_fanins) {
+        topology_edges +=
+            edge_scaling_expected_edges(
+                fanin);
+    }
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(
+                count +
+                topology_edges)
+            .ok(),
+        "RC-V2-06 G0 String reserve failed");
+
+    edge_scaling_baseline baseline;
+    baseline.regions.reserve(
+        edge_scaling_fanins.size());
+
+    for (std::size_t region_index = 0;
+         region_index <
+            edge_scaling_fanins.size();
+         ++region_index) {
+        const auto fanin =
+            edge_scaling_fanins[
+                region_index];
+
+        const auto root_index =
+            region_index *
+            edge_scaling_region_size;
+
+        string_id root_name;
+
+        require(
+            transaction.strings().intern(
+                type_name(root_index),
+                root_name).ok(),
+            "RC-V2-06 root String interning failed");
+
+        replace_with_opaque_enum_scoped(
+            transaction,
+            sources[root_index],
+            root_name,
+            false);
+
+        baseline.regions.push_back(
+            edge_scaling_region{
+                sources[root_index],
+                root_name,
+                fanin
+            });
+
+        for (std::size_t position = 0;
+             position <
+                edge_scaling_dependents;
+             ++position) {
+            const auto type_index =
+                root_index +
+                1 +
+                position;
+
+            define_edge_scaling_aggregate(
+                transaction,
+                sources[type_index],
+                type_index,
+                root_index,
+                position,
+                fanin);
+        }
+    }
+
+    for (std::size_t index =
+             topology_types;
+         index < count;
+         ++index) {
+        const auto prepared =
+            prepare_source(
+                transaction,
+                sources[index],
+                type_name(index));
+
+        replace_with_opaque_enum(
+            transaction,
+            prepared.source,
+            prepared.name);
+    }
+
+    require(
+        transaction.commit().ok(),
+        "RC-V2-06 G0 baseline failed");
+
+    require_g0_headroom(
+        manager,
+        count);
+
+    return baseline;
+}
+
+row edge_scaling_case(
+    graph_manager& manager,
+    std::size_t count,
+    const edge_scaling_region& region) {
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    replace_with_opaque_enum_scoped(
+        transaction,
+        region.root_source,
+        region.root_name,
+        true);
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        edge_scaling_scenario(
+            region.fanin),
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+void require_edge_scaling_gates(
+    const row& value,
+    std::size_t fanin) {
+
+    const auto& graph =
+        value.graph;
+
+    const auto expected_edges =
+        edge_scaling_expected_edges(
+            fanin);
+
+    require(
+        graph.changed_sources == 1,
+        "RC-V2-06 changed_sources != 1");
+
+    require(
+        graph.changed_entities == 1,
+        "RC-V2-06 changed_entities != 1");
+
+    require(
+        graph.changed_types == 1,
+        "RC-V2-06 changed_types != 1");
+
+    require(
+        graph.validation_visited_types ==
+            edge_scaling_region_size,
+        "RC-V2-06 D changed with E");
+
+    require(
+        graph.validation_dependency_edges ==
+            expected_edges,
+        "RC-V2-06 dependency edges != expected E");
+
+    require(
+        graph.validation_visited_type_refs ==
+            expected_edges,
+        "RC-V2-06 TypeRef visits != expected E");
+
+    require(
+        !rc_v2_01a::graph_reallocated(graph),
+        "RC-V2-06 committed Graph storage reallocated");
+
+    require(
+        !value.contribution_reallocated,
+        "RC-V2-06 SourceContribution storage reallocated");
+
+    require(
+        value.strings_before.records_data ==
+            value.strings_after.records_data,
+        "RC-V2-06 String records relocated");
+
+    require(
+        value.strings_before.lookup_bucket_count ==
+            value.strings_after.lookup_bucket_count,
+        "RC-V2-06 String lookup rehashed");
+}
+
+void run_edge_scaling_matrix() {
+
+    for (const auto count :
+         std::array<std::size_t, 2>{
+             8192,
+             32768}) {
+        graph_manager manager;
+
+        require(
+            manager.initialize().ok(),
+            "RC-V2-06 manager initialization failed");
+
+        const auto baseline =
+            build_edge_scaling_baseline(
+                manager,
+                count);
+
+        for (const auto& region :
+             baseline.regions) {
+            const auto value =
+                edge_scaling_case(
+                    manager,
+                    count,
+                    region);
+
+            require_edge_scaling_gates(
+                value,
+                region.fanin);
+
+            print_row(value);
+        }
+    }
+}
+
 void print_header() {
     std::cout
         << "types,scenario,total_ms,setup_ms,prepare_ms,publish_ms,"
@@ -2171,6 +2576,16 @@ void run_matrix(std::size_t count) {
 
 int main(int argc, char** argv) {
     if (argc == 2 &&
+        std::string_view{argv[1]} == "--rc-v2-06") {
+        print_header();
+        run_edge_scaling_matrix();
+
+        std::cout
+            << "RC-V2-06 DEPENDENCY EDGE SCALING PASS\n";
+        return 0;
+    }
+
+    if (argc == 2 &&
         std::string_view{argv[1]} == "--rc-v2-05") {
         print_header();
         run_multi_root_dependency_matrix();
@@ -2225,8 +2640,9 @@ int main(int argc, char** argv) {
     run_locality_matrix();
     run_dependency_scaling_matrix();
     run_multi_root_dependency_matrix();
+    run_edge_scaling_matrix();
 
     std::cout
-        << "RC-V2-05 MULTI-ROOT DEPENDENCY DEDUP PASS\n";
+        << "RC-V2-06 DEPENDENCY EDGE SCALING PASS\n";
     return 0;
 }
