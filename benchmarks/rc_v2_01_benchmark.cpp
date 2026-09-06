@@ -198,6 +198,39 @@ void replace_with_opaque_enum(
         "Enum materialization failed");
 }
 
+void replace_with_opaque_enum_scoped(
+    graph_build_transaction& transaction,
+    source_id source,
+    string_id name,
+    bool scoped) {
+
+    graph_update::source_replacement replacement;
+
+    require(
+        transaction.graph_state().replace_source(
+            source,
+            replacement).ok(),
+        "Scoped enum Source replacement failed");
+
+    const enum_build_data data{
+        enum_definition_state::opaque,
+        scoped,
+        builtin_type::integer,
+        {}
+    };
+
+    stable_id entity;
+    type_handle type;
+
+    require(
+        replacement.add_named_enum(
+            name,
+            data,
+            entity,
+            type).ok(),
+        "Scoped enum materialization failed");
+}
+
 void replace_empty(
     graph_build_transaction& transaction,
     source_id source) {
@@ -1070,6 +1103,345 @@ void run_dependency_scaling_matrix() {
     }
 }
 
+constexpr std::size_t multi_root_count = 256;
+constexpr std::size_t multi_root_shared_count = 256;
+constexpr std::size_t multi_root_first_shared = multi_root_count;
+constexpr std::size_t multi_root_total_graph_types =
+    multi_root_count + multi_root_shared_count;
+
+struct multi_root_baseline {
+    std::vector<source_id> sources;
+    std::vector<string_id> root_names;
+};
+
+const char* multi_root_scenario(
+    std::size_t roots) noexcept {
+
+    switch (roots) {
+    case 1:
+        return "multi_root_k1";
+    case 4:
+        return "multi_root_k4";
+    case 16:
+        return "multi_root_k16";
+    case 64:
+        return "multi_root_k64";
+    case 256:
+        return "multi_root_k256";
+    default:
+        return "multi_root_invalid";
+    }
+}
+
+void define_multi_root_hub(
+    graph_build_transaction& transaction,
+    source_id source,
+    std::string_view name) {
+
+    const auto prepared =
+        prepare_source(
+            transaction,
+            source,
+            name);
+
+    graph_update::source_replacement replacement;
+
+    require(
+        transaction.graph_state().replace_source(
+            prepared.source,
+            replacement).ok(),
+        "RC-V2-05 hub Source replacement failed");
+
+    stable_id entity;
+    type_handle type;
+
+    require(
+        replacement.add_named_type(
+            prepared.name,
+            aggregate_definition_state::defined,
+            entity,
+            type).ok(),
+        "RC-V2-05 hub aggregate creation failed");
+
+    std::vector<member_build> members;
+    members.reserve(multi_root_count);
+
+    for (std::size_t root = 0;
+         root < multi_root_count;
+         ++root) {
+        string_id dependency_name;
+
+        require(
+            transaction.strings().intern(
+                type_name(root),
+                dependency_name).ok(),
+            "RC-V2-05 hub dependency name failed");
+
+        string_id member_name;
+
+        require(
+            transaction.strings().intern(
+                "root_member_" +
+                    std::to_string(root),
+                member_name).ok(),
+            "RC-V2-05 hub member name failed");
+
+        members.push_back(
+            member_build{
+                member_name,
+                std::nullopt,
+                dependency_name,
+                0,
+                0
+            });
+    }
+
+    require(
+        replacement.define_members(
+            type,
+            members,
+            {}).ok(),
+        "RC-V2-05 hub member definition failed");
+}
+
+multi_root_baseline build_multi_root_baseline(
+    graph_manager& manager,
+    std::size_t count) {
+
+    require(
+        count >= multi_root_total_graph_types,
+        "RC-V2-05 N smaller than topology");
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::rebuild);
+
+    auto sources =
+        prepare_physical_sources(
+            transaction,
+            count);
+
+    require(
+        transaction.strings()
+            .reserve_new_strings(
+                count +
+                multi_root_count +
+                multi_root_shared_count)
+            .ok(),
+        "RC-V2-05 G0 String reserve failed");
+
+    std::vector<string_id> root_names;
+    root_names.resize(multi_root_count);
+
+    for (std::size_t root = 0;
+         root < multi_root_count;
+         ++root) {
+        require(
+            transaction.strings().intern(
+                type_name(root),
+                root_names[root]).ok(),
+            "RC-V2-05 root String interning failed");
+
+        replace_with_opaque_enum_scoped(
+            transaction,
+            sources[root],
+            root_names[root],
+            false);
+    }
+
+    define_multi_root_hub(
+        transaction,
+        sources[multi_root_first_shared],
+        type_name(multi_root_first_shared));
+
+    for (std::size_t index =
+             multi_root_first_shared + 1;
+         index < multi_root_total_graph_types;
+         ++index) {
+        define_empty_aggregate(
+            transaction,
+            sources[index],
+            type_name(index),
+            type_name(index - 1));
+    }
+
+    for (std::size_t index =
+             multi_root_total_graph_types;
+         index < count;
+         ++index) {
+        const auto prepared =
+            prepare_source(
+                transaction,
+                sources[index],
+                type_name(index));
+
+        replace_with_opaque_enum(
+            transaction,
+            prepared.source,
+            prepared.name);
+    }
+
+    require(
+        transaction.commit().ok(),
+        "RC-V2-05 G0 baseline failed");
+
+    require_g0_headroom(
+        manager,
+        count);
+
+    return {
+        std::move(sources),
+        std::move(root_names)
+    };
+}
+
+row multi_root_dependency_case(
+    graph_manager& manager,
+    std::size_t count,
+    std::size_t roots,
+    bool scoped,
+    const multi_root_baseline& baseline) {
+
+    require(
+        roots != 0 &&
+        roots <= multi_root_count,
+        "RC-V2-05 invalid root count");
+
+    const auto contribution_before =
+        access::contribution_storage(manager);
+    const auto strings_before =
+        access::string_storage(manager);
+    const auto started =
+        clock_type::now();
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::incremental);
+
+    for (std::size_t root = 0;
+         root < roots;
+         ++root) {
+        replace_with_opaque_enum_scoped(
+            transaction,
+            baseline.sources[root],
+            baseline.root_names[root],
+            scoped);
+    }
+
+    const auto setup_done =
+        clock_type::now();
+
+    return finish_row(
+        manager,
+        transaction,
+        count,
+        multi_root_scenario(roots),
+        started,
+        setup_done,
+        contribution_before,
+        strings_before);
+}
+
+void require_multi_root_dependency_gates(
+    const row& value,
+    std::size_t roots) {
+
+    const auto& graph =
+        value.graph;
+
+    require(
+        graph.changed_sources == roots,
+        "RC-V2-05 changed_sources != K");
+
+    require(
+        graph.changed_entities == roots,
+        "RC-V2-05 changed_entities != K");
+
+    require(
+        graph.changed_types == roots,
+        "RC-V2-05 changed_types != K");
+
+    require(
+        graph.validation_visited_types ==
+            roots + multi_root_shared_count,
+        "RC-V2-05 overlapping closure was not deduplicated");
+
+    require(
+        graph.validation_dependency_edges ==
+            roots + multi_root_shared_count - 1,
+        "RC-V2-05 dependency edges were revisited");
+
+    require(
+        graph.validation_visited_type_refs ==
+            multi_root_count +
+            multi_root_shared_count - 1,
+        "RC-V2-05 TypeRefs were revisited");
+
+    require(
+        !rc_v2_01a::graph_reallocated(graph),
+        "RC-V2-05 committed Graph storage reallocated");
+
+    require(
+        !value.contribution_reallocated,
+        "RC-V2-05 SourceContribution storage reallocated");
+
+    require(
+        value.strings_before.records_data ==
+            value.strings_after.records_data,
+        "RC-V2-05 String records relocated");
+
+    require(
+        value.strings_before.lookup_bucket_count ==
+            value.strings_after.lookup_bucket_count,
+        "RC-V2-05 String lookup rehashed");
+}
+
+void run_multi_root_dependency_matrix() {
+
+    for (const auto count :
+         std::array<std::size_t, 2>{
+             8192,
+             32768}) {
+        graph_manager manager;
+
+        require(
+            manager.initialize().ok(),
+            "RC-V2-05 manager initialization failed");
+
+        const auto baseline =
+            build_multi_root_baseline(
+                manager,
+                count);
+
+        bool scoped = true;
+
+        // Descending K lets one baseline serve the whole matrix while every
+        // selected root changes semantic state in every case.
+        for (const auto roots :
+             std::array<std::size_t, 5>{
+                 256,
+                 64,
+                 16,
+                 4,
+                 1}) {
+            const auto value =
+                multi_root_dependency_case(
+                    manager,
+                    count,
+                    roots,
+                    scoped,
+                    baseline);
+
+            require_multi_root_dependency_gates(
+                value,
+                roots);
+
+            print_row(value);
+            scoped = !scoped;
+        }
+    }
+}
+
 void print_header() {
     std::cout
         << "types,scenario,total_ms,setup_ms,prepare_ms,publish_ms,"
@@ -1799,6 +2171,16 @@ void run_matrix(std::size_t count) {
 
 int main(int argc, char** argv) {
     if (argc == 2 &&
+        std::string_view{argv[1]} == "--rc-v2-05") {
+        print_header();
+        run_multi_root_dependency_matrix();
+
+        std::cout
+            << "RC-V2-05 MULTI-ROOT DEPENDENCY DEDUP PASS\n";
+        return 0;
+    }
+
+    if (argc == 2 &&
         std::string_view{argv[1]} == "--rc-v2-04") {
         print_header();
         run_dependency_scaling_matrix();
@@ -1842,8 +2224,9 @@ int main(int argc, char** argv) {
 
     run_locality_matrix();
     run_dependency_scaling_matrix();
+    run_multi_root_dependency_matrix();
 
     std::cout
-        << "RC-V2-04 DEPENDENCY CLOSURE SCALING PASS\n";
+        << "RC-V2-05 MULTI-ROOT DEPENDENCY DEDUP PASS\n";
     return 0;
 }
