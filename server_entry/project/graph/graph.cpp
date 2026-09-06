@@ -1887,19 +1887,87 @@ status graph_update::assign_type_impl(
 
         begin_phase();
 
-        TypeRef ignored;
         const auto result =
-            [&]() noexcept {
-                if constexpr (Detailed) {
-                    return get_or_create_named_type_ref_sampled(
-                        entity.record.type,
-                        ignored,
-                        *telemetry);
+            [&]() noexcept -> status {
+                if (!full_reconstruction) {
+                    TypeRef ignored;
+
+                    if constexpr (Detailed) {
+                        return get_or_create_named_type_ref_sampled(
+                            entity.record.type,
+                            ignored,
+                            *telemetry);
+                    }
+                    else {
+                        return get_or_create_named_type_ref(
+                            entity.record.type,
+                            ignored);
+                    }
                 }
-                else {
-                    return get_or_create_named_type_ref(
-                        entity.record.type,
-                        ignored);
+
+                if (!candidate.value) {
+                    return failure =
+                        {status_code::configuration_failed};
+                }
+
+                if (candidate.named_ref) {
+                    return {};
+                }
+
+                try {
+                    const auto raw =
+                        owner->canonical_types.size() +
+                        added_canonical_types.size();
+
+                    if (raw >
+                        (std::numeric_limits<std::uint32_t>::max)()) {
+                        return failure =
+                            {status_code::initialization_failed};
+                    }
+
+                    const TypeRef named_ref{
+                        static_cast<std::uint32_t>(raw)
+                    };
+
+                    graph::canonical_type_record record;
+                    record.kind = canonical_type_kind::named;
+                    record.named = type_handle{handle};
+
+                    if constexpr (Detailed) {
+                        const auto canonical_begin =
+                            std::chrono::steady_clock::now();
+
+                        added_canonical_types.push_back(record);
+
+                        telemetry->named_type_ref_canonical_append_ns +=
+                            graph_prepare_elapsed_ns(canonical_begin);
+
+                        const auto mapping_begin =
+                            std::chrono::steady_clock::now();
+
+                        added_named_type_refs.push_back({
+                            handle,
+                            named_ref
+                        });
+
+                        telemetry->named_type_ref_mapping_append_ns +=
+                            graph_prepare_elapsed_ns(mapping_begin);
+                    }
+                    else {
+                        added_canonical_types.push_back(record);
+
+                        added_named_type_refs.push_back({
+                            handle,
+                            named_ref
+                        });
+                    }
+
+                    candidate.named_ref = named_ref;
+                    return {};
+                }
+                catch (...) {
+                    return failure =
+                        {status_code::initialization_failed};
                 }
             }();
 
