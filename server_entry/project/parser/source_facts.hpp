@@ -149,6 +149,40 @@ public:
         return {};
     }
 
+    // Returns one Source-local spelling together with the hash prepared by the
+    // Parser worker. The hash is only a String Registry acceleration hint;
+    // canonical equality remains byte equality.
+    [[nodiscard]] status resolve_name_binding(
+        source_name_ref reference,
+        std::string_view& output,
+        std::uint64_t& hash) const noexcept {
+
+        hash = 0;
+
+        const auto result =
+            resolve_name(
+                reference,
+                output);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        if (reference.index >
+            name_hashes.size()) {
+            output = {};
+            return {
+                status_code::configuration_failed
+            };
+        }
+
+        hash =
+            name_hashes[
+                reference.index - 1];
+
+        return {};
+    }
+
     [[nodiscard]] std::size_t name_count() const noexcept {
         return stored_name_count;
     }
@@ -161,6 +195,7 @@ public:
         source = {};
         stored_name_count = 0;
         names.clear();
+        name_hashes.clear();
         enum_values.clear();
         enums.clear();
         modifiers.clear();
@@ -180,6 +215,7 @@ private:
 
     std::uint32_t stored_name_count = 0;
     std::vector<char> names;
+    std::vector<std::uint64_t> name_hashes;
 };
 
 } // namespace cw::server

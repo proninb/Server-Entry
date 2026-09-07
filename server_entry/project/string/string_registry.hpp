@@ -119,6 +119,13 @@ private:
     std::uint64_t generation = 0;
 };
 
+// One prehashed spelling admitted at the construction String Binding boundary.
+// hash is acceleration metadata only; equal bytes remain the identity test.
+struct prehashed_string_binding {
+    std::string_view value;
+    std::uint64_t hash = 0;
+};
+
 // Builds one isolated String Registry candidate. bind() is the only textual
 // identity boundary: it maps bytes to one canonical string_id. All later
 // Builder/Graph work must use that ID directly.
@@ -140,6 +147,13 @@ public:
         std::string_view value,
         string_id& result) noexcept;
 
+    // Admits one Source-local batch whose hashes were prepared by Parser
+    // workers. Input order is authoritative for allocation of new string_id
+    // values and therefore preserves the existing deterministic contract.
+    [[nodiscard]] status bind_prehashed(
+        std::span<const prehashed_string_binding> values,
+        std::span<string_id> results) noexcept;
+
     [[nodiscard]] std::optional<std::string_view> get(
         string_id id) const noexcept;
 
@@ -160,6 +174,12 @@ private:
 
     [[nodiscard]] status ensure_added_index(
         std::size_t required) noexcept;
+
+    [[nodiscard]] status bind_prehashed_one(
+        std::string_view value,
+        std::uint64_t hash,
+        string_id& result,
+        bool capacity_ready) noexcept;
 
     [[nodiscard]] status prepare_publish() noexcept;
 

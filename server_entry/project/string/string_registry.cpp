@@ -1,4 +1,5 @@
 #include "string_registry.hpp"
+#include "string_hash.hpp"
 
 #include <algorithm>
 #include <cassert>
@@ -63,21 +64,8 @@ std::size_t bucket_for(
 std::uint64_t string_registry::hash_value(
     std::string_view value) noexcept {
 
-    std::uint64_t hash =
-        1469598103934665603ull;
-
-    for (const auto byte : value) {
-        hash ^=
-            static_cast<std::uint8_t>(byte);
-
-        hash *=
-            1099511628211ull;
-    }
-
-    hash ^= hash >> 32;
-    hash *= 0xd6e8feb86659fd93ull;
-    hash ^= hash >> 32;
-    return hash;
+    return string_binding_hash(
+        value);
 }
 
 status string_registry::initialize() noexcept {
@@ -610,6 +598,97 @@ status string_registry_update::bind(
     std::string_view value,
     string_id& result) noexcept {
 
+    return bind_prehashed_one(
+        value,
+        string_binding_hash(value),
+        result,
+        false);
+}
+
+status string_registry_update::bind_prehashed(
+    std::span<const prehashed_string_binding> values,
+    std::span<string_id> results) noexcept {
+
+    if (!failure.ok()) {
+        return failure;
+    }
+
+    if (owner == nullptr ||
+        committed ||
+        prepared ||
+        owner->generation !=
+            base_generation) {
+        return {
+            status_code::invalid_state
+        };
+    }
+
+    if (values.size() !=
+        results.size()) {
+        return {
+            status_code::configuration_failed
+        };
+    }
+
+    std::fill(
+        results.begin(),
+        results.end(),
+        string_id{});
+
+    if (values.empty()) {
+        return {};
+    }
+
+    if (values.size() >
+        (std::numeric_limits<std::size_t>::max)() -
+            added_records.size()) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+
+    const auto ensure_result =
+        ensure_added_index(
+            added_records.size() +
+            values.size());
+
+    if (!ensure_result.ok()) {
+        return failure =
+            ensure_result;
+    }
+
+    for (std::size_t index = 0;
+         index < values.size();
+         ++index) {
+        const auto& value =
+            values[index];
+
+        assert(
+            value.hash ==
+            string_binding_hash(
+                value.value));
+
+        const auto result =
+            bind_prehashed_one(
+                value.value,
+                value.hash,
+                results[index],
+                true);
+
+        if (!result.ok()) {
+            return result;
+        }
+    }
+
+    return {};
+}
+
+status string_registry_update::bind_prehashed_one(
+    std::string_view value,
+    std::uint64_t hash,
+    string_id& result,
+    bool capacity_ready) noexcept {
+
     result = {};
 
     if (!failure.ok()) {
@@ -633,12 +712,8 @@ status string_registry_update::bind(
         };
     }
 
-    const auto hash =
-        string_registry::hash_value(
-            value);
-
-    // Historical committed identity is checked only at the String Binding
-    // boundary. Fresh G0 has an empty owner index and skips this path.
+    // Historical identity always wins. The supplied hash only avoids repeating
+    // work already performed by a Source-local Parser worker.
     if (const auto existing =
             owner->find_value(
                 value,
@@ -648,14 +723,22 @@ status string_registry_update::bind(
         return {};
     }
 
-    const auto ensure_result =
-        ensure_added_index(
-            added_records.size() +
-            1);
+    if (!capacity_ready) {
+        const auto ensure_result =
+            ensure_added_index(
+                added_records.size() +
+                1);
 
-    if (!ensure_result.ok()) {
-        return failure =
-            ensure_result;
+        if (!ensure_result.ok()) {
+            return failure =
+                ensure_result;
+        }
+    }
+
+    if (added_index.empty()) {
+        return failure = {
+            status_code::invalid_state
+        };
     }
 
     const auto mask =

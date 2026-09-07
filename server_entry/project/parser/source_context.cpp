@@ -1,5 +1,7 @@
 #include "source_context.hpp"
 
+#include "../string/string_hash.hpp"
+
 #include <limits>
 
 namespace cw::server {
@@ -120,9 +122,15 @@ status source_context::store_name(
         return {status_code::initialization_failed};
     }
 
+    const auto original_size =
+        names.size();
+
+    const auto hash =
+        string_binding_hash(value);
+
     try {
         result = {
-            static_cast<std::uint32_t>(names.size()),
+            static_cast<std::uint32_t>(original_size),
             static_cast<std::uint32_t>(value.size()),
             stored_name_count + 1
         };
@@ -131,6 +139,16 @@ status source_context::store_name(
             names.end(),
             value.begin(),
             value.end());
+
+        try {
+            name_hashes.push_back(
+                hash);
+        }
+        catch (...) {
+            names.resize(
+                original_size);
+            throw;
+        }
 
         ++stored_name_count;
         return {};
@@ -201,6 +219,22 @@ status source_context::store_qualified_name(
             names.end(),
             local.begin(),
             local.end());
+
+        const std::string_view canonical{
+            names.data() + original_size,
+            count
+        };
+
+        try {
+            name_hashes.push_back(
+                string_binding_hash(
+                    canonical));
+        }
+        catch (...) {
+            names.resize(
+                original_size);
+            throw;
+        }
 
         ++stored_name_count;
         return {};
@@ -717,12 +751,21 @@ status source_context::release_facts(
         return {status_code::configuration_failed};
     }
 
+    if (name_hashes.size() !=
+        stored_name_count) {
+        return {
+            status_code::initialization_failed
+        };
+    }
+
     output.reset();
 
     try {
         output.source = source;
         output.stored_name_count = stored_name_count;
         output.names = std::move(names);
+        output.name_hashes =
+            std::move(name_hashes);
         output.enum_values = std::move(enum_values);
         output.enums = std::move(enums);
         output.modifiers = std::move(type_modifiers);
@@ -803,6 +846,7 @@ std::span<const source_type_modifier> source_context::modifiers(
 
 void source_context::reset() noexcept {
     names.clear();
+    name_hashes.clear();
     stored_name_count = 0;
     tokens.clear();
     type_declarations.clear();

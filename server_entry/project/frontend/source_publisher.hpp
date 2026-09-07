@@ -2,6 +2,7 @@
 
 #include "../builder/project_builder.hpp"
 #include "../builder/source_build_entry.hpp"
+#include "../string/string_registry.hpp"
 #include "../../diagnostics/diagnostic_buffer.hpp"
 #include "../../operation.hpp"
 #include "../../string_id.hpp"
@@ -39,6 +40,10 @@ struct source_publish_telemetry {
 // no canonical identity is written back into Parser-owned Source facts.
 struct source_publish_scratch {
     std::vector<string_id> name_bindings;
+    std::vector<std::uint8_t> name_binding_seen;
+    std::vector<prehashed_string_binding> string_bindings;
+    std::vector<std::uint32_t> string_binding_slots;
+    std::vector<string_id> string_binding_results;
     std::vector<enum_value_fact> enum_values;
     std::vector<aggregate_source_fact::member_fact> members;
     std::vector<canonical_type_modifier> modifiers;

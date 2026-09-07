@@ -86,6 +86,7 @@ private:
         std::size_t required) noexcept;
 
     std::vector<char> names;
+    std::vector<std::uint64_t> name_hashes;
     std::uint32_t stored_name_count = 0;
 
     // Reference-demand index: declaration-only Sources never build it.

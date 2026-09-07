@@ -55,85 +55,112 @@ string_id bound_name(
         : string_id{};
 }
 
-status bind_name(
-    graph_build_transaction& transaction,
+status queue_name_binding(
     const source_build_entry& entry,
-    std::vector<string_id>& bindings,
+    source_publish_scratch& scratch,
     source_name_ref reference) noexcept {
 
     if (!reference ||
-        reference.index > bindings.size()) {
-        return {status_code::configuration_failed};
+        reference.index >
+            scratch.name_bindings.size()) {
+        return {
+            status_code::configuration_failed
+        };
     }
 
-    auto& canonical =
-        bindings[reference.index - 1];
+    const auto slot =
+        static_cast<std::size_t>(
+            reference.index - 1);
 
-    if (canonical) {
+    if (scratch.name_binding_seen[slot] != 0) {
         return {};
     }
 
     std::string_view bytes;
+    std::uint64_t hash = 0;
 
-    auto result =
-        entry.resolve_name(
+    const auto resolved =
+        entry.resolve_name_binding(
             reference,
-            bytes);
-
-    if (!result.ok()) {
-        return result;
-    }
-
-    result =
-        transaction.strings().bind(
             bytes,
-            canonical);
+            hash);
 
-    if (!result.ok() ||
-        !canonical) {
-        canonical = {};
-
-        return result.ok()
-            ? status{status_code::configuration_failed}
-            : result;
+    if (!resolved.ok()) {
+        return resolved;
     }
 
-    return {};
+    try {
+        scratch.string_bindings.push_back({
+            bytes,
+            hash
+        });
+
+        try {
+            scratch.string_binding_slots.push_back(
+                static_cast<std::uint32_t>(
+                    slot));
+        }
+        catch (...) {
+            scratch.string_bindings.pop_back();
+            throw;
+        }
+
+        scratch.name_binding_seen[slot] = 1;
+        return {};
+    }
+    catch (...) {
+        return {
+            status_code::initialization_failed
+        };
+    }
 }
 
-// Validates one immutable Parser product and performs the complete lexical
-// spelling -> canonical string_id boundary before any Graph mutation.
+// Validates one immutable Parser product, gathers the first-use Source-local
+// spelling order, then performs one prehashed String Registry admission batch.
 status prepare_source_bindings(
     graph_build_transaction& transaction,
     const source_build_entry& entry,
-    std::vector<string_id>& bindings) noexcept {
+    source_publish_scratch& scratch) noexcept {
 
     try {
-        bindings.clear();
-        bindings.resize(
-            entry.name_count());
+        scratch.name_bindings.assign(
+            entry.name_count(),
+            string_id{});
+
+        scratch.name_binding_seen.assign(
+            entry.name_count(),
+            std::uint8_t{0});
+
+        scratch.string_bindings.clear();
+        scratch.string_binding_slots.clear();
+        scratch.string_binding_results.clear();
     }
     catch (...) {
-        return {status_code::initialization_failed};
+        return {
+            status_code::initialization_failed
+        };
     }
 
     for (const auto& fact : entry.enums) {
         if (fact.anonymous ==
-                static_cast<bool>(fact.canonical_name) ||
+                static_cast<bool>(
+                    fact.canonical_name) ||
             (fact.anonymous &&
              static_cast<bool>(fact.entity)) ||
             (!fact.anonymous &&
              (!fact.entity ||
-              fact.entity.source != entry.source))) {
-            return {status_code::configuration_failed};
+              fact.entity.source !=
+                  entry.source))) {
+            return {
+                status_code::configuration_failed
+            };
         }
 
         if (!fact.anonymous) {
             const auto result =
-                bind_name(
-                    transaction,
+                queue_name_binding(
                     entry,
-                    bindings,
+                    scratch,
                     fact.canonical_name);
 
             if (!result.ok()) {
@@ -146,7 +173,9 @@ status prepare_source_bindings(
             fact.enumerator_count >
                 entry.enum_values.size() -
                     fact.enumerator_offset) {
-            return {status_code::configuration_failed};
+            return {
+                status_code::configuration_failed
+            };
         }
 
         for (std::uint32_t index = 0;
@@ -154,13 +183,13 @@ status prepare_source_bindings(
              ++index) {
             const auto& value =
                 entry.enum_values[
-                    fact.enumerator_offset + index];
+                    fact.enumerator_offset +
+                    index];
 
             const auto result =
-                bind_name(
-                    transaction,
+                queue_name_binding(
                     entry,
-                    bindings,
+                    scratch,
                     value.name);
 
             if (!result.ok()) {
@@ -171,15 +200,17 @@ status prepare_source_bindings(
 
     for (const auto& fact : entry.aggregates) {
         if (!fact.entity ||
-            fact.entity.source != entry.source) {
-            return {status_code::configuration_failed};
+            fact.entity.source !=
+                entry.source) {
+            return {
+                status_code::configuration_failed
+            };
         }
 
         auto result =
-            bind_name(
-                transaction,
+            queue_name_binding(
                 entry,
-                bindings,
+                scratch,
                 fact.canonical_name);
 
         if (!result.ok()) {
@@ -191,7 +222,9 @@ status prepare_source_bindings(
             fact.member_count >
                 entry.members.size() -
                     fact.member_offset) {
-            return {status_code::configuration_failed};
+            return {
+                status_code::configuration_failed
+            };
         }
 
         for (std::uint32_t index = 0;
@@ -206,14 +239,15 @@ status prepare_source_bindings(
                  member.type_entity) ||
                 (!member.builtin &&
                  !member.type_entity)) {
-                return {status_code::configuration_failed};
+                return {
+                    status_code::configuration_failed
+                };
             }
 
             result =
-                bind_name(
-                    transaction,
+                queue_name_binding(
                     entry,
-                    bindings,
+                    scratch,
                     member.name);
 
             if (!result.ok()) {
@@ -225,11 +259,14 @@ status prepare_source_bindings(
                 member.modifier_count >
                     entry.modifiers.size() -
                         member.modifier_offset) {
-                return {status_code::configuration_failed};
+                return {
+                    status_code::configuration_failed
+                };
             }
 
             for (std::uint32_t modifier_index = 0;
-                 modifier_index < member.modifier_count;
+                 modifier_index <
+                    member.modifier_count;
                  ++modifier_index) {
                 switch (entry.modifiers[
                             member.modifier_offset +
@@ -240,10 +277,60 @@ status prepare_source_bindings(
                 case source_type_modifier_kind::rvalue_reference:
                     break;
                 default:
-                    return {status_code::configuration_failed};
+                    return {
+                        status_code::configuration_failed
+                    };
                 }
             }
         }
+    }
+
+    try {
+        scratch.string_binding_results.resize(
+            scratch.string_bindings.size());
+    }
+    catch (...) {
+        return {
+            status_code::initialization_failed
+        };
+    }
+
+    auto result =
+        transaction.strings().bind_prehashed(
+            scratch.string_bindings,
+            scratch.string_binding_results);
+
+    if (!result.ok()) {
+        return result;
+    }
+
+    if (scratch.string_binding_slots.size() !=
+        scratch.string_binding_results.size()) {
+        return {
+            status_code::initialization_failed
+        };
+    }
+
+    for (std::size_t index = 0;
+         index <
+            scratch.string_binding_results.size();
+         ++index) {
+        const auto slot =
+            scratch.string_binding_slots[index];
+
+        const auto canonical =
+            scratch.string_binding_results[index];
+
+        if (slot >=
+                scratch.name_bindings.size() ||
+            !canonical) {
+            return {
+                status_code::initialization_failed
+            };
+        }
+
+        scratch.name_bindings[slot] =
+            canonical;
     }
 
     return {};
@@ -308,7 +395,7 @@ status publish_source_entry_impl(
             prepare_source_bindings(
                 transaction,
                 entry,
-                scratch.name_bindings);
+                scratch);
 
         if (!binding_result.ok()) {
             return
