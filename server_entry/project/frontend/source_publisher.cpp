@@ -137,11 +137,18 @@ status capture_source_facts(
         output.aggregates.reserve(batch.aggregates.size());
 
         for (const auto& fact : batch.enums) {
-            if (fact.anonymous == static_cast<bool>(fact.canonical_name)) {
+            if (fact.anonymous ==
+                    static_cast<bool>(fact.canonical_name) ||
+                (fact.anonymous &&
+                 static_cast<bool>(fact.entity)) ||
+                (!fact.anonymous &&
+                 (!fact.entity ||
+                  fact.entity.source != batch.source))) {
                 return {status_code::configuration_failed};
             }
 
             source_build_enum captured;
+            captured.source_entity = fact.entity;
             captured.anonymous = fact.anonymous;
             captured.scoped = fact.scoped;
             captured.definition_state = fact.definition_state;
@@ -192,7 +199,13 @@ status capture_source_facts(
         }
 
         for (const auto& fact : batch.aggregates) {
+            if (!fact.entity ||
+                fact.entity.source != batch.source) {
+                return {status_code::configuration_failed};
+            }
+
             source_build_aggregate captured;
+            captured.source_entity = fact.entity;
             captured.definition_state = fact.definition_state;
             captured.declaration_range = fact.declaration_range;
             captured.name_range = fact.name_range;
@@ -235,17 +248,14 @@ status capture_source_facts(
                 }
 
                 if (!member.builtin) {
-                    result = copy_name(
-                        *batch.context,
-                        member.type_name,
-                        output,
-                        captured_member.user_type_name);
-
-                    if (!result.ok() || !captured_member.user_type_name) {
-                        return result.ok()
-                            ? status{status_code::configuration_failed}
-                            : result;
+                    if (!member.type_entity) {
+                        return {
+                            status_code::configuration_failed
+                        };
                     }
+
+                    captured_member.user_type_entity =
+                        member.type_entity;
                 }
 
                 const auto source_modifiers = batch.context->modifiers(member);
@@ -529,7 +539,8 @@ status publish_source_entry_impl(
                 fact.scoped,
                 fact.definition_state,
                 fact.explicit_underlying,
-                enum_values
+                enum_values,
+                fact.source_entity
             };
 
             {
@@ -589,14 +600,9 @@ status publish_source_entry_impl(
 
                 string_id user_type_name;
 
-                if (!member.builtin) {
-                    user_type_name =
-                        entry.bound_name(
-                            member.user_type_name);
-
-                    if (!user_type_name) {
-                        return malformed();
-                    }
+                if (!member.builtin &&
+                    !member.user_type_entity) {
+                    return malformed();
                 }
 
                 if (member.modifier_offset > entry.modifiers.size() ||
@@ -620,7 +626,8 @@ status publish_source_entry_impl(
                     member.builtin,
                     user_type_name,
                     modifier_offset,
-                    member.modifier_count
+                    member.modifier_count,
+                    member.user_type_entity
                 });
             }
 
@@ -636,7 +643,8 @@ status publish_source_entry_impl(
                         canonical_name,
                         fact.definition_state,
                         members,
-                        modifiers
+                        modifiers,
+                        fact.source_entity
                     },
                     scratch.builder);
             }

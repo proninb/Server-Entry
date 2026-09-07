@@ -7,8 +7,8 @@
 #include <limits>
 #include <optional>
 #include <string>
-#include <unordered_map>
-#include <unordered_set>
+
+
 
 namespace cw::server {
 namespace {
@@ -122,100 +122,92 @@ private:
     status store_qualified(
         std::string_view local,
         source_name_ref& output) noexcept {
-        try {
-            std::string qualified;
 
-            if (!scope.empty()) {
-                qualified = scope;
-                qualified += "::";
-            }
-
-            qualified += local;
-            return context.store_name(qualified, output);
-        }
-        catch (...) {
-            return {status_code::initialization_failed};
-        }
+        return context.store_qualified_name(
+            scope,
+            local,
+            output);
     }
 
-    [[nodiscard]] std::string qualified_name(
-        std::string_view local) const {
-        if (scope.empty()) {
-            return std::string{local};
-        }
-
-        std::string qualified = scope;
-        qualified += "::";
-        qualified += local;
-        return qualified;
-    }
-
-    status register_local_type(std::string_view local) noexcept {
-        try {
-            local_types.insert(qualified_name(local));
-            return {};
-        }
-        catch (...) {
-            return {status_code::initialization_failed};
-        }
-    }
-
-    bool lookup_type(
+    status resolve_type(
         std::string_view name,
         std::uint32_t source_offset,
-        std::string& canonical) const noexcept {
+        source_entity_ref& entity,
+        source_name_ref& canonical_name) noexcept {
 
-        canonical.clear();
-        auto current_scope = std::string_view{scope};
+        entity = {};
+        canonical_name = {};
+
+        auto current_scope =
+            std::string_view{scope};
 
         for (;;) {
-            try {
-                std::string candidate;
+            auto result =
+                context.find_type(
+                    current_scope,
+                    name,
+                    entity,
+                    canonical_name);
 
-                if (!current_scope.empty()) {
-                    candidate.assign(current_scope);
-                    candidate += "::";
-                }
-
-                candidate += name;
-
-                if (local_types.contains(candidate)) {
-                    canonical = std::move(candidate);
-                    return true;
-                }
+            if (result.ok()) {
+                return {};
             }
-            catch (...) {
-                return false;
+
+            if (result.code ==
+                status_code::initialization_failed) {
+                return result;
             }
 
             std::string_view imported;
+            source_entity_ref imported_entity;
 
-            if (environment.find_type_exact(
+            result =
+                environment.find_type_exact(
                     current_scope,
                     name,
                     source_offset,
-                    imported).ok()) {
-                try {
-                    canonical.assign(imported);
-                    return true;
+                    imported_entity,
+                    imported);
+
+            if (result.ok()) {
+                if (!imported_entity ||
+                    imported.empty()) {
+                    return {
+                        status_code::configuration_failed
+                    };
                 }
-                catch (...) {
-                    return false;
+
+                result =
+                    context.store_name(
+                        imported,
+                        canonical_name);
+
+                if (!result.ok()) {
+                    return result;
                 }
+
+                entity = imported_entity;
+                return {};
             }
 
             if (current_scope.empty()) {
                 break;
             }
 
-            const auto parent = current_scope.rfind("::");
+            const auto parent =
+                current_scope.rfind("::");
+
             current_scope =
                 parent == std::string_view::npos
                     ? std::string_view{}
-                    : current_scope.substr(0, parent);
+                    : current_scope.substr(
+                        0,
+                        parent);
         }
 
-        return false;
+        return {
+            status_code::configuration_failed
+        };
     }
 
     status parse_underlying(
@@ -364,14 +356,48 @@ private:
         return {};
     }
 
+    bool find_current_enum_constant(
+        std::string_view name,
+        integral_constant& output) const noexcept {
+
+        if (name.empty() ||
+            current_enum_value_begin >
+                context.enum_values.size()) {
+            return false;
+        }
+
+        for (std::size_t index =
+                 context.enum_values.size();
+             index > current_enum_value_begin;
+             --index) {
+            const auto& value =
+                context.enum_values[index - 1];
+
+            std::string_view stored;
+
+            if (!context.resolve_name(
+                    value.name,
+                    stored).ok()) {
+                return false;
+            }
+
+            if (stored == name) {
+                output = value.value;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     bool lookup_constant(
         std::string_view name,
         std::uint32_t source_offset,
         integral_constant& output) const noexcept {
-        const auto local = local_constants.find(name);
 
-        if (local != local_constants.end()) {
-            output = local->second;
+        if (find_current_enum_constant(
+                name,
+                output)) {
             return true;
         }
 
@@ -581,7 +607,12 @@ private:
                 return result;
             }
 
-            result = register_local_type(text(name_token));
+            result =
+                context.declare_type(
+                    source.source,
+                    fact.canonical_name,
+                    fact.name_range,
+                    fact.entity);
 
             if (!result.ok()) {
                 return result;
@@ -621,8 +652,10 @@ private:
                 peek().length);
         }
 
-        // Enumerator names are local to the enum currently being parsed.
-        local_constants.clear();
+        // Enumerator expression lookup is a dense scan of this enum only.
+        // Source-scope uniqueness is maintained separately by source_context.
+        current_enum_value_begin =
+            fact.enumerator_offset;
 
         integral_constant next{
             builtin_type::long_long_integer,
@@ -640,7 +673,11 @@ private:
             const auto name = peek();
             ++position;
 
-            if (local_constants.contains(text(name))) {
+            integral_constant duplicate_value;
+
+            if (find_current_enum_constant(
+                    text(name),
+                    duplicate_value)) {
                 return fail(
                     diagnostics::parser_duplicate_enumerator,
                     name.offset,
@@ -678,7 +715,17 @@ private:
                 };
             }
 
-            local_constants.emplace(text(name), value);
+            result =
+                context.declare_constant(
+                    fact.scoped
+                        ? fact.canonical_name
+                        : fact.scope_name,
+                    stored_name,
+                    value);
+
+            if (!result.ok()) {
+                return result;
+            }
 
             context.enum_values.push_back({
                 stored_name,
@@ -799,7 +846,12 @@ private:
             return result;
         }
 
-        result = register_local_type(text(name));
+        result =
+            context.declare_type(
+                source.source,
+                fact.canonical_name,
+                fact.name_range,
+                fact.entity);
 
         if (!result.ok()) {
             return result;
@@ -859,25 +911,30 @@ private:
                     member.builtin = builtin_type::integer;
                 }
                 else {
-                    std::string canonical;
-
-                    if (!lookup_type(
+                    result =
+                        resolve_type(
                             text(member_start),
                             member_start.offset,
-                            canonical)) {
+                            member.type_entity,
+                            member.type_name);
+
+                    if (!result.ok()) {
+                        if (result.code ==
+                            status_code::initialization_failed) {
+                            return result;
+                        }
+
                         return fail(
                             diagnostics::parser_invalid_source,
                             member_start.offset,
                             member_start.length);
                     }
 
-                    result =
-                        context.store_name(
-                            canonical,
-                            member.type_name);
-
-                    if (!result.ok()) {
-                        return result;
+                    if (!member.type_entity ||
+                        !member.type_name) {
+                        return {
+                            status_code::configuration_failed
+                        };
                     }
                 }
 
@@ -1067,8 +1124,7 @@ private:
     std::span<const parser_token> tokens;
     std::size_t position = 0;
     std::string scope;
-    std::unordered_map<std::string_view, integral_constant> local_constants;
-    std::unordered_set<std::string> local_types;
+    std::uint32_t current_enum_value_begin = 0;
 };
 
 void emit_initialization_failure_if_needed(

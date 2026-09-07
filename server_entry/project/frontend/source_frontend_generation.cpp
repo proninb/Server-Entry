@@ -23,128 +23,7 @@
 namespace cw::server {
 namespace {
 
-// Builds the immutable Parser-visible interface exported by one parsed Source.
-// All string_views supplied to initialize() refer to source_context storage only
-// for the duration of this function; source_environment_storage copies them.
-status build_interface(
-    const source_context& context,
-    source_environment_storage& output,
-    std::span<const source_environment_storage* const> imports) noexcept {
 
-    try {
-        std::vector<source_constant_binding> constants;
-        std::vector<source_type_binding> types;
-
-        for (const auto& fact : context.enums) {
-            std::string_view scope;
-
-            if (fact.scope_name &&
-                !context.resolve_name(
-                    fact.scope_name,
-                    scope).ok()) {
-                return {
-                    status_code::configuration_failed
-                };
-            }
-
-            std::string_view canonical;
-
-            if (!fact.anonymous) {
-                if (!context.resolve_name(
-                        fact.canonical_name,
-                        canonical).ok()) {
-                    return {
-                        status_code::configuration_failed
-                    };
-                }
-
-                const auto separator =
-                    canonical.rfind("::");
-
-                const auto local =
-                    separator == std::string_view::npos
-                        ? canonical
-                        : canonical.substr(separator + 2);
-
-                types.push_back({
-                    scope,
-                    local,
-                    canonical
-                });
-            }
-
-            const auto value_scope =
-                fact.scoped
-                    ? canonical
-                    : scope;
-
-            for (const auto& value :
-                 context.enumerators(fact)) {
-                std::string_view name;
-
-                if (!context.resolve_name(
-                        value.name,
-                        name).ok()) {
-                    return {
-                        status_code::configuration_failed
-                    };
-                }
-
-                constants.push_back({
-                    value_scope,
-                    name,
-                    value.value
-                });
-            }
-        }
-
-        for (const auto& fact : context.aggregates) {
-            std::string_view scope;
-            std::string_view canonical;
-
-            if (fact.scope_name &&
-                !context.resolve_name(
-                    fact.scope_name,
-                    scope).ok()) {
-                return {
-                    status_code::configuration_failed
-                };
-            }
-
-            if (!context.resolve_name(
-                    fact.canonical_name,
-                    canonical).ok()) {
-                return {
-                    status_code::configuration_failed
-                };
-            }
-
-            const auto separator =
-                canonical.rfind("::");
-
-            const auto local =
-                separator == std::string_view::npos
-                    ? canonical
-                    : canonical.substr(separator + 2);
-
-            types.push_back({
-                scope,
-                local,
-                canonical
-            });
-        }
-
-        return output.initialize(
-            constants,
-            types,
-            imports);
-    }
-    catch (...) {
-        return {
-            status_code::initialization_failed
-        };
-    }
-}
 
 std::uint64_t g0_elapsed_ns(
     std::chrono::steady_clock::time_point begin,
@@ -813,12 +692,7 @@ status source_frontend_generation::parse_and_capture_independent_g0(
             return result;
         }
 
-        const std::vector<source_environment_import>
-            visible_imports;
-
-        const source_environment environment{
-            visible_imports
-        };
+        const source_environment environment;
 
         result =
             backend->parse(
@@ -833,23 +707,7 @@ status source_frontend_generation::parse_and_capture_independent_g0(
             return result;
         }
 
-        auto published_interface =
-            std::make_unique<
-                source_environment_storage>();
 
-        const std::vector<
-            const source_environment_storage*>
-                dependency_interfaces;
-
-        result =
-            build_interface(
-                context,
-                *published_interface,
-                dependency_interfaces);
-
-        if (!result.ok()) {
-            return result;
-        }
 
         auto build_entry =
             std::make_unique<
@@ -873,8 +731,7 @@ status source_frontend_generation::parse_and_capture_independent_g0(
 
         // This source_state belongs exclusively to the current static worker
         // partition. No shared queue/dependency counter needs synchronization.
-        state.interface =
-            std::move(published_interface);
+
 
         state.build_entry =
             std::move(build_entry);
@@ -913,6 +770,7 @@ status source_frontend_generation::parse_and_capture(
         std::span<const parser_token> tokens;
         std::vector<const source_environment_storage*> dependency_interfaces;
         std::vector<source_environment_import> visible_imports;
+        bool export_required = false;
 
         {
             std::lock_guard lock{mutex};
@@ -933,8 +791,13 @@ status source_frontend_generation::parse_and_capture(
             }
 
             tokens = state->tokens;
-            dependency_interfaces.reserve(
-                state->dependencies.size());
+            export_required =
+                !state->dependents.empty();
+
+            if (export_required) {
+                dependency_interfaces.reserve(
+                    state->dependencies.size());
+            }
 
             for (const auto dependency :
                  state->dependencies) {
@@ -954,7 +817,10 @@ status source_frontend_generation::parse_and_capture(
                     return {status_code::invalid_state};
                 }
 
-                dependency_interfaces.push_back(dependency_interface);
+                if (export_required) {
+                    dependency_interfaces.push_back(
+                        dependency_interface);
+                }
             }
 
             visible_imports.reserve(
@@ -1001,18 +867,25 @@ status source_frontend_generation::parse_and_capture(
             return result;
         }
 
-        auto published_interface =
-            std::make_unique<source_environment_storage>();
+        std::unique_ptr<source_environment_storage>
+            published_interface;
 
-        result = build_interface(
-            context,
-            *published_interface,
-            dependency_interfaces);
+        if (export_required) {
+            published_interface =
+                std::make_unique<
+                    source_environment_storage>();
 
-        if (!result.ok()) {
-            std::lock_guard lock{mutex};
-            fail_locked(result);
-            return result;
+            result =
+                published_interface->initialize(
+                    source,
+                    context,
+                    dependency_interfaces);
+
+            if (!result.ok()) {
+                std::lock_guard lock{mutex};
+                fail_locked(result);
+                return result;
+            }
         }
 
         auto build_entry = std::make_unique<source_build_entry>();

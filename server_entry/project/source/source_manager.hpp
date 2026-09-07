@@ -59,6 +59,10 @@ struct source_observation {
     std::uint64_t write_time_ticks = 0;
     std::uintmax_t size = 0;
 
+    // Live-only metadata witness. Checkpoint v1 leaves this zero, forcing one
+    // safe read/hash after checkpoint load before the fast path can resume.
+    std::uint64_t change_time_ticks = 0;
+
     friend bool operator==(
         const source_observation&,
         const source_observation&) noexcept = default;

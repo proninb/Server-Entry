@@ -59,8 +59,14 @@ private:
 
 bool observe(HANDLE handle, file_snapshot_observation& output) noexcept {
     BY_HANDLE_FILE_INFORMATION information{};
+    FILE_BASIC_INFO basic{};
 
     if (!GetFileInformationByHandle(handle, &information) ||
+        !GetFileInformationByHandleEx(
+            handle,
+            FileBasicInfo,
+            &basic,
+            sizeof(basic)) ||
         (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) != 0) {
         return false;
     }
@@ -71,6 +77,9 @@ bool observe(HANDLE handle, file_snapshot_observation& output) noexcept {
     output.size =
         (static_cast<std::uint64_t>(information.nFileSizeHigh) << 32) |
         information.nFileSizeLow;
+    output.change_time_ticks =
+        static_cast<std::uint64_t>(
+            basic.ChangeTime.QuadPart);
 
     return true;
 }
@@ -164,34 +173,61 @@ bool observe(int descriptor, file_snapshot_observation& output) noexcept {
     }
 
 #ifdef __APPLE__
-    const auto seconds = information.st_mtimespec.tv_sec;
-    const auto nanoseconds = information.st_mtimespec.tv_nsec;
+    const auto write_seconds = information.st_mtimespec.tv_sec;
+    const auto write_nanoseconds = information.st_mtimespec.tv_nsec;
+    const auto change_seconds = information.st_ctimespec.tv_sec;
+    const auto change_nanoseconds = information.st_ctimespec.tv_nsec;
 #else
-    const auto seconds = information.st_mtim.tv_sec;
-    const auto nanoseconds = information.st_mtim.tv_nsec;
+    const auto write_seconds = information.st_mtim.tv_sec;
+    const auto write_nanoseconds = information.st_mtim.tv_nsec;
+    const auto change_seconds = information.st_ctim.tv_sec;
+    const auto change_nanoseconds = information.st_ctim.tv_nsec;
 #endif
 
-    if (nanoseconds < 0 || nanoseconds >= 1000000000L) {
+    const auto to_ticks =
+        [](std::int64_t seconds,
+           long nanoseconds,
+           std::uint64_t& output_ticks) noexcept {
+            output_ticks = 0;
+
+            if (nanoseconds < 0 ||
+                nanoseconds >= 1000000000L ||
+                seconds < -filetime_epoch_offset_seconds) {
+                return false;
+            }
+
+            const auto filetime_seconds =
+                static_cast<std::uint64_t>(
+                    seconds +
+                    filetime_epoch_offset_seconds);
+
+            if (filetime_seconds >
+                std::numeric_limits<std::uint64_t>::max() /
+                    filetime_ticks_per_second) {
+                return false;
+            }
+
+            output_ticks =
+                filetime_seconds * filetime_ticks_per_second +
+                static_cast<std::uint64_t>(nanoseconds) / 100ull;
+
+            return true;
+        };
+
+    if (!to_ticks(
+            static_cast<std::int64_t>(write_seconds),
+            write_nanoseconds,
+            output.write_time_ticks) ||
+        !to_ticks(
+            static_cast<std::int64_t>(change_seconds),
+            change_nanoseconds,
+            output.change_time_ticks)) {
         return false;
     }
 
-    const auto signed_seconds = static_cast<std::int64_t>(seconds);
-    if (signed_seconds < -filetime_epoch_offset_seconds) {
-        return false;
-    }
-
-    const auto filetime_seconds =
-        static_cast<std::uint64_t>(signed_seconds + filetime_epoch_offset_seconds);
-
-    if (filetime_seconds >
-        std::numeric_limits<std::uint64_t>::max() / filetime_ticks_per_second) {
-        return false;
-    }
-
-    output.write_time_ticks =
-        filetime_seconds * filetime_ticks_per_second +
-        static_cast<std::uint64_t>(nanoseconds) / 100ull;
-    output.size = static_cast<std::uintmax_t>(information.st_size);
+    output.size =
+        static_cast<std::uintmax_t>(
+            information.st_size);
 
     return true;
 }

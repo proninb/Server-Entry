@@ -1356,6 +1356,7 @@ status graph_update::source_replacement::reserve(
     }
 
     try {
+        state->entity_bindings.resize(named_count);
         state->named.reserve(named_count);
         state->anonymous_types.reserve(anonymous_count);
         state->enum_values.reserve(enum_value_count);
@@ -1366,6 +1367,54 @@ status graph_update::source_replacement::reserve(
             {status_code::initialization_failed};
     }
 }
+status graph_update::source_replacement::bind_source_entity(
+    source_entity_ref reference,
+    stable_id entity) noexcept {
+
+    if (!update ||
+        !source ||
+        !reference ||
+        reference.source != source ||
+        !entity ||
+        !update->contributions) {
+        return {status_code::invalid_state};
+    }
+
+    auto* state =
+        update->contributions->candidate(source);
+
+    if (!state) {
+        return {status_code::invalid_state};
+    }
+
+    const auto raw =
+        static_cast<std::size_t>(
+            reference.declaration.value());
+
+    if (raw == 0) {
+        return {status_code::configuration_failed};
+    }
+
+    if (raw > state->entity_bindings.size()) {
+        return update->failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    auto& binding =
+        state->entity_bindings[raw - 1];
+
+    if (binding &&
+        binding != entity) {
+        return update->failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    binding = entity;
+    return {};
+}
+
 status graph_update::source_replacement::add_named_enum(string_id name, const enum_build_data& data,
     stable_id& entity, type_handle& type) noexcept {
 
@@ -1429,9 +1478,18 @@ status graph_update::source_replacement::define_members(
         copied_members.reserve(input.size());
 
         for (const auto& member : input) {
+            const auto named_forms =
+                static_cast<unsigned>(
+                    static_cast<bool>(
+                        member.user_type_name)) +
+                static_cast<unsigned>(
+                    static_cast<bool>(
+                        member.user_type_entity));
+
             if (!member.name ||
-                (member.builtin.has_value() ==
-                 static_cast<bool>(member.user_type_name)) ||
+                (member.builtin
+                    ? named_forms != 0
+                    : named_forms != 1) ||
                 !names.insert(member.name.value()).second ||
                 member.modifier_offset > modifiers.size() ||
                 member.modifier_count >
@@ -1465,6 +1523,17 @@ TypeRef graph_update::source_replacement::builtin_type_ref(builtin_type value) c
 
     return update && raw < update->owner->canonical_types.size() ? TypeRef{raw}
             : TypeRef{};
+}
+
+status graph_update::source_replacement::resolve_type(
+    source_entity_ref reference,
+    TypeRef& result) const noexcept {
+
+    return update
+        ? update->resolve_source_type(
+            reference,
+            result)
+        : status{status_code::invalid_state};
 }
 
 status graph_update::source_replacement::resolve_type(string_id name, TypeRef& result) const noexcept {
@@ -1656,6 +1725,62 @@ status graph_update::get_or_create_named_type_ref_impl(
     catch (...) {
         return failure = {status_code::initialization_failed};
     }
+}
+
+status graph_update::resolve_source_type(
+    source_entity_ref reference,
+    TypeRef& output) noexcept {
+
+    output = {};
+
+    if (!reference ||
+        !contributions) {
+        return failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    const auto* state =
+        contributions->candidate(reference.source);
+
+    if (!state) {
+        state =
+            contributions->committed(reference.source);
+    }
+
+    const auto raw =
+        static_cast<std::size_t>(
+            reference.declaration.value());
+
+    if (!state ||
+        raw == 0 ||
+        raw > state->entity_bindings.size()) {
+        return failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    const auto entity_id =
+        state->entity_bindings[raw - 1];
+
+    if (!entity_id) {
+        return failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    const auto* entity =
+        find(entity_id);
+
+    if (!entity) {
+        return failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    return get_or_create_named_type_ref(
+        entity->type,
+        output);
 }
 
 status graph_update::get_or_create_named_type_ref(
@@ -3197,19 +3322,27 @@ status graph_update::resolve_pending_members(
 
                 resolved = TypeRef{raw};
             }
+            else if (member.user_type_entity) {
+                const auto result =
+                    resolve_source_type(
+                        member.user_type_entity,
+                        resolved);
+
+                if (!result.ok()) {
+                    return result;
+                }
+            }
             else {
+                // Compatibility path for non-Parser canonical-fact producers.
                 const auto* entity =
                     find(member.user_type_name);
 
                 if (!entity) {
-                    // The source-language meaning is already known. This is only
-                    // an unresolved canonical dependency and is legal until this
-                    // final construction barrier.
                     return failure =
                         {status_code::configuration_failed};
                 }
 
-                auto result =
+                const auto result =
                     get_or_create_named_type_ref(
                         entity->type,
                         resolved);

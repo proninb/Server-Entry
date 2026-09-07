@@ -74,6 +74,14 @@ status build_enum_impl(
                     status_code::initialization_failed
                 };
             }
+
+            if (result.ok() &&
+                fact.source_entity) {
+                result =
+                    replacement.bind_source_entity(
+                        fact.source_entity,
+                        entity);
+            }
         }
 
         if constexpr (Detailed) {
@@ -119,6 +127,17 @@ status build_aggregate_impl(
         return {status_code::initialization_failed};
     }
 
+    if (fact.source_entity) {
+        result =
+            replacement.bind_source_entity(
+                fact.source_entity,
+                entity);
+
+        if (!result.ok()) {
+            return result;
+        }
+    }
+
     if (fact.definition_state !=
         aggregate_definition_state::defined) {
         return fact.members.empty()
@@ -144,9 +163,18 @@ status build_aggregate_impl(
         }
 
         for (const auto& member : fact.members) {
+            const auto named_forms =
+                static_cast<unsigned>(
+                    static_cast<bool>(
+                        member.user_type_name)) +
+                static_cast<unsigned>(
+                    static_cast<bool>(
+                        member.user_type_entity));
+
             if (!member.name ||
-                (member.builtin.has_value() ==
-                 static_cast<bool>(member.user_type_name)) ||
+                (member.builtin
+                    ? named_forms != 0
+                    : named_forms != 1) ||
                 member.modifier_offset > modifiers.size() ||
                 member.modifier_count >
                     modifiers.size() - member.modifier_offset) {
@@ -158,7 +186,8 @@ status build_aggregate_impl(
                 member.builtin,
                 member.user_type_name,
                 member.modifier_offset,
-                member.modifier_count
+                member.modifier_count,
+                member.user_type_entity
             });
         }
 
@@ -325,6 +354,14 @@ status project_builder::build(
                         return abort({
                             status_code::initialization_failed
                         });
+                    }
+
+                    if (result.ok() &&
+                        fact.source_entity) {
+                        result =
+                            replacement.bind_source_entity(
+                                fact.source_entity,
+                                entity);
                     }
                 }
 

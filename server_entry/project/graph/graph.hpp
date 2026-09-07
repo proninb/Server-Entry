@@ -6,6 +6,7 @@
 #include "../../status.hpp"
 #include "../../string_id.hpp"
 #include "../../type_handle.hpp"
+#include "../source_entity_ref.hpp"
 #include "../language/aggregate_semantics.hpp"
 #include "../language/enum_semantics.hpp"
 #include "builtin_type.hpp"
@@ -236,9 +237,15 @@ struct type_modifier_build {
 struct member_build {
     string_id name{};
     std::optional<builtin_type> builtin;
+
+    // Compatibility canonical-name path for non-Parser producers.
     string_id user_type_name{};
+
     std::uint32_t modifier_offset = 0;
     std::uint32_t modifier_count = 0;
+
+    // Production Parser relation; resolved without text/string lookup.
+    source_entity_ref user_type_entity{};
 };
 
 // Generation-local hot Type entry addressed directly by type_handle.
@@ -460,6 +467,15 @@ public:
             std::span<const member_build> members,
             std::span<const type_modifier_build> modifiers) noexcept;
 
+        [[nodiscard]] status bind_source_entity(
+            source_entity_ref reference,
+            stable_id entity) noexcept;
+
+        [[nodiscard]] status resolve_type(
+            source_entity_ref reference,
+            TypeRef& output) const noexcept;
+
+        // Compatibility canonical-name path for non-Parser producers.
         [[nodiscard]] status resolve_type(
             string_id name,
             TypeRef& output) const noexcept;
@@ -566,6 +582,10 @@ public:
 #if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
 private:
 #endif
+
+    [[nodiscard]] status resolve_source_type(
+        source_entity_ref reference,
+        TypeRef& output) noexcept;
 
     [[nodiscard]] status prepare_publish(
         const source_manager_update& sources,

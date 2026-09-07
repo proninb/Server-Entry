@@ -5,6 +5,7 @@
 #include "../language/aggregate_semantics.hpp"
 #include "../language/enum_semantics.hpp"
 #include "../parser/source_facts.hpp"
+#include "../source_entity_ref.hpp"
 #include "../../source_id.hpp"
 #include "../../status.hpp"
 #include "../../string_id.hpp"
@@ -17,8 +18,6 @@
 
 namespace cw::server {
 
-// References one captured name slot. The slot is Source-local until the String
-// Binding boundary assigns its canonical project string_id.
 struct build_name_ref {
     std::uint32_t index = 0;
 
@@ -50,20 +49,26 @@ struct source_build_enum {
     std::uint32_t value_count = 0;
     source_text_range declaration_range{};
     source_text_range name_range{};
+    source_entity_ref source_entity{};
 };
 
 struct source_build_modifier {
-    derived_type_kind kind =
-        derived_type_kind::pointer;
+    derived_type_kind kind = derived_type_kind::pointer;
     std::uint64_t payload = 0;
 };
 
 struct source_build_member {
     build_name_ref name{};
     std::optional<builtin_type> builtin;
+
+    // Compatibility spelling for non-Parser producers only.
     build_name_ref user_type_name{};
+
     std::uint32_t modifier_offset = 0;
     std::uint32_t modifier_count = 0;
+
+    // Production relation after Parser resolution.
+    source_entity_ref user_type_entity{};
 };
 
 struct source_build_aggregate {
@@ -74,10 +79,11 @@ struct source_build_aggregate {
     std::uint32_t member_count = 0;
     source_text_range declaration_range{};
     source_text_range name_range{};
+    source_entity_ref source_entity{};
 };
 
-// Owns one Source's transient Builder contribution. Name bytes stay packed;
-// canonical string_id values are bound exactly once before Graph mutation.
+// Owns one Source's transient Builder contribution. Resolved member relations
+// remain source_entity_ref and are never rebound by text in production.
 class source_build_entry final {
 public:
     [[nodiscard]] status store_name(

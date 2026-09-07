@@ -1282,13 +1282,20 @@ bool test_parser_publisher_boundary() {
     source_context context;
     source_name_ref enum_name;
     source_name_ref value_name;
+    source_entity_ref enum_entity;
 
     if (!context.store_name(
             "Published",
             enum_name).ok() ||
         !context.store_name(
             "One",
-            value_name).ok()) {
+            value_name).ok() ||
+        !context.declare_type(
+            source,
+            enum_name,
+            {},
+            enum_entity).ok() ||
+        !enum_entity) {
         return false;
     }
 
@@ -1302,6 +1309,7 @@ bool test_parser_publisher_boundary() {
     context.enum_values.push_back(value);
 
     enum_declaration_source_fact declaration;
+    declaration.entity = enum_entity;
     declaration.canonical_name = enum_name;
     declaration.anonymous = false;
     declaration.scoped = false;

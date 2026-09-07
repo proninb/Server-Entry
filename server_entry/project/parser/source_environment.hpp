@@ -1,15 +1,18 @@
 #pragma once
 
+#include "source_facts.hpp"
 #include "../graph/builtin_type.hpp"
 #include "../../status.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <span>
 #include <string_view>
-#include <unordered_map>
 #include <vector>
 
 namespace cw::server {
+
+class source_context;
 
 struct source_constant_binding {
     std::string_view scope_name;
@@ -23,38 +26,52 @@ struct source_type_binding {
     std::string_view canonical_name;
 };
 
-// Owns the immutable Parser-visible interface exported by one Source.
-// Local bindings are stored once; imported interfaces are referenced recursively,
-// which preserves transitive include visibility without duplicating declarations.
-class source_environment_storage final {
+// Immutable semantic projection exported only when another Source depends on it.
+// Storage is dense; no hash/map database survives Parser construction.
+class source_interface_storage final {
 public:
-    source_environment_storage() = default;
-    source_environment_storage(const source_environment_storage&) = delete;
-    source_environment_storage& operator=(const source_environment_storage&) = delete;
-    source_environment_storage(source_environment_storage&&) = delete;
-    source_environment_storage& operator=(source_environment_storage&&) = delete;
+    source_interface_storage() = default;
+    source_interface_storage(const source_interface_storage&) = delete;
+    source_interface_storage& operator=(const source_interface_storage&) = delete;
+    source_interface_storage(source_interface_storage&&) = delete;
+    source_interface_storage& operator=(source_interface_storage&&) = delete;
 
+    [[nodiscard]] status initialize(
+        source_id source,
+        const source_context& context,
+        std::span<const source_interface_storage* const> imports = {}) noexcept;
+
+    // Compatibility seam for focused Parser tests/non-frontend callers.
     [[nodiscard]] status initialize(
         std::span<const source_constant_binding> constants,
         std::span<const source_type_binding> types,
-        std::span<const source_environment_storage* const> imports = {}) noexcept;
+        std::span<const source_interface_storage* const> imports = {}) noexcept;
 
     [[nodiscard]] static constexpr std::size_t lookup_key_size() noexcept {
-        return sizeof(key);
+        return sizeof(name_range);
     }
 
 private:
     friend class source_environment;
 
-    struct key {
-        std::string_view scope_name;
-        std::string_view name;
-        friend bool operator==(const key&, const key&) noexcept = default;
+    struct name_range {
+        std::uint32_t offset = 0;
+        std::uint32_t length = 0;
     };
 
-    struct key_hash {
-        [[nodiscard]] std::size_t operator()(const key& value) const noexcept;
+    struct constant_record {
+        name_range lookup_name{};
+        integral_constant value{};
     };
+
+    struct type_record {
+        name_range lookup_name{};
+        name_range canonical_name{};
+        source_entity_ref entity{};
+    };
+
+    [[nodiscard]] std::string_view spelling(
+        name_range value) const noexcept;
 
     [[nodiscard]] bool find_constant_recursive(
         std::string_view scope,
@@ -64,35 +81,36 @@ private:
     [[nodiscard]] bool find_type_recursive(
         std::string_view scope,
         std::string_view name,
-        std::string_view& output) const noexcept;
+        source_entity_ref& entity,
+        std::string_view& canonical) const noexcept;
 
     std::vector<char> spellings;
-    std::unordered_map<key, integral_constant, key_hash> constants;
-    std::unordered_map<key, std::string_view, key_hash> types;
-    std::vector<const source_environment_storage*> imports;
+    std::vector<constant_record> constants;
+    std::vector<type_record> types;
+    std::vector<const source_interface_storage*> imports;
     bool initialized = false;
 };
 
-// One textual include visibility event. The imported interface becomes visible
-// only to tokens whose original Source byte offset is >= visible_from.
+// Compatibility name for existing frontend/cache APIs.
+using source_environment_storage = source_interface_storage;
+
 struct source_environment_import {
     std::uint32_t visible_from = 0;
-    const source_environment_storage* storage = nullptr;
+    const source_interface_storage* storage = nullptr;
 };
 
-// Provides non-owning name lookup for one Parser invocation.
-// Positional imports preserve the source-order semantics of #include.
+// Non-owning Parser resolver over visible Source interfaces.
+// Lookup happens only for an actual unresolved source-language reference.
 class source_environment final {
 public:
     source_environment() = default;
 
     explicit source_environment(
-        const source_environment_storage& storage) noexcept
+        const source_interface_storage& storage) noexcept
         : single(&storage) {}
 
-    // Compatibility view: every dependency is visible for the whole Source.
     explicit source_environment(
-        std::span<const source_environment_storage* const> dependencies) noexcept
+        std::span<const source_interface_storage* const> dependencies) noexcept
         : dependencies(dependencies) {}
 
     explicit source_environment(
@@ -113,17 +131,24 @@ public:
     [[nodiscard]] status find_type_exact(
         std::string_view scope,
         std::string_view name,
-        std::string_view& output) const noexcept;
+        std::string_view& canonical) const noexcept;
 
     [[nodiscard]] status find_type_exact(
         std::string_view scope,
         std::string_view name,
         std::uint32_t source_offset,
-        std::string_view& output) const noexcept;
+        std::string_view& canonical) const noexcept;
+
+    [[nodiscard]] status find_type_exact(
+        std::string_view scope,
+        std::string_view name,
+        std::uint32_t source_offset,
+        source_entity_ref& entity,
+        std::string_view& canonical) const noexcept;
 
 private:
-    const source_environment_storage* single = nullptr;
-    std::span<const source_environment_storage* const> dependencies;
+    const source_interface_storage* single = nullptr;
+    std::span<const source_interface_storage* const> dependencies;
     std::span<const source_environment_import> positional_imports;
 };
 

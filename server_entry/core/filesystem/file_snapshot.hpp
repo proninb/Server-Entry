@@ -20,6 +20,10 @@ struct file_snapshot_observation {
     std::uint64_t write_time_ticks = 0;
     std::uintmax_t size = 0;
 
+    // Live filesystem witness for same-size rewrites that can share one
+    // LastWriteTime tick. Checkpoint persistence is intentionally unchanged.
+    std::uint64_t change_time_ticks = 0;
+
     friend bool operator==(const file_snapshot_observation&,
                            const file_snapshot_observation&) noexcept = default;
 };

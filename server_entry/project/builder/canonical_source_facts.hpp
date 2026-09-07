@@ -2,6 +2,7 @@
 
 #include "../../source_id.hpp"
 #include "../../string_id.hpp"
+#include "../source_entity_ref.hpp"
 #include "../graph/enum_build.hpp"
 #include "../graph/type_ref.hpp"
 #include "../language/aggregate_semantics.hpp"
@@ -12,16 +13,8 @@
 
 namespace cw::server {
 
-// Builder-ready enum values use the same canonical construction seam consumed
-// by Graph, so Builder never copies a second representation of the same value.
 using enum_value_fact = enum_value_build;
 
-// Builder-ready representation of one enum declaration or definition.
-// canonical_name is already the resolved/interned source-language name.
-// Anonymous enums deliberately carry no canonical_name.
-//
-// enumerators is non-owning and must remain valid for the synchronous Builder
-// call that consumes this fact.
 struct enum_source_fact {
     string_id canonical_name{};
     bool anonymous = false;
@@ -32,28 +25,28 @@ struct enum_source_fact {
 
     std::optional<builtin_type> explicit_underlying;
     std::span<const enum_value_fact> enumerators;
+
+    source_entity_ref source_entity{};
 };
 
-// Canonical modifier request consumed by Graph TypeRef construction.
-// Ordering is base-to-outer and is preserved exactly from Parser A'.
 struct canonical_type_modifier {
     derived_type_kind kind = derived_type_kind::pointer;
     std::uint64_t payload = 0;
 };
 
-// Builder-ready representation of one aggregate declaration or definition.
-// Source-language lookup is complete before this structure is produced;
-// project_builder maps these canonical names into Graph identity and TypeRef.
 struct aggregate_source_fact {
-    // Builder-ready representation of one non-static instance member.
-    // Exactly one base-type form is expected: builtin or user_type_name.
-    // user_type_name is already a resolved canonical source-language name.
     struct member_fact {
         string_id name{};
         std::optional<builtin_type> builtin;
+
+        // Compatibility canonical-name path for non-Parser producers.
         string_id user_type_name{};
+
         std::uint32_t modifier_offset = 0;
         std::uint32_t modifier_count = 0;
+
+        // Production relation. No text lookup occurs after this exists.
+        source_entity_ref user_type_entity{};
     };
 
     string_id canonical_name{};
@@ -61,14 +54,12 @@ struct aggregate_source_fact {
     aggregate_definition_state definition_state =
         aggregate_definition_state::declared;
 
-    // Non-owning synchronous Builder input.
     std::span<const member_fact> members{};
     std::span<const canonical_type_modifier> modifiers{};
+
+    source_entity_ref source_entity{};
 };
 
-// Groups all Builder-ready canonical facts contributed by one Source.
-// Fact order is authoritative and is established before project_builder runs.
-// The batch owns no referenced declaration/member/enumerator storage.
 struct source_fact_batch {
     source_id source{};
     std::span<const enum_source_fact> enums;

@@ -438,7 +438,8 @@ status source_manager_update::execute_acquire(
             job.baseline.presence == source_presence::present) {
             observation_baseline = core::file_snapshot_observation{
                 job.baseline.observation.write_time_ticks,
-                job.baseline.observation.size};
+                job.baseline.observation.size,
+                job.baseline.observation.change_time_ticks};
         }
 
         metrics.increment(metric_id::source_acquisition_count);
@@ -486,7 +487,8 @@ status source_manager_update::execute_acquire(
         result.kind = source_acquire_result_kind::present;
         result.observation = {
             snapshot.observation.write_time_ticks,
-            snapshot.observation.size};
+            snapshot.observation.size,
+            snapshot.observation.change_time_ticks};
         result.hash = hash_source_content(snapshot.bytes);
         result.content = std::move(snapshot.bytes);
 
