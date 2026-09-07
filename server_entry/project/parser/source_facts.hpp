@@ -4,10 +4,14 @@
 #include "../graph/builtin_type.hpp"
 #include "../language/aggregate_semantics.hpp"
 #include "../language/enum_semantics.hpp"
+#include "../../status.hpp"
 
+#include <cstddef>
 #include <cstdint>
 #include <optional>
 #include <span>
+#include <string_view>
+#include <vector>
 
 namespace cw::server {
 
@@ -18,14 +22,16 @@ struct source_text_range {
     std::uint32_t length = 0;
 };
 
-// References one spelling in the owning source_context arena.
-// Semantic relations use source_entity_ref after Parser resolution.
+// References one spelling in the owning Source semantic storage.
+// index is a dense one-based publication-binding coordinate; semantic relations
+// still use source_entity_ref after Parser resolution.
 struct source_name_ref {
     std::uint32_t offset = 0;
     std::uint32_t length = 0;
+    std::uint32_t index = 0;
 
     [[nodiscard]] explicit constexpr operator bool() const noexcept {
-        return length != 0;
+        return length != 0 && index != 0;
     }
 };
 
@@ -114,12 +120,66 @@ struct member_declaration_source_fact {
 
 class source_context;
 
-struct parser_source_fact_batch {
-    source_id source{};
-    const source_context* context = nullptr;
+// Owns the immutable Source-language semantic product after Parser completion.
+// It contains no project-canonical identity, ABI layout, Graph or Runtime state.
+// Publication performs the only Source-spelling canonicalization boundary.
+class source_facts_storage final {
+public:
+    [[nodiscard]] status resolve_name(
+        source_name_ref reference,
+        std::string_view& output) const noexcept {
 
-    std::span<const enum_declaration_source_fact> enums;
-    std::span<const aggregate_declaration_source_fact> aggregates;
+        output = {};
+
+        const auto end =
+            std::uint64_t{reference.offset} +
+            reference.length;
+
+        if (!reference ||
+            reference.index > stored_name_count ||
+            end > names.size()) {
+            return {status_code::configuration_failed};
+        }
+
+        output = {
+            names.data() + reference.offset,
+            reference.length
+        };
+
+        return {};
+    }
+
+    [[nodiscard]] std::size_t name_count() const noexcept {
+        return stored_name_count;
+    }
+
+    [[nodiscard]] std::size_t name_bytes_size() const noexcept {
+        return names.size();
+    }
+
+    void reset() noexcept {
+        source = {};
+        stored_name_count = 0;
+        names.clear();
+        enum_values.clear();
+        enums.clear();
+        modifiers.clear();
+        members.clear();
+        aggregates.clear();
+    }
+
+    source_id source{};
+    std::vector<enum_value_source_fact> enum_values;
+    std::vector<enum_declaration_source_fact> enums;
+    std::vector<source_type_modifier> modifiers;
+    std::vector<member_declaration_source_fact> members;
+    std::vector<aggregate_declaration_source_fact> aggregates;
+
+private:
+    friend class source_context;
+
+    std::uint32_t stored_name_count = 0;
+    std::vector<char> names;
 };
 
 } // namespace cw::server

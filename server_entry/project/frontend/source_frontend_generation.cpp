@@ -713,16 +713,9 @@ status source_frontend_generation::parse_and_capture_independent_g0(
             std::make_unique<
                 source_build_entry>();
 
-        const parser_source_fact_batch batch{
-            source,
-            &context,
-            context.enums,
-            context.aggregates
-        };
-
         result =
-            capture_source_facts(
-                batch,
+            context.release_facts(
+                source,
                 *build_entry);
 
         if (!result.ok()) {
@@ -888,16 +881,13 @@ status source_frontend_generation::parse_and_capture(
             }
         }
 
-        auto build_entry = std::make_unique<source_build_entry>();
+        auto build_entry =
+            std::make_unique<source_build_entry>();
 
-        const parser_source_fact_batch batch{
-            source,
-            &context,
-            context.enums,
-            context.aggregates
-        };
-
-        result = capture_source_facts(batch, *build_entry);
+        result =
+            context.release_facts(
+                source,
+                *build_entry);
 
         if (!result.ok()) {
             std::lock_guard lock{mutex};

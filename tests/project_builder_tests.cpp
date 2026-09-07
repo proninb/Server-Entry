@@ -1322,40 +1322,34 @@ bool test_parser_publisher_boundary() {
 
     context.enums.push_back(declaration);
 
-    parser_source_fact_batch batch;
-    batch.source = source;
-    batch.context = &context;
-    batch.enums = context.enums;
-    batch.aggregates = context.aggregates;
+    source_build_entry facts;
 
-    source_build_entry captured;
-
-    if (!capture_source_facts(
-            batch,
-            captured).ok() ||
+    if (!context.release_facts(
+            source,
+            facts).ok() ||
+        !facts.source ||
+        facts.enums.size() != 1 ||
+        facts.enum_values.size() != 1 ||
+        facts.enums[0].entity != enum_entity ||
         !publish_source_entry(
             transaction,
-            captured,
+            facts,
             builder,
             operation_id{16},
             diagnostics).ok()) {
         return false;
     }
 
-    if (captured.enums.empty() ||
-        captured.enum_values.empty()) {
-        return false;
-    }
+    string_id canonical_name;
+    string_id canonical_value;
 
-    const auto canonical_name =
-        captured.bound_name(
-            captured.enums[0].canonical_name);
-
-    const auto canonical_value =
-        captured.bound_name(
-            captured.enum_values[0].name);
-
-    if (!canonical_name ||
+    if (!transaction.strings().bind(
+            "Published",
+            canonical_name).ok() ||
+        !transaction.strings().bind(
+            "One",
+            canonical_value).ok() ||
+        !canonical_name ||
         !canonical_value ||
         !transaction.commit().ok()) {
         return false;
@@ -1375,15 +1369,12 @@ bool test_parser_publisher_boundary() {
             : std::span<const enum_value_record>{};
 
     return
-        canonical_name &&
-        canonical_value &&
         identity &&
         entity &&
         values.size() == 1 &&
         values[0].name == canonical_value &&
         values[0].bits == 1;
 }
-
 bool test_parser_publisher_malformed_diagnostic() {
     graph_manager manager;
     project_builder builder;
@@ -1396,23 +1387,12 @@ bool test_parser_publisher_malformed_diagnostic() {
     auto transaction =
         manager.begin_build(graph_build_mode::rebuild);
 
-    source_id source;
-
-    if (!resolve_source(
-            transaction,
-            source_a,
-            source)) {
-        return false;
-    }
-
-    parser_source_fact_batch batch;
-    batch.source = source;
-    batch.context = nullptr;
+    source_build_entry malformed;
 
     const auto result =
-        publish_source_facts(
+        publish_source_entry(
             transaction,
-            batch,
+            malformed,
             builder,
             operation_id{17},
             diagnostics);
@@ -1438,7 +1418,6 @@ bool test_parser_publisher_malformed_diagnostic() {
         manager.state() == project_state::error &&
         manager.compiled_graph().entity_count() == 0;
 }
-
 } // namespace
 
 int main() {

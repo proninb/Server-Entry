@@ -11,9 +11,9 @@
 
 namespace cw::server {
 
-// Reusable transient lexical/semantic workspace for one Source.
-// Parser completes Source-language resolution here; only semantic references,
-// values, modifiers and provenance cross the Builder boundary.
+// Reusable Source-local construction workspace. Parser owns lexical resolution,
+// declaration uniqueness and diagnostics here, then transfers the completed
+// semantic product by vector ownership move into source_facts_storage.
 class source_context final {
 public:
     [[nodiscard]] status store_name(
@@ -45,6 +45,12 @@ public:
         source_name_ref scope,
         source_name_ref name,
         integral_constant value) noexcept;
+
+    // Transfers only the semantic product. Type/constant construction indexes,
+    // tokens and diagnostics remain SourceContext-local and are reset afterward.
+    [[nodiscard]] status release_facts(
+        source_id source,
+        source_facts_storage& output) noexcept;
 
     [[nodiscard]] std::span<const enum_value_source_fact> enumerators(
         const enum_declaration_source_fact& declaration) const noexcept;
@@ -80,12 +86,14 @@ private:
         std::size_t required) noexcept;
 
     std::vector<char> names;
+    std::uint32_t stored_name_count = 0;
 
-    // Open-addressing construction indexes store one-based dense record slots.
-    // They are Source-local, reset with the context and never cross publication.
+    // Reference-demand index: declaration-only Sources never build it.
     std::vector<std::uint32_t> type_index;
     bool type_index_active = false;
 
+    // Declaration-uniqueness index, not a reference lookup cache. It is required
+    // while declarations are accepted even when no later constant is referenced.
     std::vector<constant_symbol> constant_symbols;
     std::vector<std::uint32_t> constant_index;
 };

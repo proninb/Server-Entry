@@ -2,9 +2,9 @@
 
 #include "../builder/project_builder.hpp"
 #include "../builder/source_build_entry.hpp"
-#include "../parser/source_facts.hpp"
 #include "../../diagnostics/diagnostic_buffer.hpp"
 #include "../../operation.hpp"
+#include "../../string_id.hpp"
 
 #include <cstdint>
 #include <vector>
@@ -35,8 +35,10 @@ struct source_publish_telemetry {
 };
 
 // Reusable COLD buffers for one deterministic single-owner publication pass.
-// No canonical identity or Graph state is stored here.
+// name_bindings is the transient lexical-name -> canonical string_id boundary;
+// no canonical identity is written back into Parser-owned Source facts.
 struct source_publish_scratch {
+    std::vector<string_id> name_bindings;
     std::vector<enum_value_fact> enum_values;
     std::vector<aggregate_source_fact::member_fact> members;
     std::vector<canonical_type_modifier> modifiers;
@@ -44,36 +46,21 @@ struct source_publish_scratch {
     source_publish_telemetry telemetry;
 };
 
-// Captures one Parser batch into Builder-owned Source state. After this returns
-// successfully the source_context may be reset immediately.
-[[nodiscard]] status capture_source_facts(
-    const parser_source_fact_batch& batch,
-    source_build_entry& output) noexcept;
-
-// Canonicalizes one captured Source contribution. This function is intentionally
-// single-owner: workers prepare source_build_entry objects, while canonical
-// String/Entity/TypeRef mutation is performed by the build coordinator.
+// Canonicalizes one immutable Source semantic product. Workers construct facts;
+// the coordinator alone binds project strings and mutates canonical Graph state.
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics) noexcept;
 
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics,
     source_publish_scratch& scratch) noexcept;
-
-// Convenience synchronous boundary for single-threaded callers and tests.
-[[nodiscard]] status publish_source_facts(
-    graph_build_transaction& transaction,
-    const parser_source_fact_batch& batch,
-    const project_builder& builder,
-    operation_id operation,
-    diagnostic_buffer& diagnostics) noexcept;
 
 } // namespace cw::server

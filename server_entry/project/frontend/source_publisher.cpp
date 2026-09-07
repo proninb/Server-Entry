@@ -2,10 +2,11 @@
 
 #include "../builder/project_builder.hpp"
 #include "../graph/graph_build_transaction.hpp"
-#include "../parser/source_context.hpp"
+
 #include "../../diagnostics/diagnostic_descriptor.hpp"
 
 #include <chrono>
+#include <span>
 #include <vector>
 
 namespace cw::server {
@@ -43,273 +44,216 @@ private:
     std::chrono::steady_clock::time_point begin{};
 };
 
-status copy_name(
-    const source_context& context,
-    source_name_ref source,
-    source_build_entry& destination,
-    build_name_ref& output) noexcept {
+string_id bound_name(
+    std::span<const string_id> bindings,
+    source_name_ref reference) noexcept {
 
-    output = {};
+    return
+        reference &&
+        reference.index <= bindings.size()
+        ? bindings[reference.index - 1]
+        : string_id{};
+}
 
-    if (!source) {
+status bind_name(
+    graph_build_transaction& transaction,
+    const source_build_entry& entry,
+    std::vector<string_id>& bindings,
+    source_name_ref reference) noexcept {
+
+    if (!reference ||
+        reference.index > bindings.size()) {
+        return {status_code::configuration_failed};
+    }
+
+    auto& canonical =
+        bindings[reference.index - 1];
+
+    if (canonical) {
         return {};
     }
 
     std::string_view bytes;
-    auto result = context.resolve_name(source, bytes);
+
+    auto result =
+        entry.resolve_name(
+            reference,
+            bytes);
 
     if (!result.ok()) {
         return result;
     }
 
-    return destination.store_name(bytes, output);
-}
+    result =
+        transaction.strings().bind(
+            bytes,
+            canonical);
 
-// String Binding is the only text-to-project-ID boundary. It runs before Graph
-// mutation and binds every captured name exactly once. Publication below this
-// function is ID-only.
-status bind_source_names(
-    graph_build_transaction& transaction,
-    source_build_entry& entry) noexcept {
+    if (!result.ok() ||
+        !canonical) {
+        canonical = {};
 
-    for (std::uint32_t raw = 1;
-         raw <= entry.name_count();
-         ++raw) {
-        const build_name_ref reference{
-            raw
-        };
-
-        std::string_view bytes;
-
-        auto result =
-            entry.resolve_name(
-                reference,
-                bytes);
-
-        if (!result.ok()) {
-            return result;
-        }
-
-        string_id canonical;
-
-        result =
-            transaction.strings().bind(
-                bytes,
-                canonical);
-
-        if (!result.ok() ||
-            !canonical) {
-            return result.ok()
-                ? status{
-                    status_code::
-                        configuration_failed}
-                : result;
-        }
-
-        result =
-            entry.bind_name(
-                reference,
-                canonical);
-
-        if (!result.ok()) {
-            return result;
-        }
+        return result.ok()
+            ? status{status_code::configuration_failed}
+            : result;
     }
 
     return {};
 }
-} // namespace
 
-status capture_source_facts(
-    const parser_source_fact_batch& batch,
-    source_build_entry& output) noexcept {
-
-    output.reset();
-
-    if (!batch.source || !batch.context) {
-        return {status_code::configuration_failed};
-    }
+// Validates one immutable Parser product and performs the complete lexical
+// spelling -> canonical string_id boundary before any Graph mutation.
+status prepare_source_bindings(
+    graph_build_transaction& transaction,
+    const source_build_entry& entry,
+    std::vector<string_id>& bindings) noexcept {
 
     try {
-        output.source = batch.source;
+        bindings.clear();
+        bindings.resize(
+            entry.name_count());
+    }
+    catch (...) {
+        return {status_code::initialization_failed};
+    }
 
-        output.enums.reserve(batch.enums.size());
-        output.aggregates.reserve(batch.aggregates.size());
+    for (const auto& fact : entry.enums) {
+        if (fact.anonymous ==
+                static_cast<bool>(fact.canonical_name) ||
+            (fact.anonymous &&
+             static_cast<bool>(fact.entity)) ||
+            (!fact.anonymous &&
+             (!fact.entity ||
+              fact.entity.source != entry.source))) {
+            return {status_code::configuration_failed};
+        }
 
-        for (const auto& fact : batch.enums) {
-            if (fact.anonymous ==
-                    static_cast<bool>(fact.canonical_name) ||
-                (fact.anonymous &&
-                 static_cast<bool>(fact.entity)) ||
-                (!fact.anonymous &&
-                 (!fact.entity ||
-                  fact.entity.source != batch.source))) {
+        if (!fact.anonymous) {
+            const auto result =
+                bind_name(
+                    transaction,
+                    entry,
+                    bindings,
+                    fact.canonical_name);
+
+            if (!result.ok()) {
+                return result;
+            }
+        }
+
+        if (fact.enumerator_offset >
+                entry.enum_values.size() ||
+            fact.enumerator_count >
+                entry.enum_values.size() -
+                    fact.enumerator_offset) {
+            return {status_code::configuration_failed};
+        }
+
+        for (std::uint32_t index = 0;
+             index < fact.enumerator_count;
+             ++index) {
+            const auto& value =
+                entry.enum_values[
+                    fact.enumerator_offset + index];
+
+            const auto result =
+                bind_name(
+                    transaction,
+                    entry,
+                    bindings,
+                    value.name);
+
+            if (!result.ok()) {
+                return result;
+            }
+        }
+    }
+
+    for (const auto& fact : entry.aggregates) {
+        if (!fact.entity ||
+            fact.entity.source != entry.source) {
+            return {status_code::configuration_failed};
+        }
+
+        auto result =
+            bind_name(
+                transaction,
+                entry,
+                bindings,
+                fact.canonical_name);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        if (fact.member_offset >
+                entry.members.size() ||
+            fact.member_count >
+                entry.members.size() -
+                    fact.member_offset) {
+            return {status_code::configuration_failed};
+        }
+
+        for (std::uint32_t index = 0;
+             index < fact.member_count;
+             ++index) {
+            const auto& member =
+                entry.members[
+                    fact.member_offset + index];
+
+            if (!member.name ||
+                (member.builtin &&
+                 member.type_entity) ||
+                (!member.builtin &&
+                 !member.type_entity)) {
                 return {status_code::configuration_failed};
             }
 
-            source_build_enum captured;
-            captured.source_entity = fact.entity;
-            captured.anonymous = fact.anonymous;
-            captured.scoped = fact.scoped;
-            captured.definition_state = fact.definition_state;
-            captured.explicit_underlying = fact.explicit_underlying;
-            captured.declaration_range = fact.declaration_range;
-            captured.name_range = fact.name_range;
-
-            auto result = copy_name(
-                *batch.context,
-                fact.canonical_name,
-                output,
-                captured.canonical_name);
+            result =
+                bind_name(
+                    transaction,
+                    entry,
+                    bindings,
+                    member.name);
 
             if (!result.ok()) {
                 return result;
             }
 
-            const auto values = batch.context->enumerators(fact);
-
-            if (values.size() != fact.enumerator_count) {
+            if (member.modifier_offset >
+                    entry.modifiers.size() ||
+                member.modifier_count >
+                    entry.modifiers.size() -
+                        member.modifier_offset) {
                 return {status_code::configuration_failed};
             }
 
-            captured.value_offset = static_cast<std::uint32_t>(output.enum_values.size());
-            captured.value_count = static_cast<std::uint32_t>(values.size());
-
-            for (const auto& value : values) {
-                source_build_enum_value captured_value;
-                captured_value.value = value.value;
-                captured_value.name_range = value.name_range;
-
-                result = copy_name(
-                    *batch.context,
-                    value.name,
-                    output,
-                    captured_value.name);
-
-                if (!result.ok() || !captured_value.name) {
-                    return result.ok()
-                        ? status{status_code::configuration_failed}
-                        : result;
-                }
-
-                output.enum_values.push_back(captured_value);
-            }
-
-            output.enums.push_back(captured);
-        }
-
-        for (const auto& fact : batch.aggregates) {
-            if (!fact.entity ||
-                fact.entity.source != batch.source) {
-                return {status_code::configuration_failed};
-            }
-
-            source_build_aggregate captured;
-            captured.source_entity = fact.entity;
-            captured.definition_state = fact.definition_state;
-            captured.declaration_range = fact.declaration_range;
-            captured.name_range = fact.name_range;
-
-            auto result = copy_name(
-                *batch.context,
-                fact.canonical_name,
-                output,
-                captured.canonical_name);
-
-            if (!result.ok() || !captured.canonical_name) {
-                return result.ok()
-                    ? status{status_code::configuration_failed}
-                    : result;
-            }
-
-            const auto source_members = batch.context->members(fact);
-
-            if (source_members.size() != fact.member_count) {
-                return {status_code::configuration_failed};
-            }
-
-            captured.member_offset = static_cast<std::uint32_t>(output.members.size());
-            captured.member_count = static_cast<std::uint32_t>(source_members.size());
-
-            for (const auto& member : source_members) {
-                source_build_member captured_member;
-                captured_member.builtin = member.builtin;
-
-                result = copy_name(
-                    *batch.context,
-                    member.name,
-                    output,
-                    captured_member.name);
-
-                if (!result.ok() || !captured_member.name) {
-                    return result.ok()
-                        ? status{status_code::configuration_failed}
-                        : result;
-                }
-
-                if (!member.builtin) {
-                    if (!member.type_entity) {
-                        return {
-                            status_code::configuration_failed
-                        };
-                    }
-
-                    captured_member.user_type_entity =
-                        member.type_entity;
-                }
-
-                const auto source_modifiers = batch.context->modifiers(member);
-
-                if (source_modifiers.size() != member.modifier_count) {
+            for (std::uint32_t modifier_index = 0;
+                 modifier_index < member.modifier_count;
+                 ++modifier_index) {
+                switch (entry.modifiers[
+                            member.modifier_offset +
+                            modifier_index].kind) {
+                case source_type_modifier_kind::pointer:
+                case source_type_modifier_kind::array:
+                case source_type_modifier_kind::lvalue_reference:
+                case source_type_modifier_kind::rvalue_reference:
+                    break;
+                default:
                     return {status_code::configuration_failed};
                 }
-
-                captured_member.modifier_offset =
-                    static_cast<std::uint32_t>(output.modifiers.size());
-                captured_member.modifier_count =
-                    static_cast<std::uint32_t>(source_modifiers.size());
-
-                for (const auto& modifier : source_modifiers) {
-                    derived_type_kind kind;
-
-                    switch (modifier.kind) {
-                    case source_type_modifier_kind::pointer:
-                        kind = derived_type_kind::pointer;
-                        break;
-                    case source_type_modifier_kind::array:
-                        kind = derived_type_kind::array;
-                        break;
-                    case source_type_modifier_kind::lvalue_reference:
-                        kind = derived_type_kind::lvalue_reference;
-                        break;
-                    case source_type_modifier_kind::rvalue_reference:
-                        kind = derived_type_kind::rvalue_reference;
-                        break;
-                    default:
-                        return {status_code::configuration_failed};
-                    }
-
-                    output.modifiers.push_back({kind, modifier.payload});
-                }
-
-                output.members.push_back(captured_member);
             }
-
-            output.aggregates.push_back(captured);
         }
+    }
 
-        return {};
-    }
-    catch (...) {
-        output.reset();
-        return {status_code::initialization_failed};
-    }
+    return {};
 }
 
+} // namespace
 template <bool Detailed>
 status publish_source_entry_impl(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     const operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -361,9 +305,10 @@ status publish_source_entry_impl(
 
     try {
         const auto binding_result =
-            bind_source_names(
+            prepare_source_bindings(
                 transaction,
-                entry);
+                entry,
+                scratch.name_bindings);
 
         if (!binding_result.ok()) {
             return
@@ -463,7 +408,7 @@ status publish_source_entry_impl(
 
             if (!fact.anonymous) {
                 canonical_name =
-                    entry.bound_name(
+                    bound_name(scratch.name_bindings,
                         fact.canonical_name);
 
                 if (!canonical_name) {
@@ -491,25 +436,25 @@ status publish_source_entry_impl(
                 }
             }
 
-            if (fact.value_offset > entry.enum_values.size() ||
-                fact.value_count >
+            if (fact.enumerator_offset > entry.enum_values.size() ||
+                fact.enumerator_count >
                     entry.enum_values.size() -
-                    fact.value_offset) {
+                    fact.enumerator_offset) {
                 return malformed();
             }
 
             enum_values.clear();
-            enum_values.reserve(fact.value_count);
+            enum_values.reserve(fact.enumerator_count);
 
             for (std::uint32_t index = 0;
-                 index < fact.value_count;
+                 index < fact.enumerator_count;
                  ++index) {
                 const auto& value =
                     entry.enum_values[
-                        fact.value_offset + index];
+                        fact.enumerator_offset + index];
 
                 const auto name =
-                    entry.bound_name(
+                    bound_name(scratch.name_bindings,
                         value.name);
 
                 if (!name) {
@@ -540,7 +485,7 @@ status publish_source_entry_impl(
                 fact.definition_state,
                 fact.explicit_underlying,
                 enum_values,
-                fact.source_entity
+                fact.entity
             };
 
             {
@@ -572,7 +517,7 @@ status publish_source_entry_impl(
 
         for (const auto& fact : entry.aggregates) {
             const auto canonical_name =
-                entry.bound_name(
+                bound_name(scratch.name_bindings,
                     fact.canonical_name);
 
             if (!canonical_name) {
@@ -591,7 +536,7 @@ status publish_source_entry_impl(
             for (std::uint32_t index = 0; index < fact.member_count; ++index) {
                 const auto& member = entry.members[fact.member_offset + index];
                 const auto member_name =
-                    entry.bound_name(
+                    bound_name(scratch.name_bindings,
                         member.name);
 
                 if (!member_name) {
@@ -601,7 +546,7 @@ status publish_source_entry_impl(
                 string_id user_type_name;
 
                 if (!member.builtin &&
-                    !member.user_type_entity) {
+                    !member.type_entity) {
                     return malformed();
                 }
 
@@ -617,8 +562,33 @@ status publish_source_entry_impl(
                      modifier_index < member.modifier_count;
                      ++modifier_index) {
                     const auto& modifier =
-                        entry.modifiers[member.modifier_offset + modifier_index];
-                    modifiers.push_back({modifier.kind, modifier.payload});
+                        entry.modifiers[
+                            member.modifier_offset +
+                            modifier_index];
+
+                    derived_type_kind kind;
+
+                    switch (modifier.kind) {
+                    case source_type_modifier_kind::pointer:
+                        kind = derived_type_kind::pointer;
+                        break;
+                    case source_type_modifier_kind::array:
+                        kind = derived_type_kind::array;
+                        break;
+                    case source_type_modifier_kind::lvalue_reference:
+                        kind = derived_type_kind::lvalue_reference;
+                        break;
+                    case source_type_modifier_kind::rvalue_reference:
+                        kind = derived_type_kind::rvalue_reference;
+                        break;
+                    default:
+                        return malformed();
+                    }
+
+                    modifiers.push_back({
+                        kind,
+                        modifier.payload
+                    });
                 }
 
                 members.push_back({
@@ -627,7 +597,7 @@ status publish_source_entry_impl(
                     user_type_name,
                     modifier_offset,
                     member.modifier_count,
-                    member.user_type_entity
+                    member.type_entity
                 });
             }
 
@@ -644,7 +614,7 @@ status publish_source_entry_impl(
                         fact.definition_state,
                         members,
                         modifiers,
-                        fact.source_entity
+                        fact.entity
                     },
                     scratch.builder);
             }
@@ -673,7 +643,7 @@ status publish_source_entry_impl(
 
 status publish_source_entry(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     const operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -706,7 +676,7 @@ status publish_source_entry(
 
 status publish_source_entry(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     const operation_id operation,
     diagnostic_buffer& diagnostics) noexcept {
@@ -720,47 +690,6 @@ status publish_source_entry(
         operation,
         diagnostics,
         scratch);
-}
-
-status publish_source_facts(
-    graph_build_transaction& transaction,
-    const parser_source_fact_batch& batch,
-    const project_builder& builder,
-    operation_id operation,
-    diagnostic_buffer& diagnostics) noexcept {
-
-    source_build_entry entry;
-    auto result = capture_source_facts(batch, entry);
-
-    if (!result.ok()) {
-        try {
-            const auto& descriptor =
-                result.code == status_code::configuration_failed
-                    ? diagnostics::builder_invalid_source_fact
-                    : diagnostics::construction_initialization_failed;
-
-            diagnostics.emit({
-                descriptor.id,
-                descriptor.default_severity,
-                operation,
-                {batch.source, 0, 0},
-                {}
-            });
-        }
-        catch (...) {
-            result = {status_code::initialization_failed};
-        }
-
-        transaction.fail(result);
-        return result;
-    }
-
-    return publish_source_entry(
-        transaction,
-        entry,
-        builder,
-        operation,
-        diagnostics);
 }
 
 } // namespace cw::server

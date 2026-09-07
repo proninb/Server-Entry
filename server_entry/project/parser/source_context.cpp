@@ -114,14 +114,17 @@ status source_context::store_name(
             (std::numeric_limits<std::uint32_t>::max)());
 
     if (value.size() > maximum ||
-        names.size() > maximum - value.size()) {
+        names.size() > maximum - value.size() ||
+        stored_name_count ==
+            (std::numeric_limits<std::uint32_t>::max)()) {
         return {status_code::initialization_failed};
     }
 
     try {
         result = {
             static_cast<std::uint32_t>(names.size()),
-            static_cast<std::uint32_t>(value.size())
+            static_cast<std::uint32_t>(value.size()),
+            stored_name_count + 1
         };
 
         names.insert(
@@ -129,6 +132,7 @@ status source_context::store_name(
             value.begin(),
             value.end());
 
+        ++stored_name_count;
         return {};
     }
     catch (...) {
@@ -136,7 +140,6 @@ status source_context::store_name(
         return {status_code::initialization_failed};
     }
 }
-
 status source_context::store_qualified_name(
     std::string_view scope,
     std::string_view local,
@@ -159,7 +162,9 @@ status source_context::store_qualified_name(
 
     if (scope.size() > maximum ||
         local.size() > maximum - scope.size() ||
-        separator > maximum - scope.size() - local.size()) {
+        separator > maximum - scope.size() - local.size() ||
+        stored_name_count ==
+            (std::numeric_limits<std::uint32_t>::max)()) {
         return {status_code::initialization_failed};
     }
 
@@ -172,10 +177,14 @@ status source_context::store_qualified_name(
         return {status_code::initialization_failed};
     }
 
+    const auto original_size =
+        names.size();
+
     try {
         result = {
-            static_cast<std::uint32_t>(names.size()),
-            static_cast<std::uint32_t>(count)
+            static_cast<std::uint32_t>(original_size),
+            static_cast<std::uint32_t>(count),
+            stored_name_count + 1
         };
 
         if (!scope.empty()) {
@@ -193,14 +202,15 @@ status source_context::store_qualified_name(
             local.begin(),
             local.end());
 
+        ++stored_name_count;
         return {};
     }
     catch (...) {
+        names.resize(original_size);
         result = {};
         return {status_code::initialization_failed};
     }
 }
-
 status source_context::resolve_name(
     source_name_ref reference,
     std::string_view& output) const noexcept {
@@ -212,6 +222,7 @@ status source_context::resolve_name(
         reference.length;
 
     if (!reference ||
+        reference.index > stored_name_count ||
         end > names.size()) {
         return {status_code::configuration_failed};
     }
@@ -223,7 +234,6 @@ status source_context::resolve_name(
 
     return {};
 }
-
 status source_context::ensure_type_index(
     std::size_t required) noexcept {
 
@@ -699,6 +709,35 @@ status source_context::declare_constant(
     }
 }
 
+status source_context::release_facts(
+    source_id source,
+    source_facts_storage& output) noexcept {
+
+    if (!source) {
+        return {status_code::configuration_failed};
+    }
+
+    output.reset();
+
+    try {
+        output.source = source;
+        output.stored_name_count = stored_name_count;
+        output.names = std::move(names);
+        output.enum_values = std::move(enum_values);
+        output.enums = std::move(enums);
+        output.modifiers = std::move(type_modifiers);
+        output.members = std::move(aggregate_members);
+        output.aggregates = std::move(aggregates);
+
+        stored_name_count = 0;
+        return {};
+    }
+    catch (...) {
+        output.reset();
+        return {status_code::initialization_failed};
+    }
+}
+
 std::span<const enum_value_source_fact> source_context::enumerators(
     const enum_declaration_source_fact& declaration) const noexcept {
 
@@ -764,6 +803,7 @@ std::span<const source_type_modifier> source_context::modifiers(
 
 void source_context::reset() noexcept {
     names.clear();
+    stored_name_count = 0;
     tokens.clear();
     type_declarations.clear();
     type_index.clear();

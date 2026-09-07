@@ -2,6 +2,7 @@
 
 #include "../../status.hpp"
 #include "../builder/source_contribution_cache.hpp"
+#include "../builder/source_build_entry.hpp"
 #include "../source/source_manager.hpp"
 #include "../string/string_registry.hpp"
 #include "graph.hpp"
@@ -20,27 +21,19 @@ class metrics_store;
 class operation_id;
 class project_builder;
 class source_frontend_generation;
-struct parser_source_fact_batch;
-class source_build_entry;
+
 struct source_publish_scratch;
 
-[[nodiscard]] status publish_source_facts(
-    graph_build_transaction& transaction,
-    const parser_source_fact_batch& facts,
-    const project_builder& builder,
-    operation_id operation,
-    diagnostic_buffer& diagnostics) noexcept;
-
 
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics) noexcept;
 [[nodiscard]] status publish_source_entry(
     graph_build_transaction& transaction,
-    source_build_entry& entry,
+    const source_build_entry& entry,
     const project_builder& builder,
     operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -120,23 +113,16 @@ private:
     friend class project_builder;
     friend class source_frontend_generation;
 
-    friend status publish_source_facts(
-        graph_build_transaction& transaction,
-        const parser_source_fact_batch& facts,
-        const project_builder& builder,
-        operation_id operation,
-        diagnostic_buffer& diagnostics) noexcept;
-
 
     friend status publish_source_entry(
         graph_build_transaction& transaction,
-        source_build_entry& entry,
+        const source_build_entry& entry,
         const project_builder& builder,
         operation_id operation,
         diagnostic_buffer& diagnostics) noexcept;
     friend status publish_source_entry(
         graph_build_transaction& transaction,
-        source_build_entry& entry,
+        const source_build_entry& entry,
         const project_builder& builder,
         operation_id operation,
         diagnostic_buffer& diagnostics,
