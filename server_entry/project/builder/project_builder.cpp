@@ -78,9 +78,7 @@ status build_enum_impl(
             if (result.ok() &&
                 fact.source_entity) {
                 result =
-                    replacement.bind_source_entity(
-                        fact.source_entity,
-                        entity);
+                    replacement.bind_source_type(fact.source_entity, type);
             }
         }
 
@@ -129,9 +127,7 @@ status build_aggregate_impl(
 
     if (fact.source_entity) {
         result =
-            replacement.bind_source_entity(
-                fact.source_entity,
-                entity);
+            replacement.bind_source_type(fact.source_entity, type);
 
         if (!result.ok()) {
             return result;
@@ -359,9 +355,7 @@ status project_builder::build(
                     if (result.ok() &&
                         fact.source_entity) {
                         result =
-                            replacement.bind_source_entity(
-                                fact.source_entity,
-                                entity);
+                            replacement.bind_source_type(fact.source_entity, type);
                     }
                 }
 

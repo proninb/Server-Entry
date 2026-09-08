@@ -267,7 +267,7 @@ status source_contribution_cache_update::replace(
         slot.generation = candidate_generation;
 
         // Preserve Source-local vector capacity across candidate generations.
-        slot.value.entity_bindings.clear();
+        slot.value.type_bindings.clear();
         slot.value.named.clear();
         slot.value.anonymous_types.clear();
         slot.value.enum_values.clear();
@@ -392,7 +392,7 @@ void source_contribution_cache_update::publish_prepared() noexcept {
         // G0 rebuild defines the complete Source contribution universe. Sources
         // not observed in this traversal must not retain stale build-cache state.
         for (auto& state : owner->states) {
-            state.entity_bindings.clear();
+            state.type_bindings.clear();
             state.named.clear();
             state.anonymous_types.clear();
             state.enum_values.clear();

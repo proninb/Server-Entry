@@ -467,9 +467,9 @@ public:
             std::span<const member_build> members,
             std::span<const type_modifier_build> modifiers) noexcept;
 
-        [[nodiscard]] status bind_source_entity(
+        [[nodiscard]] status bind_source_type(
             source_entity_ref reference,
-            stable_id entity) noexcept;
+            type_handle type) noexcept;
 
         [[nodiscard]] status resolve_type(
             source_entity_ref reference,

@@ -1363,7 +1363,7 @@ status graph_update::source_replacement::reserve(
     }
 
     try {
-        state->entity_bindings.resize(named_count);
+        state->type_bindings.resize(named_count);
         state->named.reserve(named_count);
         state->anonymous_types.reserve(anonymous_count);
         state->enum_values.reserve(enum_value_count);
@@ -1374,15 +1374,15 @@ status graph_update::source_replacement::reserve(
             {status_code::initialization_failed};
     }
 }
-status graph_update::source_replacement::bind_source_entity(
+status graph_update::source_replacement::bind_source_type(
     source_entity_ref reference,
-    stable_id entity) noexcept {
+    type_handle type) noexcept {
 
     if (!update ||
         !source ||
         !reference ||
         reference.source != source ||
-        !entity ||
+        !type ||
         !state) {
         return {status_code::invalid_state};
     }
@@ -1395,23 +1395,23 @@ status graph_update::source_replacement::bind_source_entity(
         return {status_code::configuration_failed};
     }
 
-    if (raw > state->entity_bindings.size()) {
+    if (raw > state->type_bindings.size()) {
         return update->failure = {
             status_code::configuration_failed
         };
     }
 
     auto& binding =
-        state->entity_bindings[raw - 1];
+        state->type_bindings[raw - 1];
 
     if (binding &&
-        binding != entity) {
+        binding != type) {
         return update->failure = {
             status_code::configuration_failed
         };
     }
 
-    binding = entity;
+    binding = type;
     return {};
 }
 
@@ -1774,32 +1774,23 @@ status graph_update::resolve_source_type(
 
     if (!state ||
         raw == 0 ||
-        raw > state->entity_bindings.size()) {
+        raw > state->type_bindings.size()) {
         return failure = {
             status_code::configuration_failed
         };
     }
 
-    const auto entity_id =
-        state->entity_bindings[raw - 1];
+    const auto type =
+        state->type_bindings[raw - 1];
 
-    if (!entity_id) {
-        return failure = {
-            status_code::configuration_failed
-        };
-    }
-
-    const auto* entity =
-        find(entity_id);
-
-    if (!entity) {
+    if (!type) {
         return failure = {
             status_code::configuration_failed
         };
     }
 
     return get_or_create_named_type_ref(
-        entity->type,
+        type,
         output);
 }
 
