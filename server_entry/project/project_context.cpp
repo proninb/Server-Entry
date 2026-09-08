@@ -154,10 +154,7 @@ void flush_g0_frontend_metrics(
             metrics,
             metric_id::frontend_g0_publish_enum_builder_graph_sample_total_duration,
             summary.g0_publish_enum_builder_graph_sample_total_ns);
-        record_duration_ns(
-            metrics,
-            metric_id::frontend_g0_publish_enum_builder_graph_sample_source_replacement_duration,
-            summary.g0_publish_enum_builder_graph_sample_source_replacement_ns);
+
         record_duration_ns(
             metrics,
             metric_id::frontend_g0_publish_enum_builder_graph_sample_identity_duration,

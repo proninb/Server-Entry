@@ -54,7 +54,7 @@ enum class metric_id : std::uint16_t
     frontend_g0_publish_enum_builder_value_copy_duration,
     frontend_g0_publish_enum_builder_graph_mutation_duration,
     frontend_g0_publish_enum_builder_graph_sample_total_duration,
-    frontend_g0_publish_enum_builder_graph_sample_source_replacement_duration,
+
     frontend_g0_publish_enum_builder_graph_sample_identity_duration,
     frontend_g0_publish_enum_builder_graph_sample_contribution_build_duration,
     frontend_g0_publish_enum_builder_graph_sample_reconcile_duration,

@@ -1418,7 +1418,7 @@ status graph_update::source_replacement::bind_source_entity(
 status graph_update::source_replacement::add_named_enum(string_id name, const enum_build_data& data,
     stable_id& entity, type_handle& type) noexcept {
 
-    return update ? update->declare_named_enum(name, source, data, entity, type, nullptr)
+    return update ? update->add_named_enum_from_replacement(name, source, data, entity, type, nullptr)
         : status{status_code::invalid_state};
 }
 
@@ -1430,7 +1430,7 @@ status graph_update::source_replacement::add_named_enum(
     graph_named_enum_telemetry* telemetry) noexcept {
 
     return update
-        ? update->declare_named_enum(
+        ? update->add_named_enum_from_replacement(
               name,
               source,
               data,
@@ -1443,13 +1443,13 @@ status graph_update::source_replacement::add_named_enum(
 status graph_update::source_replacement::add_anonymous_enum(const enum_build_data& data,
     type_handle& type) noexcept {
 
-    return update ? update->add_anonymous_enum(source, data, type) : status{status_code::invalid_state};
+    return update ? update->add_anonymous_enum_from_replacement(source, data, type) : status{status_code::invalid_state};
 }
 
 status graph_update::source_replacement::add_named_type(string_id name, aggregate_definition_state state,
     stable_id& entity, type_handle& type) noexcept {
 
-    return update ? update->declare_named_type(name, source, state, entity, type)
+    return update ? update->add_named_type_from_replacement(name, source, state, entity, type)
         : status{status_code::invalid_state};
 }
 
@@ -2724,7 +2724,7 @@ status graph_update::reconcile_retained_enum(
     return {};
 }
 
-status graph_update::declare_named_enum(
+status graph_update::add_named_enum_from_replacement(
     string_id name,
     source_id source,
     const enum_build_data& data,
@@ -2769,17 +2769,7 @@ status graph_update::declare_named_enum(
         };
 
     try {
-        begin_phase();
-
-        auto result = begin_source_replacement(source);
-
-        if (sampled) {
-            end_phase(telemetry->source_replacement_ns);
-        }
-
-        if (!result.ok()) {
-            return failure = result;
-        }
+        status result;
 
         begin_phase();
 
@@ -2948,7 +2938,7 @@ status graph_update::declare_named_enum(
     }
 }
 
-status graph_update::declare_named_type(string_id name, source_id source, aggregate_definition_state state,
+status graph_update::add_named_type_from_replacement(string_id name, source_id source, aggregate_definition_state state,
     stable_id& entity, type_handle& type) noexcept {
 
     entity = {};
@@ -2963,11 +2953,7 @@ status graph_update::declare_named_type(string_id name, source_id source, aggreg
     }
 
     try {
-        auto result = begin_source_replacement(source);
-
-        if (!result.ok()) {
-            return failure = result;
-        }
+        status result;
 
         stable_id id;
 
@@ -3034,7 +3020,7 @@ status graph_update::declare_named_type(string_id name, source_id source, aggreg
     }
 }
 
-status graph_update::add_anonymous_enum(source_id source, const enum_build_data& data,
+status graph_update::add_anonymous_enum_from_replacement(source_id source, const enum_build_data& data,
     type_handle& type) noexcept {
 
     type = {};
@@ -3048,13 +3034,7 @@ status graph_update::add_anonymous_enum(source_id source, const enum_build_data&
     }
 
     try {
-        auto result = begin_source_replacement(source);
-
-        if (!result.ok()) {
-            return failure = result;
-        }
-
-        result =
+        auto result =
             flush_retained_source_replacement(source);
 
         if (!result.ok()) {

@@ -86,8 +86,7 @@ inline constexpr std::array<metric_descriptor, metric_count> metric_descriptors{
      "frontend.g0.publish.enum_builder.graph_mutation.duration", "Detailed enum Builder call into Graph source replacement canonical mutation"},
     {metric_id::frontend_g0_publish_enum_builder_graph_sample_total_duration, metric_kind::duration,
      "frontend.g0.publish.enum_builder.graph_sample.total.duration", "Sampled total named-enum Graph mutation duration"},
-    {metric_id::frontend_g0_publish_enum_builder_graph_sample_source_replacement_duration, metric_kind::duration,
-     "frontend.g0.publish.enum_builder.graph_sample.source_replacement.duration", "Sampled begin Source replacement duration"},
+
     {metric_id::frontend_g0_publish_enum_builder_graph_sample_identity_duration, metric_kind::duration,
      "frontend.g0.publish.enum_builder.graph_sample.identity.duration", "Sampled stable identity resolution and allocation duration"},
     {metric_id::frontend_g0_publish_enum_builder_graph_sample_contribution_build_duration, metric_kind::duration,

@@ -1736,8 +1736,7 @@ source_rebuild_result source_frontend_generation::rebuild(
 
                 current_summary.g0_publish_enum_builder_graph_sample_total_ns +=
                     graph_sample.total_ns;
-                current_summary.g0_publish_enum_builder_graph_sample_source_replacement_ns +=
-                    graph_sample.source_replacement_ns;
+
                 current_summary.g0_publish_enum_builder_graph_sample_identity_ns +=
                     graph_sample.identity_ns;
                 current_summary.g0_publish_enum_builder_graph_sample_contribution_build_ns +=

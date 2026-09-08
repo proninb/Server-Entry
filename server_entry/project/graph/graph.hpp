@@ -38,7 +38,7 @@ struct graph_named_enum_telemetry {
     std::uint64_t samples = 0;
 
     std::uint64_t total_ns = 0;
-    std::uint64_t source_replacement_ns = 0;
+
     std::uint64_t identity_ns = 0;
     std::uint64_t contribution_build_ns = 0;
     std::uint64_t reconcile_ns = 0;
@@ -555,11 +555,9 @@ private:
         std::uint64_t candidate_generation,
         bool full_reconstruction) noexcept;
 
-#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
-public:
-#endif
-
-    [[nodiscard]] status declare_named_enum(
+    // Mutates the Source candidate already opened by replace_source().
+    // Only source_replacement may enter these per-fact paths.
+    [[nodiscard]] status add_named_enum_from_replacement(
         string_id name,
         source_id source,
         const enum_build_data& data,
@@ -567,21 +565,17 @@ public:
         type_handle& type,
         graph_named_enum_telemetry* telemetry = nullptr) noexcept;
 
-    [[nodiscard]] status declare_named_type(
+    [[nodiscard]] status add_named_type_from_replacement(
         string_id name,
         source_id source,
         aggregate_definition_state state,
         stable_id& entity,
         type_handle& type) noexcept;
 
-    [[nodiscard]] status add_anonymous_enum(
+    [[nodiscard]] status add_anonymous_enum_from_replacement(
         source_id source,
         const enum_build_data& data,
         type_handle& type) noexcept;
-
-#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
-private:
-#endif
 
     [[nodiscard]] status resolve_source_type(
         source_entity_ref reference,

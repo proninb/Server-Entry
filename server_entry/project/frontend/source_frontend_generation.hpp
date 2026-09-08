@@ -68,7 +68,7 @@ struct source_frontend_summary {
     std::uint64_t g0_publish_enum_builder_graph_mutation_ns = 0;
 
     std::uint64_t g0_publish_enum_builder_graph_sample_total_ns = 0;
-    std::uint64_t g0_publish_enum_builder_graph_sample_source_replacement_ns = 0;
+
     std::uint64_t g0_publish_enum_builder_graph_sample_identity_ns = 0;
     std::uint64_t g0_publish_enum_builder_graph_sample_contribution_build_ns = 0;
     std::uint64_t g0_publish_enum_builder_graph_sample_reconcile_ns = 0;
