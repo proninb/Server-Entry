@@ -13,6 +13,14 @@ namespace {
 
 constexpr std::size_t string_index_floor = 64;
 
+template <typename T>
+void reserve_incremental_capacity(std::vector<T>& values, std::size_t required) {
+    if (required <= values.capacity()) return;
+    const auto extra = (std::max)(required / 8, std::size_t{64});
+    const auto maximum = (std::numeric_limits<std::size_t>::max)();
+    values.reserve(required > maximum - extra ? required : required + extra);
+}
+
 std::size_t next_power_of_two(
     std::size_t value) noexcept {
 
@@ -1098,8 +1106,7 @@ status string_registry_update::prepare_publish() noexcept {
             owner->records.size() +
             added_records.size();
 
-        owner->records.reserve(
-            record_required);
+        reserve_incremental_capacity(owner->records, record_required);
 
         if (!added_records.empty()) {
             if (owner->blocks.size() >=
@@ -1109,7 +1116,7 @@ status string_registry_update::prepare_publish() noexcept {
                 };
             }
 
-            owner->blocks.reserve(
+            reserve_incremental_capacity(owner->blocks,
                 owner->blocks.size() + 1);
         }
 
@@ -1287,6 +1294,7 @@ status string_registry_update::prepare_rebuild_compaction(
         rebuilt_index.clear();
         rebuilt_live_count = 0;
 
+        reserve_incremental_capacity(rebuilt_records, candidate_size);
         rebuilt_records.resize(
             candidate_size);
 

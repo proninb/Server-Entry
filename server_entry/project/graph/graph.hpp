@@ -373,9 +373,10 @@ private:
     friend class graph_update;
     friend class graph_build_transaction_test_access;
 
-    // type_handle is one-based; slot N addresses types[N - 1].
+    // type_handle is one-based; slot N addresses types[N - 1]. Incremental
+    // updates append new slots; removed slots stay empty until Rebuild/G0.
+    // Thus old named/derived TypeRefs cannot acquire a different meaning.
     std::vector<std::optional<type_storage>> types;
-    std::vector<std::uint32_t> free_type_slots;
 
     // stable_id values directly index entities; slot zero is not a live Entity.
     std::vector<entity_slot> entities;
@@ -467,9 +468,9 @@ public:
             std::span<const member_build> members,
             std::span<const type_modifier_build> modifiers) noexcept;
 
-        [[nodiscard]] status bind_source_type(
+        [[nodiscard]] status bind_source_entity(
             source_entity_ref reference,
-            type_handle type) noexcept;
+            stable_id entity) noexcept;
 
         [[nodiscard]] status resolve_type(
             source_entity_ref reference,
@@ -724,7 +725,6 @@ private:
     std::vector<std::uint32_t> changed_types;
     std::vector<std::uint32_t> changed_sources;
 
-    std::vector<std::uint32_t> claimed_free_type_slots;
 
     // Rebuild-only complete canonical storage. G0 is materialized into detached
     // arrays and publication swaps them into Graph in one operation; sparse
@@ -732,7 +732,6 @@ private:
     std::vector<stable_id> rebuilt_identity;
     std::vector<graph::entity_slot> rebuilt_entities;
     std::vector<std::optional<graph::type_storage>> rebuilt_types;
-    std::vector<std::uint32_t> rebuilt_free_type_slots;
     std::size_t rebuilt_entity_count = 0;
     std::size_t rebuilt_type_count = 0;
 

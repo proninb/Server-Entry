@@ -85,6 +85,8 @@ public:
     graph_build_transaction(const graph_build_transaction&) = delete;
     graph_build_transaction& operator=(const graph_build_transaction&) = delete;
 
+    // Moving invalidates issued transaction references/source_replacement
+    // views. The owned candidate state remains publishable after the move.
     graph_build_transaction(graph_build_transaction&& other) noexcept;
     graph_build_transaction& operator=(graph_build_transaction&&) = delete;
 

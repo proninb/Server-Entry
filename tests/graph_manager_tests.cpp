@@ -1,6 +1,7 @@
 #include "../server_entry/project/graph/graph_manager.hpp"
 #include "../server_entry/project/graph/graph_build_transaction.hpp"
 #include "../server_entry/project/graph/type_ref.hpp"
+#include "../server_entry/project/graph/compiled_state.hpp"
 #include "../server_entry/metrics/source_acquisition_telemetry.hpp"
 
 #include <array>
@@ -31,6 +32,19 @@ public:
 
     static status prepare(graph_build_transaction& value) noexcept {
         return value.prepare();
+    }
+
+    static void publish(graph_build_transaction& value) noexcept {
+        value.publish_prepared();
+    }
+
+    static bool dependency_index_matches_import(const graph_manager& manager) {
+        compiled_graph_state state;
+        graph imported;
+        return manager.graph_state.export_compiled(state).ok() &&
+            imported.initialize().ok() && imported.import_compiled(state).ok() &&
+            imported.type_dependencies == manager.graph_state.type_dependencies &&
+            imported.reverse_type_dependents == manager.graph_state.reverse_type_dependents;
     }
 
     static graph_build_transaction_state state(
@@ -216,6 +230,158 @@ bool open_source(
     return transaction.graph_state().replace_source(
         source,
         output).ok();
+}
+
+bool test_transaction_move_and_rollback() {
+    graph_manager manager;
+    if (!manager.initialize().ok()) return false;
+    source_id source;
+    string_id name;
+    std::optional<graph_build_transaction> moved;
+    {
+        auto original = manager.begin_build(graph_build_mode::rebuild);
+        if (!resolve_source(original, source_a, source)) return false;
+        moved.emplace(std::move(original));
+    }
+    graph_update::source_replacement replacement;
+    stable_id id;
+    type_handle handle;
+    if (!moved->strings().bind("Moved", name).ok() ||
+        !open_source(*moved, source, replacement) ||
+        !replacement.add_named_type(name, aggregate_definition_state::defined, id, handle).ok() ||
+        !moved->commit().ok()) return false;
+    moved.reset();
+    const auto initial = manager.compiled_graph().storage_snapshot_for_testing();
+    {
+        auto original = manager.begin_build(graph_build_mode::incremental);
+        graph_update::source_replacement changed;
+        if (!open_source(original, source, changed) ||
+            !changed.add_named_type(name, aggregate_definition_state::declared, id, handle).ok() ||
+            !access::prepare(original).ok()) return false;
+        moved.emplace(std::move(original));
+    }
+    access::publish(*moved);
+    moved.reset();
+    const auto* entry = manager.compiled_graph().find(handle);
+    if (!entry || entry->definition || access::contribution_count(manager, source) != 1) return false;
+    {
+        auto original = manager.begin_build(graph_build_mode::incremental);
+        graph_update::source_replacement changed;
+        if (!open_source(original, source, changed) ||
+            !access::prepare(original).ok()) return false;
+        moved.emplace(std::move(original));
+    }
+    moved.reset(); // Rollback after the original has been destroyed.
+    const auto after = manager.compiled_graph().storage_snapshot_for_testing();
+    return manager.compiled_graph().find(id) &&
+        after.entities_size == initial.entities_size &&
+        access::contribution_count(manager, source) == 1 &&
+        manager.state() == project_state::error;
+}
+
+bool test_repeated_g0_identity_is_bounded() {
+    graph_manager manager;
+    if (!manager.initialize().ok()) return false;
+    stable_id historical;
+    std::size_t identity_size = 0;
+    for (int run = 0; run != 8; ++run) {
+        auto tx = manager.begin_build(graph_build_mode::rebuild);
+        source_id source;
+        string_id name;
+        if (!resolve_source(tx, source_a, source) ||
+            !tx.strings().bind("Same", name).ok() ||
+            !tx.graph_state().reserve_rebuild(1, 1000, 1, 1).ok()) return false;
+        graph_update::source_replacement replacement;
+        stable_id id;
+        type_handle handle;
+        if (!open_source(tx, source, replacement) ||
+            !replacement.add_named_type(name, aggregate_definition_state::defined, id, handle).ok() ||
+            !tx.commit().ok()) return false;
+        compiled_graph_state state;
+        if (!manager.compiled_graph().export_compiled(state).ok()) return false;
+        if (run == 0) {
+            historical = id;
+            identity_size = state.identities.size();
+        }
+        if (id != historical || state.identities.size() != identity_size ||
+            identity_size != static_cast<std::size_t>(name.value()) + 1) return false;
+    }
+    return true;
+}
+
+bool test_removed_type_coordinate_is_not_reused() {
+    graph_manager manager;
+    if (!manager.initialize().ok()) return false;
+    source_id source;
+    type_handle old_handle, new_handle;
+    compiled_graph_state before;
+    for (int step = 0; step != 3; ++step) {
+        auto tx = manager.begin_build(step == 0 ? graph_build_mode::rebuild : graph_build_mode::incremental);
+        if (step == 0 && !resolve_source(tx, source_a, source)) return false;
+        graph_update::source_replacement replacement;
+        if (!open_source(tx, source, replacement)) return false;
+        if (step != 1) {
+            string_id name; stable_id id;
+            auto& handle = step == 0 ? old_handle : new_handle;
+            if (!tx.strings().bind(step == 0 ? "Old" : "New", name).ok() ||
+                !replacement.add_named_type(name, aggregate_definition_state::defined, id, handle).ok()) return false;
+        }
+        if (!tx.commit().ok()) return false;
+        if (step == 0 && !manager.compiled_graph().export_compiled(before).ok()) return false;
+    }
+    compiled_graph_state after;
+    if (old_handle == new_handle || manager.compiled_graph().find(old_handle) ||
+        !manager.compiled_graph().find(new_handle) ||
+        !manager.compiled_graph().export_compiled(after).ok() ||
+        after.canonical_types.size() <= before.canonical_types.size()) return false;
+    for (std::size_t i = 0; i != before.canonical_types.size(); ++i) {
+        const auto& a = before.canonical_types[i];
+        const auto& b = after.canonical_types[i];
+        if (a.kind != b.kind || a.subtype != b.subtype || a.argument != b.argument || a.payload != b.payload) return false;
+    }
+    graph imported;
+    return imported.initialize().ok() && imported.import_compiled(after).ok() &&
+        !imported.find(old_handle) && imported.find(new_handle);
+}
+
+bool test_dependency_edge_deltas_match_full_reconstruction() {
+    graph_manager manager;
+    if (!manager.initialize().ok()) return false;
+    source_id bases_source, holders_source;
+    string_id base_names[2], member_name;
+    for (int pass = 0; pass != 6; ++pass) {
+        {
+            auto tx = manager.begin_build(pass == 0 ? graph_build_mode::rebuild : graph_build_mode::incremental);
+            if (pass == 0) {
+                if (!resolve_source(tx, source_a, bases_source) ||
+                    !resolve_source(tx, source_b, holders_source) ||
+                    !tx.strings().bind("m", member_name).ok()) return false;
+                graph_update::source_replacement bases;
+                if (!open_source(tx, bases_source, bases)) return false;
+                for (int i = 0; i != 2; ++i) {
+                    stable_id id; type_handle handle;
+                    if (!tx.strings().bind(i == 0 ? "BaseA" : "BaseB", base_names[i]).ok() ||
+                        !bases.add_named_type(base_names[i], aggregate_definition_state::declared, id, handle).ok()) return false;
+                }
+            }
+            graph_update::source_replacement holders;
+            if (!open_source(tx, holders_source, holders)) return false;
+            for (int i = 0; i != (pass == 5 ? 32 : 64); ++i) {
+                string_id name; stable_id id; type_handle handle;
+                if (!tx.strings().bind("Holder" + std::to_string(i), name).ok() ||
+                    !holders.add_named_type(name, aggregate_definition_state::defined, id, handle).ok()) return false;
+                const member_build member{member_name, std::nullopt, base_names[(i + pass) % 2], 0, 0};
+                if (!holders.define_members(handle,
+                    pass == 3 ? std::span<const member_build>{} : std::span<const member_build>{&member, 1}, {}).ok()) return false;
+            }
+            if (pass == 4) {
+                if (!access::prepare(tx).ok() || !access::dependency_index_matches_import(manager)) return false;
+                // Cancel a prepared rewire: the old reverse index must survive.
+            } else if (!tx.commit().ok()) return false;
+        }
+        if (!access::dependency_index_matches_import(manager)) return false;
+    }
+    return true;
 }
 
 bool test_project_lifecycle_runtime_gate() {
@@ -1827,6 +1993,10 @@ int main() {
         const char* name;
         bool (*run)();
     } tests[] = {
+        {"transaction move and rollback", test_transaction_move_and_rollback},
+        {"repeated G0 identity remains bounded", test_repeated_g0_identity_is_bounded},
+        {"removed TypeRef coordinate is not reused", test_removed_type_coordinate_is_not_reused},
+        {"sparse dependency index equals full reconstruction", test_dependency_edge_deltas_match_full_reconstruction},
         {"project lifecycle/runtime gate", test_project_lifecycle_runtime_gate},
         {"discard/prepared rejection", test_discard_and_prepared_mutation_rejection},
         {"stale Source generation", test_stale_source_generation_is_atomic},

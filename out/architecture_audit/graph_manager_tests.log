@@ -1,0 +1,12 @@
+PASS: project lifecycle/runtime gate
+PASS: discard/prepared rejection
+PASS: stale Source generation
+PASS: forced prepare failures
+PASS: stable IDs follow canonical publication order
+PASS: retained flush reopens after Source replacement
+PASS: definition range/external contributions
+PASS: defined-empty/resurrection
+PASS: aggregate modifiers
+PASS: pending named member/dangling guard
+PASS: incremental handle/TypeRef preservation
+PASS: compiled checkpoint/fail-closed load

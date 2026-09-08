@@ -1,0 +1,143 @@
+Build started 9/8/2026 1:05:16 PM.
+Logging verbosity is set to: Normal.
+     1>Project "C:\Boris\Server Entry\FrontendBenchmark.vcxproj" on node 1 (default targets).
+     1>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\Frontend.13720FD1.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\Frontend.13720FD1.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\\" /Fd"C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue benchmarks\rc_v2_02b_frontend_benchmark.cpp server_entry\core\filesystem\file_snapshot.cpp server_entry\metrics\metrics_store.cpp server_entry\project\builder\project_builder.cpp server_entry\project\builder\source_build_entry.cpp server_entry\project\builder\source_contribution_cache.cpp server_entry\project\frontend\source_frontend_cache.cpp server_entry\project\frontend\source_frontend_generation.cpp server_entry\project\frontend\source_frontend_incremental.cpp server_entry\project\frontend\source_publisher.cpp server_entry\project\graph\compiled_persistence.cpp server_entry\project\graph\graph.cpp server_entry\project\graph\graph_build_transaction.cpp server_entry\project\graph\graph_manager.cpp server_entry\project\parser\lexer.cpp server_entry\project\parser\parser.cpp server_entry\project\parser\source_context.cpp server_entry\project\parser\source_environment.cpp server_entry\project\project_composition_resolver.cpp server_entry\project\project_configuration_loader.cpp server_entry\project\project_context.cpp server_entry\project\runtime\runtime.cpp server_entry\project\source\source_change_tracker.cpp server_entry\project\source\source_manager.cpp server_entry\project\source\source_manager_persistence.cpp server_entry\project\string\string_registry.cpp
+         rc_v2_02b_frontend_benchmark.cpp
+         file_snapshot.cpp
+         metrics_store.cpp
+         project_builder.cpp
+         source_build_entry.cpp
+         source_contribution_cache.cpp
+         source_frontend_cache.cpp
+         source_frontend_generation.cpp
+         source_frontend_incremental.cpp
+         source_publisher.cpp
+         compiled_persistence.cpp
+         graph.cpp
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1464,100): warning C4458: declaration of 'state' hides class member [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.hpp(516,36):
+             see declaration of 'cw::server::graph_update::source_replacement::state'
+         
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1623,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1623,47):
+             the template instantiation context (the oldest one first) is
+                 C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1801,12):
+                 see reference to function template instantiation 'cw::server::status cw::server::graph_update::get_or_create_named_type_ref_impl<false>(cw::server::type_handle,cw::server::TypeRef &,cw::server::graph_named_enum_telemetry *) noexcept' being compiled
+         
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2159,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2159,47):
+             the template instantiation context (the oldest one first) is
+                 C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2262,12):
+                 see reference to function template instantiation 'cw::server::status cw::server::graph_update::assign_type_impl<false>(cw::server::stable_id,cw::server::graph::entity_slot &,cw::server::graph::type_storage,cw::server::graph_named_enum_telemetry *) noexcept' being compiled
+         
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2303,28): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2303,28):
+             the template instantiation context (the oldest one first) is
+                 C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2562,12):
+                 see reference to function template instantiation 'cw::server::status cw::server::graph_update::materialize_impl<false>(cw::server::stable_id,cw::server::string_id,cw::server::type_handle *,cw::server::graph_named_enum_telemetry *) noexcept' being compiled
+         
+         graph_build_transaction.cpp
+         graph_manager.cpp
+         lexer.cpp
+         parser.cpp
+     1>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         (compiling source file 'server_entry/project/parser/parser.cpp')
+         
+         source_context.cpp
+     1>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         (compiling source file 'server_entry/project/parser/source_context.cpp')
+         
+         source_environment.cpp
+         project_composition_resolver.cpp
+         project_configuration_loader.cpp
+         Compiling...
+         project_context.cpp
+         runtime.cpp
+         source_change_tracker.cpp
+     1>C:\Boris\Server Entry\server_entry\project\source\source_change_tracker.cpp(468,15): warning C4189: 'ignored': local variable is initialized but not referenced [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         source_manager.cpp
+         source_manager_persistence.cpp
+         string_registry.cpp
+     1>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+       Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\Release\rc_v2_03_source_change_benchmark.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\Release\rc_v2_03_source_change_benchmark.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\rc_v2_03_source_change_benchmark.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\Release\rc_v2_03_source_change_benchmark.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\rc_v2_02b_frontend_benchmark.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\logger.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\json_parser.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\project_context.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\project_configuration_loader.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\project_composition_resolver.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\project_builder.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_build_entry.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_context.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\parser.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\lexer.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_environment.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_publisher.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_frontend_generation.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_frontend_cache.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_frontend_incremental.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\graph.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\compiled_persistence.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\runtime.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\shared_memory.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_change_tracker.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_manager_persistence.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\file_snapshot.obj"
+         Generating code
+     1>C:\Boris\Server Entry\server_entry\project\frontend\source_publisher.cpp(482): warning C4702: unreachable code [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         3228 of 10381 functions (31.1%) were compiled, the rest were copied from previous compilation.
+           1368 functions were new in current compilation
+           1177 functions had inline decision re-evaluated but remain unchanged
+         Finished generating code
+         FrontendBenchmark.vcxproj -> C:\Boris\Server Entry\out\Release\rc_v2_03_source_change_benchmark.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\Frontend.13720FD1.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\obj\FrontendBenchmark\Release\Frontend.13720FD1.tlog\FrontendBenchmark.lastbuildstate".
+     1>Done Building Project "C:\Boris\Server Entry\FrontendBenchmark.vcxproj" (default targets).
+
+Build succeeded.
+
+       "C:\Boris\Server Entry\FrontendBenchmark.vcxproj" (default target) (1) ->
+       (ClCompile target) -> 
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1464,100): warning C4458: declaration of 'state' hides class member [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1623,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2159,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2303,28): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\source\source_change_tracker.cpp(468,15): warning C4189: 'ignored': local variable is initialized but not referenced [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+
+
+       "C:\Boris\Server Entry\FrontendBenchmark.vcxproj" (default target) (1) ->
+       (Link target) -> 
+         C:\Boris\Server Entry\server_entry\project\frontend\source_publisher.cpp(482): warning C4702: unreachable code [C:\Boris\Server Entry\FrontendBenchmark.vcxproj]
+
+    9 Warning(s)
+    0 Error(s)
+
+FileLogger wrote to: C:\Boris\Server Entry\out\architecture_audit\frontend_build.log
+
+Time Elapsed 00:00:30.08

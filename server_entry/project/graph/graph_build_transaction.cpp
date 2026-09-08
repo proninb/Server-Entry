@@ -60,6 +60,9 @@ graph_build_transaction::graph_build_transaction(
       fail_after_graph_prepare(other.fail_after_graph_prepare)
 #endif
 {
+    // graph_update's dependency is another member of this transaction. Moving
+    // its pointer alone would retain the moved-from contribution update.
+    graph_update_state.contributions = &contribution_update;
 }
 
 void graph_build_transaction::fail(status result) noexcept {

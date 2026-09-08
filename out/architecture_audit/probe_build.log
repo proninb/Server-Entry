@@ -1,0 +1,95 @@
+Build started 9/8/2026 1:04:08 PM.
+Logging verbosity is set to: Normal.
+     1>Project "C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj" on node 1 (default targets).
+     1>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Touching "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\Architec.78CB400D.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D CW_GRAPH_BUILD_TRANSACTION_TESTING /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\\" /Fd"C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue out\architecture_audit\audit_probe.cpp server_entry\project\graph\graph_manager.cpp server_entry\project\builder\source_contribution_cache.cpp server_entry\project\graph\graph_build_transaction.cpp server_entry\project\graph\graph.cpp server_entry\project\graph\builtin_type.cpp server_entry\project\string\string_registry.cpp server_entry\project\source\source_manager.cpp server_entry\project\source\source_hash.cpp server_entry\core\hash\sha256.cpp server_entry\core\filesystem\file_snapshot.cpp server_entry\diagnostics\diagnostic_buffer.cpp server_entry\metrics\metrics_store.cpp server_entry\project\source\source_manager_persistence.cpp server_entry\project\graph\compiled_persistence.cpp
+         audit_probe.cpp
+         graph_manager.cpp
+         source_contribution_cache.cpp
+         graph_build_transaction.cpp
+         graph.cpp
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1464,100): warning C4458: declaration of 'state' hides class member [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.hpp(516,36):
+             see declaration of 'cw::server::graph_update::source_replacement::state'
+         
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1623,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1623,47):
+             the template instantiation context (the oldest one first) is
+                 C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1801,12):
+                 see reference to function template instantiation 'cw::server::status cw::server::graph_update::get_or_create_named_type_ref_impl<false>(cw::server::type_handle,cw::server::TypeRef &,cw::server::graph_named_enum_telemetry *) noexcept' being compiled
+         
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2159,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2159,47):
+             the template instantiation context (the oldest one first) is
+                 C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2262,12):
+                 see reference to function template instantiation 'cw::server::status cw::server::graph_update::assign_type_impl<false>(cw::server::stable_id,cw::server::graph::entity_slot &,cw::server::graph::type_storage,cw::server::graph_named_enum_telemetry *) noexcept' being compiled
+         
+     1>C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2303,28): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+             C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2303,28):
+             the template instantiation context (the oldest one first) is
+                 C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2562,12):
+                 see reference to function template instantiation 'cw::server::status cw::server::graph_update::materialize_impl<false>(cw::server::stable_id,cw::server::string_id,cw::server::type_handle *,cw::server::graph_named_enum_telemetry *) noexcept' being compiled
+         
+         builtin_type.cpp
+         string_registry.cpp
+     1>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+         source_manager.cpp
+         source_hash.cpp
+         sha256.cpp
+         file_snapshot.cpp
+         diagnostic_buffer.cpp
+         metrics_store.cpp
+         source_manager_persistence.cpp
+         compiled_persistence.cpp
+       Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\Release\architecture_audit_probe.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\Release\architecture_audit_probe.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\architecture_audit_probe.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\Release\architecture_audit_probe.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\audit_probe.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\graph.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\file_snapshot.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\source_manager_persistence.obj"
+         "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\compiled_persistence.obj"
+         Generating code
+         Previous IPDB not found, fall back to full compilation.
+         All 5781 functions were compiled because no usable IPDB/IOBJ from previous compilation was found.
+         Finished generating code
+         ArchitectureAuditProbe.generated.vcxproj -> C:\Boris\Server Entry\out\Release\architecture_audit_probe.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\Architec.78CB400D.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\obj\ArchitectureAuditProbe\Release\Architec.78CB400D.tlog\ArchitectureAuditProbe.generated.lastbuildstate".
+     1>Done Building Project "C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj" (default targets).
+
+Build succeeded.
+
+       "C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj" (default target) (1) ->
+       (ClCompile target) -> 
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1464,100): warning C4458: declaration of 'state' hides class member [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(1623,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2159,47): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\graph\graph.cpp(2303,28): warning C4100: 'target': unreferenced parameter [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ArchitectureAuditProbe.generated.vcxproj]
+
+    5 Warning(s)
+    0 Error(s)
+
+FileLogger wrote to: C:\Boris\Server Entry\out\architecture_audit\probe_build.log
+
+Time Elapsed 00:00:15.26

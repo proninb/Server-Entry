@@ -1,0 +1,189 @@
+diff --git a/server_entry/project/builder/project_builder.cpp b/server_entry/project/builder/project_builder.cpp
+index c321918..ab9227b 100644
+--- a/server_entry/project/builder/project_builder.cpp
++++ b/server_entry/project/builder/project_builder.cpp
+@@ -78,7 +78,9 @@ status build_enum_impl(
+             if (result.ok() &&
+                 fact.source_entity) {
+                 result =
+-                    replacement.bind_source_type(fact.source_entity, type);
++                    replacement.bind_source_entity(
++                        fact.source_entity,
++                        entity);
+             }
+         }
+ 
+@@ -127,7 +129,9 @@ status build_aggregate_impl(
+ 
+     if (fact.source_entity) {
+         result =
+-            replacement.bind_source_type(fact.source_entity, type);
++            replacement.bind_source_entity(
++                fact.source_entity,
++                entity);
+ 
+         if (!result.ok()) {
+             return result;
+@@ -355,7 +359,9 @@ status project_builder::build(
+                     if (result.ok() &&
+                         fact.source_entity) {
+                         result =
+-                            replacement.bind_source_type(fact.source_entity, type);
++                            replacement.bind_source_entity(
++                                fact.source_entity,
++                                entity);
+                     }
+                 }
+ 
+diff --git a/server_entry/project/builder/source_contribution_cache.cpp b/server_entry/project/builder/source_contribution_cache.cpp
+index 3c3e55a..ba727f3 100644
+--- a/server_entry/project/builder/source_contribution_cache.cpp
++++ b/server_entry/project/builder/source_contribution_cache.cpp
+@@ -267,7 +267,7 @@ status source_contribution_cache_update::replace(
+         slot.generation = candidate_generation;
+ 
+         // Preserve Source-local vector capacity across candidate generations.
+-        slot.value.type_bindings.clear();
++        slot.value.entity_bindings.clear();
+         slot.value.named.clear();
+         slot.value.anonymous_types.clear();
+         slot.value.enum_values.clear();
+@@ -392,7 +392,7 @@ void source_contribution_cache_update::publish_prepared() noexcept {
+         // G0 rebuild defines the complete Source contribution universe. Sources
+         // not observed in this traversal must not retain stale build-cache state.
+         for (auto& state : owner->states) {
+-            state.type_bindings.clear();
++            state.entity_bindings.clear();
+             state.named.clear();
+             state.anonymous_types.clear();
+             state.enum_values.clear();
+diff --git a/server_entry/project/builder/source_contribution_cache.hpp b/server_entry/project/builder/source_contribution_cache.hpp
+index f4be3b2..835a1e2 100644
+--- a/server_entry/project/builder/source_contribution_cache.hpp
++++ b/server_entry/project/builder/source_contribution_cache.hpp
+@@ -59,9 +59,8 @@ struct canonical_entity_construction_state {
+ 
+ // Complete incremental build contribution retained for one source_id.
+ struct source_contribution_state {
+-    // Direct source_declaration_id -> generation-local canonical type coordinate.
+-    // G0 rebuilds this cache; incremental builds preserve type_handle identity.
+-    std::vector<type_handle> type_bindings;
++    // Direct source_declaration_id -> stable_id canonical binding.
++    std::vector<stable_id> entity_bindings;
+ 
+     std::vector<source_contribution_record> named;
+     std::vector<std::uint32_t> anonymous_types;
+diff --git a/server_entry/project/graph/graph.cpp b/server_entry/project/graph/graph.cpp
+index 72b6967..c24f38b 100644
+--- a/server_entry/project/graph/graph.cpp
++++ b/server_entry/project/graph/graph.cpp
+@@ -1363,7 +1363,7 @@ status graph_update::source_replacement::reserve(
+     }
+ 
+     try {
+-        state->type_bindings.resize(named_count);
++        state->entity_bindings.resize(named_count);
+         state->named.reserve(named_count);
+         state->anonymous_types.reserve(anonymous_count);
+         state->enum_values.reserve(enum_value_count);
+@@ -1374,15 +1374,15 @@ status graph_update::source_replacement::reserve(
+             {status_code::initialization_failed};
+     }
+ }
+-status graph_update::source_replacement::bind_source_type(
++status graph_update::source_replacement::bind_source_entity(
+     source_entity_ref reference,
+-    type_handle type) noexcept {
++    stable_id entity) noexcept {
+ 
+     if (!update ||
+         !source ||
+         !reference ||
+         reference.source != source ||
+-        !type ||
++        !entity ||
+         !state) {
+         return {status_code::invalid_state};
+     }
+@@ -1395,23 +1395,23 @@ status graph_update::source_replacement::bind_source_type(
+         return {status_code::configuration_failed};
+     }
+ 
+-    if (raw > state->type_bindings.size()) {
++    if (raw > state->entity_bindings.size()) {
+         return update->failure = {
+             status_code::configuration_failed
+         };
+     }
+ 
+     auto& binding =
+-        state->type_bindings[raw - 1];
++        state->entity_bindings[raw - 1];
+ 
+     if (binding &&
+-        binding != type) {
++        binding != entity) {
+         return update->failure = {
+             status_code::configuration_failed
+         };
+     }
+ 
+-    binding = type;
++    binding = entity;
+     return {};
+ }
+ 
+@@ -1774,23 +1774,32 @@ status graph_update::resolve_source_type(
+ 
+     if (!state ||
+         raw == 0 ||
+-        raw > state->type_bindings.size()) {
++        raw > state->entity_bindings.size()) {
+         return failure = {
+             status_code::configuration_failed
+         };
+     }
+ 
+-    const auto type =
+-        state->type_bindings[raw - 1];
++    const auto entity_id =
++        state->entity_bindings[raw - 1];
+ 
+-    if (!type) {
++    if (!entity_id) {
++        return failure = {
++            status_code::configuration_failed
++        };
++    }
++
++    const auto* entity =
++        find(entity_id);
++
++    if (!entity) {
+         return failure = {
+             status_code::configuration_failed
+         };
+     }
+ 
+     return get_or_create_named_type_ref(
+-        type,
++        entity->type,
+         output);
+ }
+ 
+diff --git a/server_entry/project/graph/graph.hpp b/server_entry/project/graph/graph.hpp
+index cd40138..2a0b797 100644
+--- a/server_entry/project/graph/graph.hpp
++++ b/server_entry/project/graph/graph.hpp
+@@ -467,9 +467,9 @@ public:
+             std::span<const member_build> members,
+             std::span<const type_modifier_build> modifiers) noexcept;
+ 
+-        [[nodiscard]] status bind_source_type(
++        [[nodiscard]] status bind_source_entity(
+             source_entity_ref reference,
+-            type_handle type) noexcept;
++            stable_id entity) noexcept;
+ 
+         [[nodiscard]] status resolve_type(
+             source_entity_ref reference,

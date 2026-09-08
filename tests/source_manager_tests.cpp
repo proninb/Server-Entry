@@ -148,9 +148,10 @@ bool test_include_identity_and_reverse_edges()
         manager.dependents(b).size() != 2) return false;
 
     auto next = manager.begin_update();
-    source_id root_b;
-    if (!next.resolve(b_file.path, project_item_role::source, root_b).ok() ||
-        root_b != b || !next.commit().ok()) return false;
+    // add() replaces the root set; resolve() only resolves identity while
+    // preserving committed roots during sparse incremental acquisition.
+    if (!next.add(b_file.path, project_item_role::source).ok() ||
+        !next.commit().ok()) return false;
     return manager.sources().size() == 3 && manager.roots().size() == 1 &&
            manager.roots()[0].source == b;
 }

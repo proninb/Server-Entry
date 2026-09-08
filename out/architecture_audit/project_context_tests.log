@@ -1,0 +1,8 @@
+PASS: full Project -> Source -> Parser -> Graph -> Runtime load
+PASS: invalid project configuration fail-closed
+PASS: Parser failure fail-closed
+PASS: no-change rebuild touches zero Sources
+PASS: dirty independent Source rebuild is O(K)
+PASS: dirty Source dependent closure rebuild
+RECOVERY_DIAG phase=bad_write_timeout attempt=200 status=0 state=0 diagnostics=0 runtime_status=0 runtime_ptr=1 dirty=0 checked=0 affected=0 working_states=0 discovery=0 lex=0 parse=0 publish=0 reconciliation=0
+FAILED: failed incremental Parser generation recovers

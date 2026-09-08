@@ -59,9 +59,8 @@ struct canonical_entity_construction_state {
 
 // Complete incremental build contribution retained for one source_id.
 struct source_contribution_state {
-    // Direct source_declaration_id -> generation-local canonical type coordinate.
-    // G0 rebuilds this cache; incremental builds preserve type_handle identity.
-    std::vector<type_handle> type_bindings;
+    // Direct source_declaration_id -> stable_id canonical binding.
+    std::vector<stable_id> entity_bindings;
 
     std::vector<source_contribution_record> named;
     std::vector<std::uint32_t> anonymous_types;

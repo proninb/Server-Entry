@@ -14,6 +14,7 @@
 #include <limits>
 #include <string>
 #include <thread>
+#include <iostream>
 #include <unordered_map>
 
 namespace
@@ -340,7 +341,7 @@ bool test_acquisition_and_candidate_metrics()
     reset_source_telemetry_test_clock();
     if (!added.add(path, project_item_role::source).ok() ||
         !added.acquire(source_id{1}, acquisition).ok() ||
-        source_telemetry_test_clock_read_count() != 8) return false;
+        source_telemetry_test_clock_read_count() != 9) return false;
     acquisition.flush_to(added_metrics);
     added.record_candidate_metrics(added_metrics);
     auto snapshot = added_metrics.snapshot();
@@ -361,8 +362,9 @@ bool test_acquisition_and_candidate_metrics()
         snapshot.duration(metric_id::source_observe_before_duration).total_ns +
         snapshot.duration(metric_id::source_read_duration).total_ns +
         snapshot.duration(metric_id::source_observe_after_duration).total_ns +
-        snapshot.duration(metric_id::source_sha256_duration).total_ns +
-        snapshot.duration(metric_id::source_candidate_update_duration).total_ns;
+        snapshot.duration(metric_id::source_sha256_duration).total_ns;
+    // Acquisition runs on a worker; candidate mutation is a separate
+    // coordinator phase and is not contained in its acquisition interval.
     if (phase_total > snapshot.duration(metric_id::source_acquisition_duration).total_ns)
         return false;
 
@@ -479,12 +481,13 @@ bool test_off_and_basic_modes()
 
 bool test_persistence_round_trip_and_vectors()
 {
+    const auto fail = [](int line) { std::cerr << "Persistence check failed at line " << line << '\n'; return false; };
     if (source_path_xxh64({}) != 0xef46db3751d8e999ull ||
         source_path_fingerprint(source_path_xxh64({})) != 0xbe9e32aeu)
-        return false;
+        return fail(__LINE__);
     const std::string crc_text = "123456789";
     if (source_manager_crc32c({reinterpret_cast<const std::byte*>(crc_text.data()),
-                               crc_text.size()}) != 0xe3069283u) return false;
+                               crc_text.size()}) != 0xe3069283u) return fail(__LINE__);
     const std::pair<std::wstring, std::string> vectors[] = {
         {L"A", std::string{"\x41", 1}},
         {std::wstring{wchar_t{0x00e9}}, std::string{"\xc3\xa9", 2}},
@@ -496,11 +499,11 @@ bool test_persistence_round_trip_and_vectors()
         std::string encoded;
         std::wstring decoded;
         if (!encode_wtf8(wide, encoded).ok() || encoded != expected ||
-            !decode_wtf8(encoded, decoded).ok() || decoded != wide) return false;
+            !decode_wtf8(encoded, decoded).ok() || decoded != wide) return fail(__LINE__);
     }
     std::wstring rejected;
     if (decode_wtf8(std::string{"\xed\xa0\xbd\xed\xb8\x80", 6}, rejected).ok())
-        return false;
+        return fail(__LINE__);
 
     temporary_directory directory;
     const auto a = (directory.path / "A.noc").lexically_normal();
@@ -509,7 +512,7 @@ bool test_persistence_round_trip_and_vectors()
     const auto orphan = (directory.path / "orphan.noc").lexically_normal();
     const auto checkpoint = directory.path / "source_manager.bin";
     if (!write(a, "a") || !write(d, "d") || !write(common, "common") ||
-        !write(orphan, "orphan")) return false;
+        !write(orphan, "orphan")) return fail(__LINE__);
     source_manager manager;
     source_acquisition_telemetry telemetry;
     source_id aid, did, common_id, orphan_id;
@@ -518,48 +521,54 @@ bool test_persistence_round_trip_and_vectors()
         if (!update.resolve(a, project_item_role::source, aid).ok() ||
             !update.resolve(d, project_item_role::source, did).ok() ||
             !update.resolve_include(common, common_id).ok() ||
-            !update.resolve(orphan, project_item_role::source, orphan_id).ok()) return false;
+            !update.resolve(orphan, project_item_role::source, orphan_id).ok()) return fail(__LINE__);
         const source_id shared[]{common_id};
         if (!update.set_includes(aid, shared).ok() || !update.set_includes(did, shared).ok() ||
-            !update.set_includes(orphan_id, shared).ok()) return false;
+            !update.set_includes(orphan_id, shared).ok()) return fail(__LINE__);
         for (std::uint32_t id = 1; id <= 4; ++id)
-            if (!update.acquire(source_id{id}, telemetry).ok()) return false;
+            if (!update.acquire(source_id{id}, telemetry).ok()) return fail(__LINE__);
         diagnostic_buffer diagnostics;
         if (!update.validate_source_graph(operation_id{99}, diagnostics).ok() ||
-            !update.commit().ok()) return false;
+            !update.commit().ok()) return fail(__LINE__);
     }
     {
         auto update = manager.begin_update();
         if (!update.add(a, project_item_role::source).ok() ||
-            !update.add(d, project_item_role::source).ok()) return false;
+            !update.add(d, project_item_role::source).ok()) return fail(__LINE__);
         diagnostic_buffer diagnostics;
         if (!update.validate_source_graph(operation_id{100}, diagnostics).ok() ||
-            !update.commit().ok()) return false;
+            !update.commit().ok()) return fail(__LINE__);
     }
     if (!manager.save_checkpoint(checkpoint).ok() ||
-        !source_manager::strict_validate_checkpoint(checkpoint).ok()) return false;
+        !source_manager::strict_validate_checkpoint(checkpoint).ok()) return fail(__LINE__);
     source_manager loaded;
     if (!loaded.load_checkpoint(checkpoint).ok() || loaded.source_count() != 4 ||
-        loaded.root_count() != 2) return false;
+        loaded.root_count() != 2) return fail(__LINE__);
     source_id found;
     if (!loaded.find_by_path(common, found).ok() || found != common_id ||
-        !loaded.find_by_path(orphan, found).ok() || found != orphan_id) return false;
+        !loaded.find_by_path(orphan, found).ok() || found != orphan_id) return fail(__LINE__);
     std::vector<source_id> dependencies;
     if (!loaded.get_dependencies(aid, false, dependencies).ok() ||
         dependencies != std::vector<source_id>{common_id} ||
         !loaded.get_dependencies(common_id, true, dependencies).ok() ||
-        dependencies.size() != 3) return false;
+        dependencies.size() != 3) return fail(__LINE__);
     source_physical_state before, after;
     if (!manager.get_physical_state(common_id, before).ok() ||
         !loaded.get_physical_state(common_id, after).ok() ||
-        before.presence != after.presence || before.observation != after.observation ||
-        before.hash != after.hash) return false;
+        before.presence != after.presence ||
+        before.observation.write_time_ticks != after.observation.write_time_ticks ||
+        before.observation.size != after.observation.size ||
+        after.observation.change_time_ticks != 0 ||
+        before.hash != after.hash) return fail(__LINE__);
+    // Source checkpoint 1.0 persists write time, size and hash. The volatile
+    // change-time observation is unavailable after import (zero), so the next
+    // acquisition cannot assume it matches a current filesystem observation.
     source_view unavailable;
-    if (loaded.get_view(common_id, unavailable).code != status_code::not_available) return false;
+    if (loaded.get_view(common_id, unavailable).code != status_code::not_available) return fail(__LINE__);
 
     std::ifstream input(checkpoint, std::ios::binary);
     const std::string artifact{std::istreambuf_iterator<char>{input}, {}};
-    if (artifact.size() < 416) return false;
+    if (artifact.size() < 416) return fail(__LINE__);
     const auto read_wire_u64=[&](std::size_t offset)
     {
         std::uint64_t value=0;
@@ -574,7 +583,7 @@ bool test_persistence_round_trip_and_vectors()
        physical_offset+std::uint64_t(common_id.value()-1)*56+8>artifact.size()||
        read_wire_u64(static_cast<std::size_t>(physical_offset)+
                      std::size_t(common_id.value()-1)*56)!=
-           wire_state.observation.write_time_ticks)return false;
+           wire_state.observation.write_time_ticks)return fail(__LINE__);
     const auto corrupt = [&](std::string bytes, std::string_view name)
     {
         const auto path = directory.path / std::string{name};
@@ -585,42 +594,42 @@ bool test_persistence_round_trip_and_vectors()
         bytes[0] ^= 1;
         source_manager invalid;
         if (invalid.load_checkpoint(corrupt(std::move(bytes), "bad-header.bin")).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
         write_le64(bytes, 128 + 8, std::numeric_limits<std::uint64_t>::max());
         source_manager invalid;
         if (invalid.load_checkpoint(corrupt(std::move(bytes), "bad-section.bin")).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
         const auto source_core_offset = read_le64(bytes, 128 + 8);
         write_le32(bytes, static_cast<std::size_t>(source_core_offset), 0xfffffff0u);
         source_manager invalid;
-        if (!invalid.load_checkpoint(corrupt(std::move(bytes), "bad-path.bin")).ok()) return false;
+        if (!invalid.load_checkpoint(corrupt(std::move(bytes), "bad-path.bin")).ok()) return fail(__LINE__);
         std::filesystem::path value;
         if (invalid.get_path(source_id{1}, value).code != status_code::artifact_corrupt)
-            return false;
+            return fail(__LINE__);
     }
     {
         auto bytes = artifact;
         const auto forward_offsets = read_le64(bytes, 128 + 2 * 32 + 8);
         write_le32(bytes, static_cast<std::size_t>(forward_offsets + 4), 0xffffffffu);
         source_manager invalid;
-        if (!invalid.load_checkpoint(corrupt(std::move(bytes), "bad-csr.bin")).ok()) return false;
+        if (!invalid.load_checkpoint(corrupt(std::move(bytes), "bad-csr.bin")).ok()) return fail(__LINE__);
         if (invalid.get_dependencies(source_id{1}, false, dependencies).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
         const auto roots_offset = read_le64(bytes, 128 + 6 * 32 + 8);
         write_le32(bytes, static_cast<std::size_t>(roots_offset), 0xffffffffu);
         source_manager invalid;
-        if (!invalid.load_checkpoint(corrupt(std::move(bytes), "bad-root.bin")).ok()) return false;
+        if (!invalid.load_checkpoint(corrupt(std::move(bytes), "bad-root.bin")).ok()) return fail(__LINE__);
         source_root root;
-        if (invalid.get_root(0, root).code != status_code::artifact_corrupt) return false;
+        if (invalid.get_root(0, root).code != status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -629,7 +638,7 @@ bool test_persistence_round_trip_and_vectors()
         refresh_artifact_integrity(bytes);
         const auto path = corrupt(std::move(bytes), "bad-edge.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -638,7 +647,7 @@ bool test_persistence_round_trip_and_vectors()
         refresh_artifact_integrity(bytes);
         const auto path = corrupt(std::move(bytes), "bad-role.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -655,11 +664,11 @@ bool test_persistence_round_trip_and_vectors()
                 break;
             }
         }
-        if (!changed) return false;
+        if (!changed) return fail(__LINE__);
         refresh_artifact_integrity(bytes);
         const auto path = corrupt(std::move(bytes), "bad-index-id.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -673,10 +682,10 @@ bool test_persistence_round_trip_and_vectors()
         }
         source_manager invalid;
         if (!invalid.load_checkpoint(corrupt(std::move(bytes), "full-index.bin")).ok())
-            return false;
+            return fail(__LINE__);
         source_id ignored;
         if (invalid.find_by_path(directory.path / "not-present.noc", ignored).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -685,7 +694,7 @@ bool test_persistence_round_trip_and_vectors()
         refresh_artifact_integrity(bytes);
         const auto path = corrupt(std::move(bytes), "bad-wtf8.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -694,7 +703,7 @@ bool test_persistence_round_trip_and_vectors()
         refresh_artifact_integrity(bytes);
         const auto path = corrupt(std::move(bytes), "reverse-mismatch.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
@@ -715,14 +724,14 @@ bool test_persistence_round_trip_and_vectors()
         refresh_artifact_integrity(bytes);
         const auto path = corrupt(std::move(bytes), "reachable-cycle.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         auto bytes = artifact;
         bytes.back() ^= 1;
         const auto path = corrupt(std::move(bytes), "bad-payload.bin");
         if (source_manager::strict_validate_checkpoint(path).code !=
-            status_code::artifact_corrupt) return false;
+            status_code::artifact_corrupt) return fail(__LINE__);
     }
     {
         std::unordered_map<std::uint32_t, std::filesystem::path> fingerprints;
@@ -733,7 +742,7 @@ bool test_persistence_round_trip_and_vectors()
             const auto candidate = std::filesystem::path{
                 L"C:\\collision-test\\source_" + std::to_wstring(index) + L".noc"};
             std::string encoded;
-            if (!encode_wtf8(candidate.native(), encoded).ok()) return false;
+            if (!encode_wtf8(candidate.native(), encoded).ok()) return fail(__LINE__);
             const auto fingerprint = source_path_fingerprint(source_path_xxh64(encoded));
             const auto [position, inserted] = fingerprints.emplace(fingerprint, candidate);
             if (!inserted && position->second != candidate)
@@ -742,20 +751,20 @@ bool test_persistence_round_trip_and_vectors()
                 second_collision = candidate;
             }
         }
-        if (first_collision.empty()) return false;
+        if (first_collision.empty()) return fail(__LINE__);
         source_manager collision_manager;
         auto update = collision_manager.begin_update();
         if (!update.add(first_collision, project_item_role::source).ok() ||
             !update.add(second_collision, project_item_role::source).ok() ||
-            !update.commit().ok()) return false;
+            !update.commit().ok()) return fail(__LINE__);
         const auto collision_file = directory.path / "collision.bin";
-        if (!collision_manager.save_checkpoint(collision_file).ok()) return false;
+        if (!collision_manager.save_checkpoint(collision_file).ok()) return fail(__LINE__);
         source_manager collision_loaded;
         source_id first_id, second_id;
         if (!collision_loaded.load_checkpoint(collision_file).ok() ||
             !collision_loaded.find_by_path(first_collision, first_id).ok() ||
             !collision_loaded.find_by_path(second_collision, second_id).ok() ||
-            first_id == second_id) return false;
+            first_id == second_id) return fail(__LINE__);
     }
     return true;
 }
@@ -763,11 +772,21 @@ bool test_persistence_round_trip_and_vectors()
 
 int main()
 {
-    return test_hash_vectors() && test_present_empty_and_missing() &&
-           test_candidate_lifetime_modify_and_discard() &&
-           test_commit_touch_overlay_remove_and_reappear() &&
-           test_stale_physical_candidate() && test_repeated_acquire_reports_net_change() &&
-           test_rejects_observation_change_during_read() &&
-           test_acquisition_and_candidate_metrics() && test_off_and_basic_modes() &&
-           test_persistence_round_trip_and_vectors() ? 0 : 1;
+    const std::pair<const char*, bool(*)()> cases[] = {
+        {"hash", test_hash_vectors},
+        {"present/empty/missing", test_present_empty_and_missing},
+        {"candidate lifetime", test_candidate_lifetime_modify_and_discard},
+        {"commit/touch/remove", test_commit_touch_overlay_remove_and_reappear},
+        {"stale candidate", test_stale_physical_candidate},
+        {"repeated acquisition", test_repeated_acquire_reports_net_change},
+        {"TOCTOU", test_rejects_observation_change_during_read},
+        {"metrics", test_acquisition_and_candidate_metrics},
+        {"metric modes", test_off_and_basic_modes},
+        {"persistence", test_persistence_round_trip_and_vectors}
+    };
+    for (const auto& [name, run] : cases) {
+        if (!run()) { std::cerr << "FAILED: " << name << '\n'; return 1; }
+        std::cout << "PASS: " << name << '\n';
+    }
+    return 0;
 }

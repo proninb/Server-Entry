@@ -1,0 +1,8 @@
+{
+  "head": "2fafcac226d315a9d4827bc4ba35a3b1f846183f",
+  "date": "2026-09-08T13:10:32.5592579-04:00",
+  "os": "Microsoft Windows NT 10.0.26200.0",
+  "logical_processors": 24,
+  "compiler": "MSVC v145, VS 18 Community, Release x64",
+  "note": "Working tree has five production files modified by another actor during audit; diff and SHA256 manifest retained. Audit did not modify production code."
+}

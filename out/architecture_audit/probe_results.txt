@@ -1,0 +1,24 @@
+move_replace_ok=0
+reuse old_handle=1 new_handle=1 old_ref=21 new_ref=21
+rebuild_growth,0,entities=1,identity_size=2,identity_capacity=66
+rebuild_growth,1,entities=1,identity_size=4,identity_capacity=68
+rebuild_growth,2,entities=1,identity_size=6,identity_capacity=70
+rebuild_growth,3,entities=1,identity_size=8,identity_capacity=72
+rebuild_growth,4,entities=1,identity_size=10,identity_capacity=74
+rebuild_growth,5,entities=1,identity_size=12,identity_capacity=76
+dependency,512,0,0.1053,0.0962
+dependency,512,1,0.1029,0.0954
+dependency,512,2,0.104,0.0964
+dependency,512,3,0.1015,0.0932
+dependency,2048,0,0.9011,0.8734
+dependency,2048,1,0.905,0.8669
+dependency,2048,2,0.9027,0.8534
+dependency,2048,3,0.9063,0.8623
+dependency,8192,0,11.1683,11.0627
+dependency,8192,1,11.1683,10.9982
+dependency,8192,2,11.0862,10.9008
+dependency,8192,3,10.1284,9.9402
+dependency,16384,0,37.382,37.1611
+dependency,16384,1,37.588,37.3268
+dependency,16384,2,43.863,43.5901
+dependency,16384,3,37.7684,37.461

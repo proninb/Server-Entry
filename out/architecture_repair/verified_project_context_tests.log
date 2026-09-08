@@ -1,0 +1,7 @@
+PASS: full Project -> Source -> Parser -> Graph -> Runtime load
+PASS: invalid project configuration fail-closed
+PASS: Parser failure fail-closed
+PASS: no-change rebuild touches zero Sources
+PASS: dirty independent Source rebuild is O(K)
+PASS: dirty Source dependent closure rebuild
+PASS: failed incremental Parser generation recovers

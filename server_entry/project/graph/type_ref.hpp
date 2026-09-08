@@ -12,6 +12,9 @@ class graph_update;
 // generation. TypeRef is compact and generation-local; it is not stable Entity
 // identity and must not be persisted or compared across unrelated Graph states
 // except through the explicit compiled-state projection.
+// Incremental changes preserve the index and its structural meaning. A named
+// ref may address a removed slot, but that slot is not reused before Rebuild.
+// Rebuild invalidates external TypeRefs and compacts the table.
 class TypeRef final {
 public:
     constexpr TypeRef() noexcept = default;

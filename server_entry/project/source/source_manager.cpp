@@ -528,11 +528,13 @@ status source_manager_update::apply_acquire(
     }
 
     try {
-        const auto candidate_start = source_telemetry_clock::now();
-
         if (result.kind == source_acquire_result_kind::unchanged) {
             return {};
         }
+
+        const auto candidate_start = metrics.mode() == metrics_mode::detailed
+            ? source_telemetry_clock::now()
+            : source_telemetry_clock::time_point{};
 
         if (result.kind == source_acquire_result_kind::missing) {
             if (!job.has_committed) {
@@ -1400,9 +1402,10 @@ status source_manager_update::prepare_publish() noexcept {
             for (std::size_t index = 0;
                  index < count;
                  ++index) {
-                if (prepared_g0_sources[index].id.value() !=
-                        index + 1 ||
-                    !prepared_g0_physical[index]) {
+                // Registration/source checkpoints may precede acquisition.
+                // A null physical slot is unavailable, never an empty file.
+                // Graph publication independently validates its used Sources.
+                if (prepared_g0_sources[index].id.value() != index + 1) {
                     return failure = {
                         status_code::invalid_state
                     };

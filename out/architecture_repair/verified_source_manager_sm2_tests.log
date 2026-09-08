@@ -1,0 +1,10 @@
+PASS: hash
+PASS: present/empty/missing
+PASS: candidate lifetime
+PASS: commit/touch/remove
+PASS: stale candidate
+PASS: repeated acquisition
+PASS: TOCTOU
+PASS: metrics
+PASS: metric modes
+PASS: persistence

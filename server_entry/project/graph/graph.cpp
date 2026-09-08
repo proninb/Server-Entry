@@ -313,7 +313,6 @@ status graph::initialize(abi_configuration abi) noexcept {
 
     try {
         types.clear();
-        free_type_slots.clear();
         entities.clear();
         identity.clear();
         member_records.clear();
@@ -582,17 +581,14 @@ status graph::rebuild_dependency_index() noexcept {
                     return {status_code::artifact_corrupt};
                 }
 
-                if (dependency &&
-                    std::find(
-                        dependencies.begin(),
-                        dependencies.end(),
-                        dependency.value()) ==
-                        dependencies.end()) {
+                if (dependency) {
                     dependencies.push_back(
                         dependency.value());
                 }
             }
 
+            std::sort(dependencies.begin(), dependencies.end());
+            dependencies.erase(std::unique(dependencies.begin(), dependencies.end()), dependencies.end());
             for (const auto dependency : dependencies) {
                 if (dependency >=
                     reverse_type_dependents.size()) {
@@ -727,14 +723,12 @@ status graph::import_compiled(
         }
 
         std::vector<std::optional<type_storage>> imported_types(input.types.size());
-        std::vector<std::uint32_t> imported_free_types;
         std::size_t imported_type_count = 0;
 
         for (std::size_t index = 0; index < input.types.size(); ++index) {
             const auto& source = input.types[index];
 
             if (!source.live) {
-                imported_free_types.push_back(static_cast<std::uint32_t>(index + 1));
                 continue;
             }
 
@@ -993,7 +987,6 @@ status graph::import_compiled(
         }
 
         types.swap(imported_types);
-        free_type_slots.swap(imported_free_types);
         entities.swap(imported_entities);
         identity.swap(imported_identities);
 
@@ -1033,7 +1026,6 @@ status graph::import_compiled(
 
 void graph::swap_compiled(graph& other) noexcept {
     types.swap(other.types);
-    free_type_slots.swap(other.free_type_slots);
     entities.swap(other.entities);
     identity.swap(other.identity);
     member_records.swap(other.member_records);
@@ -1121,11 +1113,9 @@ graph_update::graph_update(graph_update&& other) noexcept
       changed_entities(std::move(other.changed_entities)),
       changed_types(std::move(other.changed_types)),
       changed_sources(std::move(other.changed_sources)),
-      claimed_free_type_slots(std::move(other.claimed_free_type_slots)),
       rebuilt_identity(std::move(other.rebuilt_identity)),
       rebuilt_entities(std::move(other.rebuilt_entities)),
       rebuilt_types(std::move(other.rebuilt_types)),
-      rebuilt_free_type_slots(std::move(other.rebuilt_free_type_slots)),
       rebuilt_entity_count(other.rebuilt_entity_count),
       rebuilt_type_count(other.rebuilt_type_count),
       rebuilt_member_records(std::move(other.rebuilt_member_records)),
@@ -1279,9 +1269,9 @@ status graph_update::reserve_rebuild(
             static_cast<std::size_t>(next_type_slot) +
             type_count;
 
-        if (owner->candidate_identities.size() <
+        if (owner->candidate_identities.capacity() <
             identity_target) {
-            owner->candidate_identities.resize(
+            owner->candidate_identities.reserve(
                 identity_target);
         }
 
@@ -1363,7 +1353,7 @@ status graph_update::source_replacement::reserve(
     }
 
     try {
-        state->type_bindings.resize(named_count);
+        state->entity_bindings.resize(named_count);
         state->named.reserve(named_count);
         state->anonymous_types.reserve(anonymous_count);
         state->enum_values.reserve(enum_value_count);
@@ -1374,15 +1364,15 @@ status graph_update::source_replacement::reserve(
             {status_code::initialization_failed};
     }
 }
-status graph_update::source_replacement::bind_source_type(
+status graph_update::source_replacement::bind_source_entity(
     source_entity_ref reference,
-    type_handle type) noexcept {
+    stable_id entity) noexcept {
 
     if (!update ||
         !source ||
         !reference ||
         reference.source != source ||
-        !type ||
+        !entity ||
         !state) {
         return {status_code::invalid_state};
     }
@@ -1395,23 +1385,23 @@ status graph_update::source_replacement::bind_source_type(
         return {status_code::configuration_failed};
     }
 
-    if (raw > state->type_bindings.size()) {
+    if (raw > state->entity_bindings.size()) {
         return update->failure = {
             status_code::configuration_failed
         };
     }
 
     auto& binding =
-        state->type_bindings[raw - 1];
+        state->entity_bindings[raw - 1];
 
     if (binding &&
-        binding != type) {
+        binding != entity) {
         return update->failure = {
             status_code::configuration_failed
         };
     }
 
-    binding = type;
+    binding = entity;
     return {};
 }
 
@@ -1774,23 +1764,32 @@ status graph_update::resolve_source_type(
 
     if (!state ||
         raw == 0 ||
-        raw > state->type_bindings.size()) {
+        raw > state->entity_bindings.size()) {
         return failure = {
             status_code::configuration_failed
         };
     }
 
-    const auto type =
-        state->type_bindings[raw - 1];
+    const auto entity_id =
+        state->entity_bindings[raw - 1];
 
-    if (!type) {
+    if (!entity_id) {
+        return failure = {
+            status_code::configuration_failed
+        };
+    }
+
+    const auto* entity =
+        find(entity_id);
+
+    if (!entity) {
         return failure = {
             status_code::configuration_failed
         };
     }
 
     return get_or_create_named_type_ref(
-        type,
+        entity->type,
         output);
 }
 
@@ -2177,19 +2176,12 @@ status graph_update::assign_type_impl(
         }
 
         if (!handle) {
-            if (full_reconstruction) {
-                handle = next_type_slot++;
+            // A dead slot remains a tombstone until G0. Existing named and
+            // derived TypeRefs must never start denoting a different type.
+            if (next_type_slot == 0) {
+                return failure = {status_code::initialization_failed};
             }
-            else if (claimed_free_type_slots.size() < owner->free_type_slots.size()) {
-                handle = owner->free_type_slots[
-                    owner->free_type_slots.size() - 1 -
-                    claimed_free_type_slots.size()];
-
-                claimed_free_type_slots.push_back(handle);
-            }
-            else {
-                handle = next_type_slot++;
-            }
+            handle = next_type_slot++;
 
             entity.record.type = type_handle{handle};
         }
@@ -3115,17 +3107,10 @@ status graph_update::add_anonymous_enum_from_replacement(
         };
         storage.record.definition = {};
 
-        std::uint32_t handle = 0;
-
-        if (claimed_free_type_slots.size() < owner->free_type_slots.size()) {
-            handle = owner->free_type_slots[ owner->free_type_slots.size() - 1 -
-                    claimed_free_type_slots.size()];
-
-            claimed_free_type_slots.push_back(handle);
+        if (next_type_slot == 0) {
+            return failure = {status_code::initialization_failed};
         }
-        else {
-            handle = next_type_slot++;
-        }
+        const auto handle = next_type_slot++;
 
         auto& candidate = touch_type(handle);
 
@@ -3731,219 +3716,112 @@ status graph_update::validate_live_member_type_refs() noexcept {
 }
 
 status graph_update::prepare_dependency_index_updates() noexcept {
-    if (full_reconstruction) {
-        return {};
-    }
+    if (full_reconstruction) return {};
 
     try {
         prepared_type_dependency_updates.clear();
         prepared_reverse_dependency_updates.clear();
+        struct edge_delta {
+            std::vector<std::uint32_t> added;
+            std::vector<std::uint32_t> removed;
+        };
+        std::unordered_map<std::uint32_t, edge_delta> reverse_deltas;
 
-        const auto canonical_record =
-            [&](TypeRef type) noexcept
-                -> const graph::canonical_type_record* {
-                if (!type) {
-                    return nullptr;
-                }
-
-                const auto raw =
-                    static_cast<std::size_t>(type.value());
-
-                if (raw < owner->canonical_types.size()) {
-                    return &owner->canonical_types[raw];
-                }
-
-                const auto offset =
-                    raw - owner->canonical_types.size();
-
-                return offset < added_canonical_types.size()
-                    ? &added_canonical_types[offset]
-                    : nullptr;
-            };
-
-        const auto collect =
-            [&](std::span<const member_record> members,
-                std::vector<std::uint32_t>& output) -> status {
-                output.clear();
-
-                for (const auto& member : members) {
-                    auto current = member.type;
-                    type_handle named_base;
-
-                    for (std::size_t depth = 0;
-                         depth <
-                            owner->canonical_types.size() +
-                                added_canonical_types.size();
-                         ++depth) {
-                        const auto* record =
-                            canonical_record(current);
-
-                        if (!record) {
-                            return {
-                                status_code::configuration_failed
-                            };
-                        }
-
-                        if (record->kind ==
-                            canonical_type_kind::builtin) {
-                            break;
-                        }
-
-                        if (record->kind ==
-                            canonical_type_kind::named) {
-                            named_base = record->named;
-                            break;
-                        }
-
-                        if (record->kind !=
-                            canonical_type_kind::derived) {
-                            return {
-                                status_code::configuration_failed
-                            };
-                        }
-
-                        current = record->derived.child;
-                    }
-
-                    if (named_base &&
-                        std::find(
-                            output.begin(),
-                            output.end(),
-                            named_base.value()) ==
-                            output.end()) {
-                        output.push_back(named_base.value());
-                    }
-                }
-
-                return {};
-            };
-
-        const auto reverse_update =
-            [&](std::uint32_t dependency)
-                -> std::vector<std::uint32_t>& {
-                for (auto& update :
-                     prepared_reverse_dependency_updates) {
-                    if (update.handle == dependency) {
-                        return update.values;
-                    }
-                }
-
-                dependency_list_update update;
-                update.handle = dependency;
-
-                if (dependency <
-                    owner->reverse_type_dependents.size()) {
-                    update.values =
-                        owner->reverse_type_dependents[
-                            dependency];
-                }
-
-                prepared_reverse_dependency_updates.push_back(
-                    std::move(update));
-
-                return prepared_reverse_dependency_updates.back().values;
-            };
+        const auto canonical_record = [&](TypeRef type)
+            -> const graph::canonical_type_record* {
+            if (!type) return nullptr;
+            const auto raw = static_cast<std::size_t>(type.value());
+            if (raw < owner->canonical_types.size()) return &owner->canonical_types[raw];
+            const auto offset = raw - owner->canonical_types.size();
+            return offset < added_canonical_types.size() ? &added_canonical_types[offset] : nullptr;
+        };
 
         for (const auto handle : changed_types) {
-            if (!handle) {
-                continue;
-            }
+            if (!handle) continue;
+            const auto& candidate = owner->candidate_types[handle];
+            if (candidate.generation != candidate_generation ||
+                candidate.kind == candidate_type_kind::unchanged) continue;
 
-            std::vector<std::uint32_t> old_dependencies;
-
-            if (handle <
-                owner->type_dependencies.size()) {
-                old_dependencies =
-                    owner->type_dependencies[handle];
-            }
-
-            std::vector<std::uint32_t> new_dependencies;
-
-            if (handle <
-                owner->candidate_types.size()) {
-                const auto& candidate =
-                    owner->candidate_types[handle];
-
-                if (candidate.generation ==
-                        candidate_generation &&
-                    candidate.kind ==
-                        candidate_type_kind::replacement &&
-                    candidate.value &&
-                    candidate.value->record.kind ==
-                        user_type_kind::aggregate &&
-                    candidate.build &&
-                    candidate.build->definition_pending) {
-                    const auto result =
-                        collect(
-                            candidate.build->members,
-                            new_dependencies);
-
-                    if (!result.ok()) {
-                        return failure = result;
+            std::vector<std::uint32_t> next;
+            if (candidate.kind == candidate_type_kind::replacement &&
+                candidate.value && candidate.value->record.kind == user_type_kind::aggregate &&
+                candidate.build && candidate.build->definition_pending) {
+                for (const auto& member : candidate.build->members) {
+                    auto current = member.type;
+                    bool resolved = false;
+                    for (std::size_t depth = 0;
+                         depth < owner->canonical_types.size() + added_canonical_types.size(); ++depth) {
+                        const auto* record = canonical_record(current);
+                        if (!record) return failure = {status_code::configuration_failed};
+                        if (record->kind == canonical_type_kind::builtin) {
+                            resolved = true;
+                            break;
+                        }
+                        if (record->kind == canonical_type_kind::named) {
+                            next.push_back(record->named.value());
+                            resolved = true;
+                            break;
+                        }
+                        if (record->kind != canonical_type_kind::derived)
+                            return failure = {status_code::configuration_failed};
+                        current = record->derived.child;
                     }
-                }
-                else if (candidate.generation !=
-                             candidate_generation ||
-                         candidate.kind ==
-                             candidate_type_kind::unchanged) {
-                    new_dependencies = old_dependencies;
+                    if (!resolved) return failure = {status_code::configuration_failed};
                 }
             }
-            else {
-                new_dependencies = old_dependencies;
-            }
+            std::sort(next.begin(), next.end());
+            next.erase(std::unique(next.begin(), next.end()), next.end());
+            const auto previous = handle < owner->type_dependencies.size()
+                ? std::span<const std::uint32_t>{owner->type_dependencies[handle]}
+                : std::span<const std::uint32_t>{};
 
-            prepared_type_dependency_updates.push_back({
-                handle,
-                new_dependencies
-            });
-
-            std::vector<std::uint32_t> affected =
-                old_dependencies;
-
-            for (const auto dependency :
-                 new_dependencies) {
-                if (std::find(
-                        affected.begin(),
-                        affected.end(),
-                        dependency) ==
-                    affected.end()) {
-                    affected.push_back(dependency);
+            // All dependency lists are sorted sets. Only actual edge changes
+            // touch reverse lists; an unchanged member type set costs no copy.
+            std::size_t a = 0, b = 0;
+            while (a != previous.size() || b != next.size()) {
+                if (b == next.size() || (a != previous.size() && previous[a] < next[b])) {
+                    reverse_deltas[previous[a++]].removed.push_back(handle);
+                } else if (a == previous.size() || next[b] < previous[a]) {
+                    reverse_deltas[next[b++]].added.push_back(handle);
+                } else {
+                    ++a;
+                    ++b;
                 }
             }
-
-            for (const auto dependency : affected) {
-                auto& dependents =
-                    reverse_update(dependency);
-
-                dependents.erase(
-                    std::remove(
-                        dependents.begin(),
-                        dependents.end(),
-                        handle),
-                    dependents.end());
-
-                if (std::find(
-                        new_dependencies.begin(),
-                        new_dependencies.end(),
-                        dependency) !=
-                    new_dependencies.end() &&
-                    std::find(
-                        dependents.begin(),
-                        dependents.end(),
-                        handle) ==
-                    dependents.end()) {
-                    dependents.push_back(handle);
-                }
-            }
+            if (!std::equal(previous.begin(), previous.end(), next.begin(), next.end()))
+                prepared_type_dependency_updates.push_back({handle, std::move(next)});
         }
 
+        prepared_reverse_dependency_updates.reserve(reverse_deltas.size());
+        for (auto& [dependency, delta] : reverse_deltas) {
+            std::sort(delta.added.begin(), delta.added.end());
+            std::sort(delta.removed.begin(), delta.removed.end());
+            const auto previous = dependency < owner->reverse_type_dependents.size()
+                ? std::span<const std::uint32_t>{owner->reverse_type_dependents[dependency]}
+                : std::span<const std::uint32_t>{};
+            dependency_list_update update;
+            update.handle = dependency;
+            update.values.reserve(previous.size() + delta.added.size());
+            // Apply one combined delta per dependency, rather than copying and
+            // rescanning its fan-in once for each changed aggregate.
+            std::size_t old = 0, added = 0, removed = 0;
+            while (old != previous.size() || added != delta.added.size()) {
+                if (added != delta.added.size() &&
+                    (old == previous.size() || delta.added[added] < previous[old])) {
+                    update.values.push_back(delta.added[added++]);
+                    continue;
+                }
+                const auto value = previous[old++];
+                while (removed != delta.removed.size() && delta.removed[removed] < value) ++removed;
+                if (removed == delta.removed.size() || delta.removed[removed] != value)
+                    update.values.push_back(value);
+                if (added != delta.added.size() && delta.added[added] == value) ++added;
+            }
+            prepared_reverse_dependency_updates.push_back(std::move(update));
+        }
         return {};
-    }
-    catch (...) {
-        return failure = {
-            status_code::initialization_failed
-        };
+    } catch (...) {
+        return failure = {status_code::initialization_failed};
     }
 }
 
@@ -4047,19 +3925,15 @@ status graph_update::build_rebuild_dependency_index() noexcept {
                     };
                 }
 
-                if (dependency &&
-                    std::find(
-                        dependencies.begin(),
-                        dependencies.end(),
-                        dependency.value()) ==
-                        dependencies.end()) {
+                if (dependency) {
                     dependencies.push_back(
                         dependency.value());
                 }
             }
 
-            for (const auto dependency :
-                 dependencies) {
+            std::sort(dependencies.begin(), dependencies.end());
+            dependencies.erase(std::unique(dependencies.begin(), dependencies.end()), dependencies.end());
+            for (const auto dependency : dependencies) {
                 if (dependency >=
                     rebuilt_reverse_type_dependents.size()) {
                     return failure = {
@@ -4101,8 +3975,10 @@ status graph_update::build_rebuild_storage() noexcept {
 
     try {
         rebuilt_identity = owner->identity;
-        if (rebuilt_identity.size() < owner->candidate_identities.size()) {
-            rebuilt_identity.resize(owner->candidate_identities.size());
+        // Reservation hints and abandoned candidates do not own canonical IDs.
+        // Retain historical nonzero mappings, then grow only for admitted names.
+        while (!rebuilt_identity.empty() && !rebuilt_identity.back()) {
+            rebuilt_identity.pop_back();
         }
 
         for (auto name : changed_identities) {
@@ -4111,6 +3987,9 @@ status graph_update::build_rebuild_storage() noexcept {
                 return failure = {status_code::configuration_failed};
             }
 
+            if (rebuilt_identity.size() <= name) {
+                rebuilt_identity.resize(static_cast<std::size_t>(name) + 1);
+            }
             rebuilt_identity[name] = owner->candidate_identities[name].value;
         }
 
@@ -4135,12 +4014,10 @@ status graph_update::build_rebuild_storage() noexcept {
 
         rebuilt_types.clear();
         rebuilt_types.resize(next_type_slot > 0 ? next_type_slot - 1 : 0);
-        rebuilt_free_type_slots.clear();
         rebuilt_type_count = 0;
 
         for (std::uint32_t handle = 1; handle < next_type_slot; ++handle) {
             if (handle >= owner->candidate_types.size()) {
-                rebuilt_free_type_slots.push_back(handle);
                 continue;
             }
 
@@ -4149,7 +4026,6 @@ status graph_update::build_rebuild_storage() noexcept {
             if (candidate.generation != candidate_generation ||
                 candidate.kind != candidate_type_kind::replacement ||
                 !candidate.value) {
-                rebuilt_free_type_slots.push_back(handle);
                 continue;
             }
 
@@ -4925,10 +4801,6 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             grow_sparse_vector(owner->types, needed_types);
 
             ensure_sparse_capacity(
-                owner->free_type_slots,
-                owner->free_type_slots.size() +
-                    changed_types.size());
-            ensure_sparse_capacity(
                 owner->member_records,
                 owner->member_records.size() +
                     added_member_count);
@@ -5017,7 +4889,6 @@ void graph_update::publish_prepared() noexcept {
         owner->identity.swap(rebuilt_identity);
         owner->entities.swap(rebuilt_entities);
         owner->types.swap(rebuilt_types);
-        owner->free_type_slots.swap(rebuilt_free_type_slots);
         owner->member_records.swap(rebuilt_member_records);
         owner->enum_value_records.swap(rebuilt_enum_value_records);
         owner->canonical_types.swap(rebuilt_canonical_types);
@@ -5033,12 +4904,6 @@ void graph_update::publish_prepared() noexcept {
         owner->generation = 0;
         committed = true;
         return;
-    }
-
-    for (std::size_t index = 0;
-         index < claimed_free_type_slots.size();
-         ++index) {
-        owner->free_type_slots.pop_back();
     }
 
     for (auto name : changed_identities) {
@@ -5150,7 +5015,6 @@ void graph_update::publish_prepared() noexcept {
             candidate.enum_definition_source = {};
             candidate.enum_definition = {};
 
-            owner->free_type_slots.push_back(handle);
         }
     }
 

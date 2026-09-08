@@ -1,0 +1,14 @@
+PASS: named enum materialization
+PASS: duplicate source diagnostic
+PASS: invalid Builder fact shape
+PASS: multi-source definition/removal
+PASS: identity resurrection
+PASS: aggregate builtin member
+PASS: aggregate user lvalue reference
+PASS: invalid aggregate fail-closed
+PASS: stable IDs follow canonical publication order
+PASS: incremental handle/TypeRef preservation
+PASS: Parser -> Publisher -> Builder boundary
+PASS: Parser rejects duplicate aggregate member
+PASS: Parser rejects duplicate member after index transition
+PASS: Publisher malformed diagnostic

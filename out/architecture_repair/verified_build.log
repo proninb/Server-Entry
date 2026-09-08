@@ -1,0 +1,525 @@
+Build started 9/8/2026 3:52:56 PM.
+Logging verbosity is set to: Normal.
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" on node 1 (default targets).
+     1>ValidateSolutionConfiguration:
+         Building solution configuration "Release|x64".
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\DiagnosticsCoreTests.vcxproj" (2) on node 2 (default targets).
+     2>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\Diagnost.A7FDD8C2.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\Diagnost.A7FDD8C2.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\\" /Fd"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue server_entry\project\string\string_registry.cpp
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\ServerEntry.vcxproj" (3) on node 1 (default targets).
+     3>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\ServerEntry.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\ServerEntry.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\LoggingCoreTests.vcxproj" (4) on node 2 (default targets).
+     4>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\LoggingCoreTests\Release\LoggingCoreTests.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\LoggingCoreTests\Release\LoggingCoreTests.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         LoggingCoreTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\logging_core_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\LoggingCoreTests\Release\LoggingCoreTests.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\LoggingCoreTests\Release\LoggingCoreTests.tlog\LoggingCoreTests.lastbuildstate".
+     4>Done Building Project "C:\Boris\Server Entry\LoggingCoreTests.vcxproj" (default targets).
+     2>ClCompile:
+         string_registry.cpp
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\MetricsCoreTests.vcxproj" (5) on node 2 (default targets).
+     5>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\MetricsCoreTests\Release\MetricsCoreTests.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\MetricsCoreTests\Release\MetricsCoreTests.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         MetricsCoreTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\metrics_core_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\MetricsCoreTests\Release\MetricsCoreTests.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\MetricsCoreTests\Release\MetricsCoreTests.tlog\MetricsCoreTests.lastbuildstate".
+     5>Done Building Project "C:\Boris\Server Entry\MetricsCoreTests.vcxproj" (default targets).
+     3>ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\\" /Fd"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue server_entry\project\string\string_registry.cpp
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\JsonCoreTests.vcxproj" (6) on node 2 (default targets).
+     6>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\JsonCoreTests\Release\JsonCoreTests.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\JsonCoreTests\Release\JsonCoreTests.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         JsonCoreTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\json_core_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\JsonCoreTests\Release\JsonCoreTests.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\JsonCoreTests\Release\JsonCoreTests.tlog\JsonCoreTests.lastbuildstate".
+     6>Done Building Project "C:\Boris\Server Entry\JsonCoreTests.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\ServerConfigurationTests.vcxproj" (7) on node 1 (default targets).
+     7>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+     3>ClCompile:
+         string_registry.cpp
+     7>InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ServerConfigurationTests\Release\ServerCo.7B623B9E.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ServerConfigurationTests\Release\ServerCo.7B623B9E.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         ServerConfigurationTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\server_configuration_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ServerConfigurationTests\Release\ServerCo.7B623B9E.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ServerConfigurationTests\Release\ServerCo.7B623B9E.tlog\ServerConfigurationTests.lastbuildstate".
+     7>Done Building Project "C:\Boris\Server Entry\ServerConfigurationTests.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\ProjectConfigurationTests.vcxproj" (8) on node 1 (default targets).
+     8>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectConfigurationTests\Release\ProjectC.31C0E82E.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectConfigurationTests\Release\ProjectC.31C0E82E.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         ProjectConfigurationTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_configuration_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectConfigurationTests\Release\ProjectC.31C0E82E.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectConfigurationTests\Release\ProjectC.31C0E82E.tlog\ProjectConfigurationTests.lastbuildstate".
+     8>Done Building Project "C:\Boris\Server Entry\ProjectConfigurationTests.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\ProjectCompositionTests.vcxproj" (9) on node 1 (default targets).
+     9>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectCompositionTests\Release\ProjectC.96A1969C.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectCompositionTests\Release\ProjectC.96A1969C.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         ProjectCompositionTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_composition_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectCompositionTests\Release\ProjectC.96A1969C.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectCompositionTests\Release\ProjectC.96A1969C.tlog\ProjectCompositionTests.lastbuildstate".
+     9>Done Building Project "C:\Boris\Server Entry\ProjectCompositionTests.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\SourceManagerTests.vcxproj" (10) on node 1 (default targets).
+    10>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerTests\Release\SourceMa.2993AFD2.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerTests\Release\SourceMa.2993AFD2.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         SourceManagerTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\source_manager_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerTests\Release\SourceMa.2993AFD2.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerTests\Release\SourceMa.2993AFD2.tlog\SourceManagerTests.lastbuildstate".
+    10>Done Building Project "C:\Boris\Server Entry\SourceManagerTests.vcxproj" (default targets).
+     2>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\DiagnosticsCoreTests.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\GraphManagerTests.vcxproj" (11) on node 2 (default targets).
+    11>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\GraphMan.78CB400D.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\GraphMan.78CB400D.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D CW_GRAPH_BUILD_TRANSACTION_TESTING /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\\" /Fd"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue server_entry\project\string\string_registry.cpp
+         string_registry.cpp
+     3>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ServerEntry.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+     2>Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\diagnostics_core_tests.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\diagnostics_core_tests.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\diagnostics_core_tests.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\diagnostics_core_tests.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\diagnostics_core_tests.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\console_log_sink.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\logger.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\server_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\project_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\graph.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\runtime.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\shared_memory.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\file_snapshot.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_manager_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\compiled_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\server_configuration_loader.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\json_parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\json_writer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\project_configuration_loader.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\project_composition_resolver.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\project_builder.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_build_entry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\lexer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_environment.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_publisher.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_frontend_generation.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_frontend_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_frontend_incremental.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\source_change_tracker.obj"
+     3>Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\server_entry.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\server_entry.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\server_entry.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\server_entry.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\console_log_sink.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\logger.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\server_configuration_loader.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\json_parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\json_writer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\main.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\server_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\project_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\project_configuration_loader.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\project_composition_resolver.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\project_builder.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_build_entry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\lexer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_environment.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_publisher.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_frontend_generation.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_frontend_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_frontend_incremental.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\graph.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\compiled_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\runtime.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\shared_memory.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_change_tracker.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\file_snapshot.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\source_manager_persistence.obj"
+    11>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\GraphManagerTests.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+     2>Link:
+         Generating code
+     3>Link:
+         Generating code
+     2>Link:
+         4 of 4697 functions (<0.1%) were compiled, the rest were copied from previous compilation.
+           0 functions were new in current compilation
+           3 functions had inline decision re-evaluated but remain unchanged
+         Finished generating code
+         DiagnosticsCoreTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\diagnostics_core_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\Diagnost.A7FDD8C2.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\DiagnosticsCoreTests\Release\Diagnost.A7FDD8C2.tlog\DiagnosticsCoreTests.lastbuildstate".
+     2>Done Building Project "C:\Boris\Server Entry\DiagnosticsCoreTests.vcxproj" (default targets).
+    11>Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\graph_manager_tests.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\graph_manager_tests.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\graph_manager_tests.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\graph_manager_tests.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\graph_manager_tests.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\graph.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\file_snapshot.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\source_manager_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\compiled_persistence.obj"
+     3>Link:
+         8 of 10351 functions (<0.1%) were compiled, the rest were copied from previous compilation.
+           2 functions were new in current compilation
+           19 functions had inline decision re-evaluated but remain unchanged
+         Finished generating code
+    11>Link:
+         Generating code
+     3>Link:
+         ServerEntry.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\server_entry.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\ServerEntry.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\Release\ServerEntry.tlog\ServerEntry.lastbuildstate".
+     3>Done Building Project "C:\Boris\Server Entry\ServerEntry.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\SourceManagerSM2Tests.vcxproj" (12) on node 1 (default targets).
+    12>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerSM2Tests\Release\SourceMa.D9DE1A15.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerSM2Tests\Release\SourceMa.D9DE1A15.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         All outputs are up-to-date.
+       Link:
+         All outputs are up-to-date.
+         SourceManagerSM2Tests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\source_manager_sm2_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerSM2Tests\Release\SourceMa.D9DE1A15.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\SourceManagerSM2Tests\Release\SourceMa.D9DE1A15.tlog\SourceManagerSM2Tests.lastbuildstate".
+    12>Done Building Project "C:\Boris\Server Entry\SourceManagerSM2Tests.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\StringRegistryTests.vcxproj" (13) on node 1 (default targets).
+    13>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\StringRe.2BFD08F8.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\StringRe.2BFD08F8.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\\" /Fd"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue server_entry\project\string\string_registry.cpp
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\ProjectBuilderTests.vcxproj" (14) on node 1 (default targets).
+    14>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\ProjectB.44E6A923.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\ProjectB.44E6A923.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+    11>Link:
+         12 of 5946 functions ( 0.2%) were compiled, the rest were copied from previous compilation.
+           2 functions were new in current compilation
+           46 functions had inline decision re-evaluated but remain unchanged
+    14>ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D CW_GRAPH_BUILD_TRANSACTION_TESTING /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\\" /Fd"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue server_entry\project\string\string_registry.cpp
+    13>ClCompile:
+         string_registry.cpp
+    11>Link:
+         Finished generating code
+    14>ClCompile:
+         string_registry.cpp
+    13>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\StringRegistryTests.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+    11>Link:
+         GraphManagerTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\graph_manager_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\GraphMan.78CB400D.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\GraphManagerTests\Release\GraphMan.78CB400D.tlog\GraphManagerTests.lastbuildstate".
+    11>Done Building Project "C:\Boris\Server Entry\GraphManagerTests.vcxproj" (default targets).
+     1>Project "C:\Boris\Server Entry\ServerEntry.sln" (1) is building "C:\Boris\Server Entry\ProjectContextTests.vcxproj" (15) on node 2 (default targets).
+    15>PrepareForBuild:
+         Structured output is enabled. The formatting of compiler diagnostics will reflect the error hierarchy. See https://aka.ms/cpp/structured-output for more details.
+       InitializeBuildStatus:
+         Creating "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\ProjectC.3B47C14C.tlog\unsuccessfulbuild" because "AlwaysCreate" was specified.
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\ProjectC.3B47C14C.tlog\unsuccessfulbuild".
+       ComputeStdModulesCompileInputs:
+         Reading library manifest file 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\modules.json' which provides data for library 'microsoft/STL'.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.ixx' from library 'microsoft/STL' to be built with this project.
+         Adding module source 'C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\modules\std.compat.ixx' from library 'microsoft/STL' to be built with this project.
+    14>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ProjectBuilderTests.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+       ClCompile:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\CL.exe /c /Zi /nologo /W4 /WX- /diagnostics:column /sdl /O2 /Oi /GL /D _UNICODE /D UNICODE /Gm- /EHsc /MD /GS /Gy /fp:precise /Zc:wchar_t /Zc:forScope /Zc:inline /std:c++20 /permissive- /Fo"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\\" /Fd"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\vc145.pdb" /external:W4 /Gd /TP /FC /errorReport:queue server_entry\project\string\string_registry.cpp
+         string_registry.cpp
+    13>Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\string_registry_tests.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\string_registry_tests.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\string_registry_tests.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\string_registry_tests.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\string_registry_tests.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\string_registry.obj"
+         Generating code
+    15>C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ProjectContextTests.vcxproj]
+         (compiling source file 'server_entry/project/string/string_registry.cpp')
+         
+       Link:
+         8 of 656 functions ( 1.2%) were compiled, the rest were copied from previous compilation.
+           2 functions were new in current compilation
+           10 functions had inline decision re-evaluated but remain unchanged
+         Finished generating code
+         StringRegistryTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\string_registry_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\StringRe.2BFD08F8.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\StringRegistryTests\Release\StringRe.2BFD08F8.tlog\StringRegistryTests.lastbuildstate".
+    13>Done Building Project "C:\Boris\Server Entry\StringRegistryTests.vcxproj" (default targets).
+    14>Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_builder_tests.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_builder_tests.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\project_builder_tests.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_builder_tests.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\project_builder_tests.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\project_builder.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_build_entry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\lexer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_environment.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_publisher.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_frontend_generation.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_frontend_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\graph.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\file_snapshot.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\source_manager_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\compiled_persistence.obj"
+    15>Link:
+         C:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\MSVC\14.51.36231\bin\HostX86\x64\link.exe /ERRORREPORT:QUEUE /OUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_context_tests.exe" /NOLOGO kernel32.lib user32.lib gdi32.lib winspool.lib comdlg32.lib advapi32.lib shell32.lib ole32.lib oleaut32.lib uuid.lib odbc32.lib odbccp32.lib /MANIFEST /MANIFESTUAC:"level='asInvoker' uiAccess='false'" /manifest:embed /DEBUG:FULL /PDB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_context_tests.pdb" /OPT:REF /OPT:ICF /LTCG:incremental /LTCGOUT:"C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\project_context_tests.iobj" /TLBID:1 /DYNAMICBASE /NXCOMPAT /IMPLIB:"C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_context_tests.lib" /MACHINE:X64 "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\project_context_tests.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\diagnostic_buffer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\logger.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\metrics_store.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\json_parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\project_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\project_configuration_loader.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\project_composition_resolver.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\project_builder.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_build_entry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_contribution_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_context.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\parser.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\lexer.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_environment.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_publisher.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_frontend_generation.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_frontend_cache.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_frontend_incremental.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\graph_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\graph_build_transaction.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\graph.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\compiled_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\builtin_type.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\string_registry.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\runtime.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\shared_memory.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_manager.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_change_tracker.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_manager_persistence.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\source_hash.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\sha256.obj"
+         "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\file_snapshot.obj"
+    14>Link:
+         Generating code
+    15>Link:
+         Generating code
+    14>Link:
+         7 of 6892 functions ( 0.1%) were compiled, the rest were copied from previous compilation.
+           2 functions were new in current compilation
+           26 functions had inline decision re-evaluated but remain unchanged
+         Finished generating code
+         ProjectBuilderTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_builder_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\ProjectB.44E6A923.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectBuilderTests\Release\ProjectB.44E6A923.tlog\ProjectBuilderTests.lastbuildstate".
+    14>Done Building Project "C:\Boris\Server Entry\ProjectBuilderTests.vcxproj" (default targets).
+    15>Link:
+         12 of 10436 functions ( 0.1%) were compiled, the rest were copied from previous compilation.
+           2 functions were new in current compilation
+           45 functions had inline decision re-evaluated but remain unchanged
+         Finished generating code
+         ProjectContextTests.vcxproj -> C:\Boris\Server Entry\out\architecture_repair\verification\out\Release\project_context_tests.exe
+       FinalizeBuildStatus:
+         Deleting file "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\ProjectC.3B47C14C.tlog\unsuccessfulbuild".
+         Touching "C:\Boris\Server Entry\out\architecture_repair\verification\out\obj\ProjectContextTests\Release\ProjectC.3B47C14C.tlog\ProjectContextTests.lastbuildstate".
+    15>Done Building Project "C:\Boris\Server Entry\ProjectContextTests.vcxproj" (default targets).
+     1>Done Building Project "C:\Boris\Server Entry\ServerEntry.sln" (default targets).
+
+Build succeeded.
+
+       "C:\Boris\Server Entry\ServerEntry.sln" (default target) (1) ->
+       "C:\Boris\Server Entry\DiagnosticsCoreTests.vcxproj" (default target) (2) ->
+       (ClCompile target) -> 
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\DiagnosticsCoreTests.vcxproj]
+
+
+       "C:\Boris\Server Entry\ServerEntry.sln" (default target) (1) ->
+       "C:\Boris\Server Entry\ServerEntry.vcxproj" (default target) (3) ->
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ServerEntry.vcxproj]
+
+
+       "C:\Boris\Server Entry\ServerEntry.sln" (default target) (1) ->
+       "C:\Boris\Server Entry\GraphManagerTests.vcxproj" (default target) (11) ->
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\GraphManagerTests.vcxproj]
+
+
+       "C:\Boris\Server Entry\ServerEntry.sln" (default target) (1) ->
+       "C:\Boris\Server Entry\StringRegistryTests.vcxproj" (default target) (13) ->
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\StringRegistryTests.vcxproj]
+
+
+       "C:\Boris\Server Entry\ServerEntry.sln" (default target) (1) ->
+       "C:\Boris\Server Entry\ProjectBuilderTests.vcxproj" (default target) (14) ->
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ProjectBuilderTests.vcxproj]
+
+
+       "C:\Boris\Server Entry\ServerEntry.sln" (default target) (1) ->
+       "C:\Boris\Server Entry\ProjectContextTests.vcxproj" (default target) (15) ->
+         C:\Boris\Server Entry\server_entry\project\string\string_hash.hpp(1,1): warning C4335: Mac file format detected: please convert the source file to either DOS or UNIX format [C:\Boris\Server Entry\ProjectContextTests.vcxproj]
+
+    6 Warning(s)
+    0 Error(s)
+
+FileLogger wrote to: C:\Boris\Server Entry\out\architecture_repair\verified_build.log
+
+Time Elapsed 00:00:04.82

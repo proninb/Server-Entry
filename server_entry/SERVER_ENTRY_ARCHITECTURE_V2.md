@@ -264,6 +264,15 @@ Existing canonical TypeRef indices are preserved during incremental updates.
 Only new canonical structural types are appended/deduplicated during
 `Gn -> Gn+1`.
 
+Preservation includes structural meaning, not only numeric indices. Incremental
+type_handle allocation is append-only: removed slots remain empty and are never
+assigned to another type before Rebuild. Old named TypeRefs may address these
+empty slots, but live members may not. A resurrected Entity keeps its historical
+stable_id and receives a new type_handle if its old slot was already retired.
+Rebuild/G0 compacts type_handle and TypeRef storage together; callers discard
+external generation-local coordinates at Rebuild. No separate graph epoch is
+introduced.
+
 `TypeRef` is generation-local rather than persistent Project identity. Therefore
 an explicit Rebuild/G0 constructs a fresh compact canonical TypeRef table:
 fixed builtin prefix, one named TypeRef for each live type_handle, and only
@@ -286,6 +295,14 @@ Gn + sparse candidate delta
 ```
 
 For Rebuild, the result is G0.
+
+Moving a build transaction transfers its owned candidates and rebinds internal
+cross-member references. Previously issued transaction references and
+source_replacement views are invalidated by that move.
+
+Bulk capacity hints are not logical namespace sizes. Repeated G0 builds of an
+unchanged canonical program must not grow the committed identity index merely
+because the same reservation hint was supplied again.
 
 ## 16. Persistence
 
