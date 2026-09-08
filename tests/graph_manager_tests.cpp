@@ -583,6 +583,172 @@ bool test_stable_ids_follow_canonical_publication_order() {
         z_forward == a_reverse;
 }
 
+bool test_retained_flush_reopens_after_source_replacement() {
+    graph_manager manager;
+
+    if (!manager.initialize().ok()) {
+        return false;
+    }
+
+    source_id first_source;
+    source_id second_source;
+    string_id first_name;
+    string_id second_name;
+    stable_id first_identity;
+    stable_id second_identity;
+
+    {
+        auto transaction =
+            manager.begin_build(
+                graph_build_mode::rebuild);
+
+        if (!resolve_source(
+                transaction,
+                source_a,
+                first_source) ||
+            !resolve_source(
+                transaction,
+                source_b,
+                second_source) ||
+            !transaction.strings().bind(
+                "RetainedFirst",
+                first_name).ok() ||
+            !transaction.strings().bind(
+                "RetainedSecond",
+                second_name).ok()) {
+            return false;
+        }
+
+        const enum_build_data opaque{
+            enum_definition_state::opaque,
+            false,
+            builtin_type::integer,
+            {}
+        };
+
+        graph_update::source_replacement first;
+        graph_update::source_replacement second;
+        type_handle ignored_type;
+
+        if (!open_source(
+                transaction,
+                first_source,
+                first) ||
+            !first.add_named_enum(
+                first_name,
+                opaque,
+                first_identity,
+                ignored_type).ok() ||
+            !open_source(
+                transaction,
+                second_source,
+                second) ||
+            !second.add_named_enum(
+                second_name,
+                opaque,
+                second_identity,
+                ignored_type).ok() ||
+            !transaction.commit().ok()) {
+            return false;
+        }
+
+        first_identity =
+            manager.compiled_graph().find_id(
+                first_name);
+
+        second_identity =
+            manager.compiled_graph().find_id(
+                second_name);
+
+        if (!first_identity ||
+            !second_identity) {
+            return false;
+        }
+    }
+
+    {
+        auto transaction =
+            manager.begin_build(
+                graph_build_mode::incremental);
+
+        source_id same_first;
+
+        if (!resolve_source(
+                transaction,
+                source_a,
+                same_first) ||
+            same_first != first_source) {
+            return false;
+        }
+
+        graph_update::source_replacement first_empty;
+
+        if (!open_source(
+                transaction,
+                same_first,
+                first_empty)) {
+            return false;
+        }
+
+        // First query drains all currently opened retained replacements.
+        if (transaction.graph_state().find(
+                first_identity) != nullptr) {
+            return false;
+        }
+
+        // Repeated queries must observe the already-drained state.
+        if (transaction.graph_state().find(
+                first_identity) != nullptr) {
+            return false;
+        }
+
+        source_id same_second;
+
+        if (!resolve_source(
+                transaction,
+                source_b,
+                same_second) ||
+            same_second != second_source) {
+            return false;
+        }
+
+        graph_update::source_replacement second_empty;
+
+        if (!open_source(
+                transaction,
+                same_second,
+                second_empty)) {
+            return false;
+        }
+
+        // Opening another Source invalidates the readiness state. If it did not,
+        // this query would incorrectly expose Second's old committed Entity.
+        if (transaction.graph_state().find(
+                second_identity) != nullptr) {
+            return false;
+        }
+
+        if (!transaction.commit().ok()) {
+            return false;
+        }
+    }
+
+    return
+        manager.compiled_graph().find(
+            first_identity) == nullptr &&
+        manager.compiled_graph().find(
+            second_identity) == nullptr &&
+        manager.compiled_graph().find_id(
+            first_name) == first_identity &&
+        manager.compiled_graph().find_id(
+            second_name) == second_identity &&
+        access::contribution_count(
+            manager,
+            first_source) == 0 &&
+        access::contribution_count(
+            manager,
+            second_source) == 0;
+}
 bool test_definition_range_and_external_contributions() {
     graph_manager manager;
 
@@ -1666,6 +1832,7 @@ int main() {
         {"stale Source generation", test_stale_source_generation_is_atomic},
         {"forced prepare failures", test_forced_prepare_failures_are_atomic},
         {"stable IDs follow canonical publication order", test_stable_ids_follow_canonical_publication_order},
+        {"retained flush reopens after Source replacement", test_retained_flush_reopens_after_source_replacement},
         {"definition range/external contributions", test_definition_range_and_external_contributions},
         {"defined-empty/resurrection", test_defined_empty_range_and_identity_resurrection},
         {"aggregate modifiers", test_aggregate_members_and_modifier_order},

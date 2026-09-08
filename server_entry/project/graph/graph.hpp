@@ -785,6 +785,11 @@ private:
     std::uint64_t candidate_generation = 0;
     bool full_reconstruction = false;
 
+    // True only after every currently opened Source replacement has had any
+    // retained previous contribution reconciled or removed. A new Source
+    // replacement invalidates this transaction-local readiness state.
+    bool retained_replacements_flushed = false;
+
     status failure{};
     bool prepared = false;
     bool committed = false;

@@ -1156,6 +1156,7 @@ graph_update::graph_update(graph_update&& other) noexcept
       base_generation(other.base_generation),
       candidate_generation(other.candidate_generation),
       full_reconstruction(other.full_reconstruction),
+      retained_replacements_flushed(other.retained_replacements_flushed),
       failure(other.failure),
       prepared(other.prepared),
       committed(other.committed)
@@ -1344,6 +1345,10 @@ status graph_update::replace_source(source_id source, source_replacement& replac
     replacement.update = this;
     replacement.source = source;
     replacement.state = state;
+
+    // begin_source_replacement() may have retained previous Source state.
+    // Any earlier complete flush therefore no longer covers this transaction.
+    retained_replacements_flushed = false;
 
     return {};
 }
@@ -2689,6 +2694,10 @@ status graph_update::flush_retained_source_replacement(
 
 status graph_update::flush_retained_source_replacements() noexcept {
 
+    if (retained_replacements_flushed) {
+        return {};
+    }
+
     for (const auto raw : changed_sources) {
         const auto result =
             flush_retained_source_replacement(
@@ -2699,6 +2708,7 @@ status graph_update::flush_retained_source_replacements() noexcept {
         }
     }
 
+    retained_replacements_flushed = true;
     return {};
 }
 
