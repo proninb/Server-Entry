@@ -143,7 +143,7 @@ public:
     [[nodiscard]] bool was_replaced(source_id source) const noexcept;
     [[nodiscard]] const source_contribution_state* committed(source_id source) const noexcept;
 
-    [[nodiscard]] bool has_retained_previous(
+    [[nodiscard]] const source_contribution_state* retained_previous(
         source_id source) const noexcept;
 
     [[nodiscard]] status retain_previous(

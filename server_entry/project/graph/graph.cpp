@@ -2661,15 +2661,14 @@ status graph_update::begin_source_replacement(
 status graph_update::flush_retained_source_replacement(
     source_id source) noexcept {
 
-    if (!contributions->has_retained_previous(source)) {
+    const auto* previous =
+        contributions->retained_previous(source);
+
+    if (!previous) {
         return {};
     }
 
-    const auto* previous =
-        contributions->committed(source);
-
-    if (!previous ||
-        previous->named.size() != 1 ||
+    if (previous->named.size() != 1 ||
         !previous->anonymous_types.empty() ||
         previous->named.front().kind !=
             entity_kind::enum_type) {
@@ -2711,15 +2710,14 @@ status graph_update::reconcile_retained_enum(
 
     reconciled = false;
 
-    if (!contributions->has_retained_previous(source)) {
+    const auto* previous =
+        contributions->retained_previous(source);
+
+    if (!previous) {
         return {};
     }
 
-    const auto* previous =
-        contributions->committed(source);
-
-    if (!previous ||
-        previous->named.size() != 1 ||
+    if (previous->named.size() != 1 ||
         !previous->anonymous_types.empty()) {
         return failure = {status_code::configuration_failed};
     }

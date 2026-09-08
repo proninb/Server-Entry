@@ -148,13 +148,15 @@ const source_contribution_state* source_contribution_cache_update::committed(
     return &owner->states[source.value()];
 }
 
-bool source_contribution_cache_update::has_retained_previous(
+const source_contribution_state*
+source_contribution_cache_update::retained_previous(
     source_id source) const noexcept {
 
     if (!owner ||
         !source ||
-        source.value() >= owner->candidates.size()) {
-        return false;
+        source.value() >= owner->candidates.size() ||
+        source.value() >= owner->states.size()) {
+        return nullptr;
     }
 
     const auto& slot =
@@ -162,7 +164,9 @@ bool source_contribution_cache_update::has_retained_previous(
 
     return
         slot.generation == candidate_generation &&
-        slot.previous_retained;
+        slot.previous_retained
+        ? &owner->states[source.value()]
+        : nullptr;
 }
 
 status source_contribution_cache_update::retain_previous(
