@@ -1,8 +1,10 @@
 #include "parser.hpp"
 
 #include "../../diagnostics/diagnostic_descriptor.hpp"
+#include "../string/string_hash.hpp"
 #include "lexer.hpp"
 
+#include <algorithm>
 #include <charconv>
 #include <limits>
 #include <optional>
@@ -72,6 +74,219 @@ private:
         return static_cast<std::uint32_t>(value);
     }
 
+    static constexpr std::size_t
+        member_name_linear_limit = 16;
+
+    [[nodiscard]] std::string_view member_name_text(
+        source_text_range range) const noexcept {
+
+        const auto end =
+            std::uint64_t{range.offset} +
+            range.length;
+
+        if (range.length == 0 ||
+            end > source.bytes.size()) {
+            return {};
+        }
+
+        return source.bytes.substr(
+            range.offset,
+            range.length);
+    }
+
+    void reset_member_name_uniqueness() noexcept {
+        member_name_ranges.clear();
+        member_name_index.clear();
+    }
+
+    [[nodiscard]] status ensure_member_name_index(
+        std::size_t required) noexcept {
+
+        constexpr std::size_t minimum_capacity = 32;
+
+        auto capacity =
+            minimum_capacity;
+
+        const auto maximum =
+            (std::numeric_limits<std::size_t>::max)();
+
+        while (required > capacity / 2) {
+            if (capacity > maximum / 2) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+
+            capacity *= 2;
+        }
+
+        if (member_name_index.size() ==
+            capacity) {
+            return {};
+        }
+
+        try {
+            member_name_index.resize(capacity);
+            std::fill(
+                member_name_index.begin(),
+                member_name_index.end(),
+                0);
+
+            const auto mask =
+                capacity - 1;
+
+            for (std::size_t index = 0;
+                 index < member_name_ranges.size();
+                 ++index) {
+
+                const auto spelling =
+                    member_name_text(
+                        member_name_ranges[index]);
+
+                if (spelling.empty()) {
+                    return {
+                        status_code::configuration_failed
+                    };
+                }
+
+                auto slot =
+                    static_cast<std::size_t>(
+                        string_binding_hash(
+                            spelling)) &
+                    mask;
+
+                while (member_name_index[slot] != 0) {
+                    slot =
+                        (slot + 1) &
+                        mask;
+                }
+
+                member_name_index[slot] =
+                    static_cast<std::uint32_t>(
+                        index + 1);
+            }
+
+            return {};
+        }
+        catch (...) {
+            member_name_index.clear();
+            return {
+                status_code::initialization_failed
+            };
+        }
+    }
+
+    [[nodiscard]] status register_member_name(
+        const parser_token& token) noexcept {
+
+        const auto spelling =
+            text(token);
+
+        if (spelling.empty() ||
+            member_name_ranges.size() >=
+                (std::numeric_limits<std::uint32_t>::max)()) {
+            return {
+                status_code::configuration_failed
+            };
+        }
+
+        if (member_name_index.empty() &&
+            member_name_ranges.size() <
+                member_name_linear_limit) {
+
+            for (const auto range :
+                 member_name_ranges) {
+
+                if (member_name_text(range) ==
+                    spelling) {
+                    return fail(
+                        diagnostics::parser_duplicate_member,
+                        token.offset,
+                        token.length);
+                }
+            }
+
+            try {
+                member_name_ranges.push_back({
+                    token.offset,
+                    token.length
+                });
+
+                return {};
+            }
+            catch (...) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+        }
+
+        auto result =
+            ensure_member_name_index(
+                member_name_ranges.size() + 1);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        const auto mask =
+            member_name_index.size() - 1;
+
+        auto slot =
+            static_cast<std::size_t>(
+                string_binding_hash(
+                    spelling)) &
+            mask;
+
+        for (;;) {
+            const auto existing =
+                member_name_index[slot];
+
+            if (existing == 0) {
+                break;
+            }
+
+            if (existing >
+                member_name_ranges.size()) {
+                return {
+                    status_code::configuration_failed
+                };
+            }
+
+            if (member_name_text(
+                    member_name_ranges[
+                        existing - 1]) ==
+                spelling) {
+
+                return fail(
+                    diagnostics::parser_duplicate_member,
+                    token.offset,
+                    token.length);
+            }
+
+            slot =
+                (slot + 1) &
+                mask;
+        }
+
+        try {
+            member_name_ranges.push_back({
+                token.offset,
+                token.length
+            });
+        }
+        catch (...) {
+            return {
+                status_code::initialization_failed
+            };
+        }
+
+        member_name_index[slot] =
+            static_cast<std::uint32_t>(
+                member_name_ranges.size());
+
+        return {};
+    }
     [[nodiscard]] std::string_view text(
         const parser_token& token) const noexcept {
         return source.bytes.substr(token.offset, token.length);
@@ -884,6 +1099,8 @@ private:
                 static_cast<std::uint32_t>(
                     context.aggregate_members.size());
 
+            reset_member_name_uniqueness();
+
             while (!take(parser_punctuation::right_brace)) {
                 const auto member_start = peek();
 
@@ -999,6 +1216,14 @@ private:
 
                 const auto member_name = peek();
                 ++position;
+
+                result =
+                    register_member_name(
+                        member_name);
+
+                if (!result.ok()) {
+                    return result;
+                }
 
                 result =
                     context.store_name(
@@ -1125,6 +1350,10 @@ private:
     std::size_t position = 0;
     std::string scope;
     std::uint32_t current_enum_value_begin = 0;
+
+    // Parser-local uniqueness state; capacity is reused between aggregates.
+    std::vector<source_text_range> member_name_ranges;
+    std::vector<std::uint32_t> member_name_index;
 };
 
 void emit_initialization_failure_if_needed(

@@ -2,6 +2,7 @@
 #include "../server_entry/project/frontend/source_publisher.hpp"
 #include "../server_entry/project/graph/graph_build_transaction.hpp"
 #include "../server_entry/project/graph/graph_manager.hpp"
+#include "../server_entry/project/parser/parser.hpp"
 #include "../server_entry/project/parser/source_context.hpp"
 #include "../server_entry/diagnostics/diagnostic_descriptor.hpp"
 #include "../server_entry/metrics/source_acquisition_telemetry.hpp"
@@ -12,6 +13,7 @@
 #include <fstream>
 #include <iostream>
 #include <span>
+#include <string>
 #include <type_traits>
 
 namespace cw::server {
@@ -1375,6 +1377,89 @@ bool test_parser_publisher_boundary() {
         values[0].name == canonical_value &&
         values[0].bits == 1;
 }
+bool test_parser_rejects_duplicate_aggregate_member() {
+    constexpr std::string_view source_text =
+        "struct Duplicate { int value; int value; };";
+
+    source_context context;
+    source_environment environment;
+
+    const auto result =
+        parse_source(
+            source_view{
+                source_id{1},
+                source_text
+            },
+            environment,
+            operation_id{18},
+            context);
+
+    if (result.ok() ||
+        result.code !=
+            status_code::configuration_failed ||
+        context.diagnostics.empty() ||
+        !context.aggregates.empty()) {
+        return false;
+    }
+
+    for (const auto& record :
+         context.diagnostics.records()) {
+        if (record.id ==
+            diagnostics::parser_duplicate_member.id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool test_parser_rejects_duplicate_member_after_index_transition() {
+    std::string source_text =
+        "struct DuplicateLarge {";
+
+    for (std::uint32_t index = 0;
+         index != 17;
+         ++index) {
+
+        source_text += " int m";
+        source_text += std::to_string(index);
+        source_text += ";";
+    }
+
+    source_text += " int m0; };";
+
+    source_context context;
+    source_environment environment;
+
+    const auto result =
+        parse_source(
+            source_view{
+                source_id{1},
+                source_text
+            },
+            environment,
+            operation_id{19},
+            context);
+
+    if (result.ok() ||
+        result.code !=
+            status_code::configuration_failed ||
+        context.diagnostics.empty() ||
+        !context.aggregates.empty()) {
+        return false;
+    }
+
+    for (const auto& record :
+         context.diagnostics.records()) {
+        if (record.id ==
+            diagnostics::parser_duplicate_member.id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 bool test_parser_publisher_malformed_diagnostic() {
     graph_manager manager;
     project_builder builder;
@@ -1436,6 +1521,8 @@ int main() {
         {"stable IDs follow canonical publication order", test_stable_ids_follow_canonical_publication_order},
         {"incremental handle/TypeRef preservation", test_incremental_handle_and_typeref_preservation},
         {"Parser -> Publisher -> Builder boundary", test_parser_publisher_boundary},
+        {"Parser rejects duplicate aggregate member", test_parser_rejects_duplicate_aggregate_member},
+        {"Parser rejects duplicate member after index transition", test_parser_rejects_duplicate_member_after_index_transition},
         {"Publisher malformed diagnostic", test_parser_publisher_malformed_diagnostic}
     };
 

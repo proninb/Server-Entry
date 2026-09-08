@@ -1490,7 +1490,6 @@ status graph_update::source_replacement::define_members(
                 {status_code::configuration_failed};
         }
 
-        std::unordered_set<std::uint32_t> names;
         std::vector<member_build> copied_members;
         copied_members.reserve(input.size());
 
@@ -1507,7 +1506,6 @@ status graph_update::source_replacement::define_members(
                 (member.builtin
                     ? named_forms != 0
                     : named_forms != 1) ||
-                !names.insert(member.name.value()).second ||
                 member.modifier_offset > modifiers.size() ||
                 member.modifier_count >
                     modifiers.size() - member.modifier_offset) {

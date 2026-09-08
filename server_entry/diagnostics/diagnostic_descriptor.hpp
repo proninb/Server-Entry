@@ -120,6 +120,9 @@ inline constexpr diagnostic_descriptor parser_duplicate_enumerator{
 inline constexpr diagnostic_descriptor parser_initialization_failed{
     diagnostic_id{4009}, diagnostic_domain::parser, diagnostic_severity::fatal,
     "parser.initialization_failed", "Parser could not complete because an internal resource failed"};
+inline constexpr diagnostic_descriptor parser_duplicate_member{
+    diagnostic_id{4010}, diagnostic_domain::parser, diagnostic_severity::error,
+    "parser.duplicate_member", "Member name is duplicated in this aggregate"};
 inline constexpr diagnostic_descriptor builder_invalid_source_fact{
     diagnostic_id{5002}, diagnostic_domain::builder, diagnostic_severity::error,
     "builder.invalid_source_fact", "Parser produced an invalid transient source fact"};
