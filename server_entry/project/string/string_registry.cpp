@@ -1132,7 +1132,28 @@ status string_registry_update::prepare_publish() noexcept {
             (owner->index.empty() ||
              combined_live * 2 >
                  owner->index.size())) {
-            prepared_index.assign(
+            const bool direct_g0_index =
+                owner->records.empty() &&
+                owner->live_count == 0 &&
+                owner->index.empty() &&
+                !added_records.empty() &&
+                added_index_control.size() ==
+                    required_capacity &&
+                added_index_slots.size() ==
+                    required_capacity;
+
+            if (direct_g0_index) {
+                // On an empty registry local_raw is already the final one-based
+                // string_id. Promote the completed admission slot plane into the
+                // existing prepared-index state machine; publish/rollback and
+                // optional rebuild compaction remain unchanged.
+                prepared_index.swap(
+                    added_index_slots);
+
+                index_rebuild_prepared = true;
+            }
+            else {
+                prepared_index.assign(
                 required_capacity,
                 0);
 
@@ -1203,6 +1224,7 @@ status string_registry_update::prepare_publish() noexcept {
 
             index_rebuild_prepared =
                 true;
+            }
         }
 
         prepared = true;
