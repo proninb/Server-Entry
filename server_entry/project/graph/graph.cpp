@@ -1314,6 +1314,7 @@ status graph_update::replace_source(source_id source, source_replacement& replac
 
     replacement.update = nullptr;
     replacement.source = {};
+    replacement.state = nullptr;
 
     if (!failure.ok()) {
         return failure;
@@ -1327,14 +1328,22 @@ status graph_update::replace_source(source_id source, source_replacement& replac
         return failure = {status_code::duplicate_source_replacement};
     }
 
-    const auto result = begin_source_replacement(source);
+    source_contribution_state* state = nullptr;
 
-    if (!result.ok()) {
-        return result;
+    const auto result =
+        begin_source_replacement(
+            source,
+            state);
+
+    if (!result.ok() || !state) {
+        return result.ok()
+            ? failure = {status_code::initialization_failed}
+            : result;
     }
 
     replacement.update = this;
     replacement.source = source;
+    replacement.state = state;
 
     return {};
 }
@@ -1344,14 +1353,7 @@ status graph_update::source_replacement::reserve(
     std::size_t anonymous_count,
     std::size_t enum_value_count) noexcept {
 
-    if (!update || !source || !update->contributions) {
-        return {status_code::invalid_state};
-    }
-
-    auto* state =
-        update->contributions->candidate(source);
-
-    if (!state) {
+    if (!update || !source || !state) {
         return {status_code::invalid_state};
     }
 
@@ -1376,14 +1378,7 @@ status graph_update::source_replacement::bind_source_entity(
         !reference ||
         reference.source != source ||
         !entity ||
-        !update->contributions) {
-        return {status_code::invalid_state};
-    }
-
-    auto* state =
-        update->contributions->candidate(source);
-
-    if (!state) {
+        !state) {
         return {status_code::invalid_state};
     }
 
@@ -1418,7 +1413,15 @@ status graph_update::source_replacement::bind_source_entity(
 status graph_update::source_replacement::add_named_enum(string_id name, const enum_build_data& data,
     stable_id& entity, type_handle& type) noexcept {
 
-    return update ? update->add_named_enum_from_replacement(name, source, data, entity, type, nullptr)
+    return update && state
+        ? update->add_named_enum_from_replacement(
+              name,
+              source,
+              *state,
+              data,
+              entity,
+              type,
+              nullptr)
         : status{status_code::invalid_state};
 }
 
@@ -1429,10 +1432,11 @@ status graph_update::source_replacement::add_named_enum(
     type_handle& type,
     graph_named_enum_telemetry* telemetry) noexcept {
 
-    return update
+    return update && state
         ? update->add_named_enum_from_replacement(
               name,
               source,
+              *state,
               data,
               entity,
               type,
@@ -1443,13 +1447,26 @@ status graph_update::source_replacement::add_named_enum(
 status graph_update::source_replacement::add_anonymous_enum(const enum_build_data& data,
     type_handle& type) noexcept {
 
-    return update ? update->add_anonymous_enum_from_replacement(source, data, type) : status{status_code::invalid_state};
+    return update && state
+        ? update->add_anonymous_enum_from_replacement(
+              source,
+              *state,
+              data,
+              type)
+        : status{status_code::invalid_state};
 }
 
 status graph_update::source_replacement::add_named_type(string_id name, aggregate_definition_state state,
     stable_id& entity, type_handle& type) noexcept {
 
-    return update ? update->add_named_type_from_replacement(name, source, state, entity, type)
+    return update && this->state
+        ? update->add_named_type_from_replacement(
+              name,
+              source,
+              *this->state,
+              state,
+              entity,
+              type)
         : status{status_code::invalid_state};
 }
 
@@ -2580,7 +2597,11 @@ status graph_update::materialize_sampled(
         &telemetry);
 }
 
-status graph_update::begin_source_replacement(source_id source) noexcept {
+status graph_update::begin_source_replacement(
+    source_id source,
+    source_contribution_state*& candidate) noexcept {
+
+    candidate = nullptr;
 
     if (!failure.ok()) {
         return failure;
@@ -2590,13 +2611,8 @@ status graph_update::begin_source_replacement(source_id source) noexcept {
         return failure = {status_code::invalid_state};
     }
 
-    if (contributions->was_replaced(source)) {
-        return {};
-    }
-
     try {
         const auto* previous = contributions->committed(source);
-        source_contribution_state* candidate = nullptr;
 
         auto result = contributions->replace(source, candidate);
         if (!result.ok() || !candidate) {
@@ -2691,6 +2707,7 @@ status graph_update::flush_retained_source_replacements() noexcept {
 
 status graph_update::reconcile_retained_enum(
     source_id source,
+    source_contribution_state& source_state,
     const source_contribution_record& contribution,
     bool& reconciled) noexcept {
 
@@ -2712,13 +2729,6 @@ status graph_update::reconcile_retained_enum(
     const auto& old =
         previous->named.front();
 
-    auto* candidate =
-        contributions->candidate(source);
-
-    if (!candidate) {
-        return failure =
-            {status_code::invalid_state};
-    }
 
     std::span<const enum_value_record> old_values;
     std::span<const enum_value_record> new_values;
@@ -2734,7 +2744,7 @@ status graph_update::reconcile_retained_enum(
 
     if (contribution.definition &&
         !source_definition_values(
-            *candidate,
+            source_state,
             contribution.definition,
             new_values)) {
         return failure =
@@ -2752,7 +2762,7 @@ status graph_update::reconcile_retained_enum(
     try {
         // Definition ranges are Source-local, so retain the newly built record
         // that addresses the candidate Source arena rather than the old range.
-        candidate->named.push_back(contribution);
+        source_state.named.push_back(contribution);
     }
     catch (...) {
         return failure = {status_code::initialization_failed};
@@ -2766,6 +2776,7 @@ status graph_update::reconcile_retained_enum(
 status graph_update::add_named_enum_from_replacement(
     string_id name,
     source_id source,
+    source_contribution_state& source_state,
     const enum_build_data& data,
     stable_id& entity,
     type_handle& type,
@@ -2847,17 +2858,9 @@ status graph_update::add_named_enum_from_replacement(
 
         begin_phase();
 
-        auto* source_state =
-            contributions->candidate(source);
-
-        if (!source_state) {
-            return failure =
-                {status_code::invalid_state};
-        }
-
         result =
             build_contribution(
-                *source_state,
+                source_state,
                 data,
                 contribution);
 
@@ -2876,6 +2879,7 @@ status graph_update::add_named_enum_from_replacement(
         result =
             reconcile_retained_enum(
                 source,
+                source_state,
                 contribution,
                 reconciled);
 
@@ -2933,7 +2937,7 @@ status graph_update::add_named_enum_from_replacement(
 
         begin_phase();
 
-        contributions->candidate(source)->named.push_back(contribution);
+        source_state.named.push_back(contribution);
 
         if (sampled) {
             end_phase(telemetry->contribution_append_ns);
@@ -2976,7 +2980,11 @@ status graph_update::add_named_enum_from_replacement(
     }
 }
 
-status graph_update::add_named_type_from_replacement(string_id name, source_id source, aggregate_definition_state state,
+status graph_update::add_named_type_from_replacement(
+    string_id name,
+    source_id source,
+    source_contribution_state& source_state,
+    aggregate_definition_state state,
     stable_id& entity, type_handle& type) noexcept {
 
     entity = {};
@@ -3039,7 +3047,7 @@ status graph_update::add_named_type_from_replacement(string_id name, source_id s
             return failure = result;
         }
 
-        contributions->candidate(source)->named.push_back(contribution);
+        source_state.named.push_back(contribution);
 
         result = materialize(
             id,
@@ -3060,7 +3068,10 @@ status graph_update::add_named_type_from_replacement(string_id name, source_id s
     }
 }
 
-status graph_update::add_anonymous_enum_from_replacement(source_id source, const enum_build_data& data,
+status graph_update::add_anonymous_enum_from_replacement(
+    source_id source,
+    source_contribution_state& source_state,
+    const enum_build_data& data,
     type_handle& type) noexcept {
 
     type = {};
@@ -3083,17 +3094,9 @@ status graph_update::add_anonymous_enum_from_replacement(source_id source, const
 
         source_contribution_record contribution;
 
-        auto* source_state =
-            contributions->candidate(source);
-
-        if (!source_state) {
-            return failure =
-                {status_code::invalid_state};
-        }
-
         result =
             build_contribution(
-                *source_state,
+                source_state,
                 data,
                 contribution);
 
@@ -3138,8 +3141,7 @@ status graph_update::add_anonymous_enum_from_replacement(source_id source, const
         candidate.enum_definition =
             contribution.definition;
 
-        contributions->candidate(source)
-            ->anonymous_types.push_back(handle);
+        source_state.anonymous_types.push_back(handle);
 
         type = type_handle{handle};
 

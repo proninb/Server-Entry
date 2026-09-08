@@ -505,11 +505,15 @@ public:
 
         source_replacement(
             graph_update& owner_update,
-            source_id owner_source) noexcept
-            : update(&owner_update), source(owner_source) {}
+            source_id owner_source,
+            source_contribution_state& owner_state) noexcept
+            : update(&owner_update),
+              source(owner_source),
+              state(&owner_state) {}
 
         graph_update* update = nullptr;
         source_id source{};
+        source_contribution_state* state = nullptr;
     };
 
     ~graph_update();
@@ -560,6 +564,7 @@ private:
     [[nodiscard]] status add_named_enum_from_replacement(
         string_id name,
         source_id source,
+        source_contribution_state& source_state,
         const enum_build_data& data,
         stable_id& entity,
         type_handle& type,
@@ -568,12 +573,14 @@ private:
     [[nodiscard]] status add_named_type_from_replacement(
         string_id name,
         source_id source,
+        source_contribution_state& source_state,
         aggregate_definition_state state,
         stable_id& entity,
         type_handle& type) noexcept;
 
     [[nodiscard]] status add_anonymous_enum_from_replacement(
         source_id source,
+        source_contribution_state& source_state,
         const enum_build_data& data,
         type_handle& type) noexcept;
 
@@ -590,7 +597,9 @@ private:
     void publish_prepared() noexcept;
     void cancel() noexcept;
 
-    [[nodiscard]] status begin_source_replacement(source_id source) noexcept;
+    [[nodiscard]] status begin_source_replacement(
+        source_id source,
+        source_contribution_state*& state) noexcept;
 
     [[nodiscard]] status flush_retained_source_replacement(
         source_id source) noexcept;
@@ -599,6 +608,7 @@ private:
 
     [[nodiscard]] status reconcile_retained_enum(
         source_id source,
+        source_contribution_state& source_state,
         const source_contribution_record& contribution,
         bool& reconciled) noexcept;
 
