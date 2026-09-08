@@ -202,10 +202,11 @@ private:
 
     std::vector<string_registry::string_record> added_records;
     std::vector<char> added_bytes;
-    // Update-local open-addressing buckets pack a 32-bit hash fingerprint with
-    // the one-based local added-record coordinate. Most failed probes therefore
-    // avoid touching added_records and added_bytes.
-    std::vector<std::uint64_t> added_index;
+    // Update-local open-addressing uses a compact hot control plane. Ordinary
+    // failed probes touch only a 16-bit tag; the 32-bit local record coordinate
+    // is read only when the tag matches. Byte equality remains authoritative.
+    std::vector<std::uint16_t> added_index_control;
+    std::vector<std::uint32_t> added_index_slots;
 
     std::vector<string_registry::byte_block> rebuilt_blocks;
     std::vector<string_registry::string_record> rebuilt_records;

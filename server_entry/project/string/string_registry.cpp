@@ -59,42 +59,28 @@ std::size_t bucket_for(
         hash ^ (hash >> 32)) & mask;
 }
 
-std::uint32_t added_fingerprint(
+std::uint16_t added_index_tag(
     std::uint64_t hash) noexcept {
 
-    return
+    const auto folded =
         static_cast<std::uint32_t>(
             hash >> 32) ^
         static_cast<std::uint32_t>(
             hash);
+
+    auto tag =
+        static_cast<std::uint16_t>(
+            folded ^
+            (folded >> 16));
+
+    // Zero is the empty-bucket marker. Folding zero into one only increases
+    // false-positive tag matches; full hash/length/bytes still decide identity.
+    if (tag == 0) {
+        tag = 1;
+    }
+
+    return tag;
 }
-
-std::uint64_t make_added_bucket(
-    std::uint64_t hash,
-    std::uint32_t local_raw) noexcept {
-
-    return
-        (static_cast<std::uint64_t>(
-             added_fingerprint(hash)) << 32) |
-        local_raw;
-}
-
-std::uint32_t added_bucket_local_raw(
-    std::uint64_t bucket) noexcept {
-
-    return
-        static_cast<std::uint32_t>(
-            bucket);
-}
-
-std::uint32_t added_bucket_fingerprint(
-    std::uint64_t bucket) noexcept {
-
-    return
-        static_cast<std::uint32_t>(
-            bucket >> 32);
-}
-
 } // namespace
 
 std::uint64_t string_registry::hash_value(
@@ -466,9 +452,12 @@ string_registry_update::string_registry_update(
       added_bytes(
           std::move(
               other.added_bytes)),
-      added_index(
+      added_index_control(
           std::move(
-              other.added_index)),
+              other.added_index_control)),
+      added_index_slots(
+          std::move(
+              other.added_index_slots)),
       rebuilt_blocks(
           std::move(
               other.rebuilt_blocks)),
@@ -501,9 +490,11 @@ status string_registry_update::ensure_added_index(
         return {};
     }
 
-    if (!added_index.empty() &&
+    if (!added_index_control.empty() &&
+        added_index_slots.size() ==
+            added_index_control.size() &&
         required * 2 <=
-            added_index.size()) {
+            added_index_control.size()) {
         return {};
     }
 
@@ -518,13 +509,18 @@ status string_registry_update::ensure_added_index(
     }
 
     try {
-        std::vector<std::uint64_t>
-            rebuilt(
+        std::vector<std::uint16_t>
+            rebuilt_control(
+                capacity,
+                0);
+
+        std::vector<std::uint32_t>
+            rebuilt_slots(
                 capacity,
                 0);
 
         const auto mask =
-            rebuilt.size() - 1;
+            rebuilt_control.size() - 1;
 
         for (std::size_t offset = 0;
              offset < added_records.size();
@@ -532,6 +528,10 @@ status string_registry_update::ensure_added_index(
             const auto local_raw =
                 static_cast<std::uint32_t>(
                     offset + 1);
+
+            const auto tag =
+                added_index_tag(
+                    added_records[offset].hash);
 
             auto bucket =
                 bucket_for(
@@ -541,13 +541,14 @@ status string_registry_update::ensure_added_index(
             bool inserted = false;
 
             for (std::size_t probe = 0;
-                 probe < rebuilt.size();
+                 probe < rebuilt_control.size();
                  ++probe) {
-                if (rebuilt[bucket] == 0) {
-                    rebuilt[bucket] =
-                        make_added_bucket(
-                            added_records[offset].hash,
-                            local_raw);
+                if (rebuilt_control[bucket] == 0) {
+                    rebuilt_control[bucket] =
+                        tag;
+
+                    rebuilt_slots[bucket] =
+                        local_raw;
 
                     inserted = true;
                     break;
@@ -564,8 +565,11 @@ status string_registry_update::ensure_added_index(
             }
         }
 
-        added_index.swap(
-            rebuilt);
+        added_index_control.swap(
+            rebuilt_control);
+
+        added_index_slots.swap(
+            rebuilt_slots);
 
         return {};
     }
@@ -575,7 +579,6 @@ status string_registry_update::ensure_added_index(
         };
     }
 }
-
 status string_registry_update::reserve_bindings(
     std::size_t count,
     std::size_t bytes) noexcept {
@@ -773,14 +776,16 @@ status string_registry_update::bind_prehashed_one(
         }
     }
 
-    if (added_index.empty()) {
+    if (added_index_control.empty() ||
+        added_index_slots.size() !=
+            added_index_control.size()) {
         return failure = {
             status_code::invalid_state
         };
     }
 
     const auto mask =
-        added_index.size() - 1;
+        added_index_control.size() - 1;
 
     auto bucket =
         bucket_for(
@@ -788,29 +793,26 @@ status string_registry_update::bind_prehashed_one(
             mask);
 
     std::size_t empty_bucket =
-        added_index.size();
+        added_index_control.size();
 
-    const auto fingerprint =
-        added_fingerprint(
+    const auto tag =
+        added_index_tag(
             hash);
 
     for (std::size_t probe = 0;
-         probe < added_index.size();
+         probe < added_index_control.size();
          ++probe) {
-        const auto encoded =
-            added_index[bucket];
+        const auto stored_tag =
+            added_index_control[bucket];
 
-        if (encoded == 0) {
+        if (stored_tag == 0) {
             empty_bucket = bucket;
             break;
         }
 
-        if (added_bucket_fingerprint(
-                encoded) ==
-            fingerprint) {
+        if (stored_tag == tag) {
             const auto local_raw =
-                added_bucket_local_raw(
-                    encoded);
+                added_index_slots[bucket];
 
             if (local_raw == 0) {
                 return failure = {
@@ -881,7 +883,7 @@ status string_registry_update::bind_prehashed_one(
     }
 
     if (empty_bucket ==
-        added_index.size()) {
+        added_index_control.size()) {
         return failure = {
             status_code::invalid_state
         };
@@ -945,10 +947,11 @@ status string_registry_update::bind_prehashed_one(
             };
         }
 
-        added_index[empty_bucket] =
-            make_added_bucket(
-                hash,
-                local_raw);
+        added_index_control[empty_bucket] =
+            tag;
+
+        added_index_slots[empty_bucket] =
+            local_raw;
 
         result =
             string_id{raw};
@@ -1426,7 +1429,8 @@ void string_registry_update::publish_prepared() noexcept {
 
         added_records.clear();
         added_bytes.clear();
-        added_index.clear();
+        added_index_control.clear();
+        added_index_slots.clear();
     }
     else {
         const auto first_new_raw =
@@ -1489,7 +1493,8 @@ void string_registry_update::publish_prepared() noexcept {
         }
 
         added_records.clear();
-        added_index.clear();
+        added_index_control.clear();
+        added_index_slots.clear();
     }
 
     ++owner->generation;
