@@ -59,6 +59,42 @@ std::size_t bucket_for(
         hash ^ (hash >> 32)) & mask;
 }
 
+std::uint32_t added_fingerprint(
+    std::uint64_t hash) noexcept {
+
+    return
+        static_cast<std::uint32_t>(
+            hash >> 32) ^
+        static_cast<std::uint32_t>(
+            hash);
+}
+
+std::uint64_t make_added_bucket(
+    std::uint64_t hash,
+    std::uint32_t local_raw) noexcept {
+
+    return
+        (static_cast<std::uint64_t>(
+             added_fingerprint(hash)) << 32) |
+        local_raw;
+}
+
+std::uint32_t added_bucket_local_raw(
+    std::uint64_t bucket) noexcept {
+
+    return
+        static_cast<std::uint32_t>(
+            bucket);
+}
+
+std::uint32_t added_bucket_fingerprint(
+    std::uint64_t bucket) noexcept {
+
+    return
+        static_cast<std::uint32_t>(
+            bucket >> 32);
+}
+
 } // namespace
 
 std::uint64_t string_registry::hash_value(
@@ -482,7 +518,7 @@ status string_registry_update::ensure_added_index(
     }
 
     try {
-        std::vector<std::uint32_t>
+        std::vector<std::uint64_t>
             rebuilt(
                 capacity,
                 0);
@@ -493,11 +529,9 @@ status string_registry_update::ensure_added_index(
         for (std::size_t offset = 0;
              offset < added_records.size();
              ++offset) {
-            const auto raw =
+            const auto local_raw =
                 static_cast<std::uint32_t>(
-                    owner->records.size() +
-                    offset +
-                    1);
+                    offset + 1);
 
             auto bucket =
                 bucket_for(
@@ -510,7 +544,11 @@ status string_registry_update::ensure_added_index(
                  probe < rebuilt.size();
                  ++probe) {
                 if (rebuilt[bucket] == 0) {
-                    rebuilt[bucket] = raw;
+                    rebuilt[bucket] =
+                        make_added_bucket(
+                            added_records[offset].hash,
+                            local_raw);
+
                     inserted = true;
                     break;
                 }
@@ -752,23 +790,37 @@ status string_registry_update::bind_prehashed_one(
     std::size_t empty_bucket =
         added_index.size();
 
+    const auto fingerprint =
+        added_fingerprint(
+            hash);
+
     for (std::size_t probe = 0;
          probe < added_index.size();
          ++probe) {
-        const auto raw =
+        const auto encoded =
             added_index[bucket];
 
-        if (raw == 0) {
+        if (encoded == 0) {
             empty_bucket = bucket;
             break;
         }
 
-        if (raw >
-            owner->records.size()) {
+        if (added_bucket_fingerprint(
+                encoded) ==
+            fingerprint) {
+            const auto local_raw =
+                added_bucket_local_raw(
+                    encoded);
+
+            if (local_raw == 0) {
+                return failure = {
+                    status_code::invalid_state
+                };
+            }
+
             const auto offset =
-                raw -
-                owner->records.size() -
-                1;
+                static_cast<std::size_t>(
+                    local_raw - 1);
 
             if (offset <
                 added_records.size()) {
@@ -797,8 +849,25 @@ status string_registry_update::bind_prehashed_one(
                               };
 
                         if (stored == value) {
+                            const auto raw =
+                                owner->records.size() +
+                                local_raw;
+
+                            if (raw >
+                                (std::numeric_limits<
+                                    std::uint32_t>::max)()) {
+                                return failure = {
+                                    status_code::
+                                        invalid_state
+                                };
+                            }
+
                             result =
-                                string_id{raw};
+                                string_id{
+                                    static_cast<
+                                        std::uint32_t>(
+                                            raw)
+                                };
 
                             return {};
                         }
@@ -866,8 +935,20 @@ status string_registry_update::bind_prehashed_one(
             static_cast<std::uint32_t>(
                 next);
 
+        const auto local_raw =
+            static_cast<std::uint32_t>(
+                added_records.size());
+
+        if (local_raw == 0) {
+            return failure = {
+                status_code::invalid_state
+            };
+        }
+
         added_index[empty_bucket] =
-            raw;
+            make_added_bucket(
+                hash,
+                local_raw);
 
         result =
             string_id{raw};
