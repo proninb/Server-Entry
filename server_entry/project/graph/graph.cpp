@@ -2272,7 +2272,12 @@ template <bool Detailed>
 status graph_update::materialize_impl(
     stable_id id,
     string_id name,
+    type_handle* output,
     graph_named_enum_telemetry* telemetry) noexcept {
+
+    if (output) {
+        *output = {};
+    }
 
     std::chrono::steady_clock::time_point phase_begin{};
 
@@ -2354,6 +2359,11 @@ status graph_update::materialize_impl(
                             candidate_type_kind::unchanged;
                         candidate.value.reset();
                         candidate.build.reset();
+
+                        if (output) {
+                            *output = handle;
+                        }
+
                         return {};
                     }
                 }
@@ -2387,6 +2397,11 @@ status graph_update::materialize_impl(
                 return result;
             }
             owner->candidate_types[slot.entity.record.type.value()].build = std::move(build);
+
+            if (output) {
+                *output = slot.entity.record.type;
+            }
+
             return {};
         }
 
@@ -2434,6 +2449,11 @@ status graph_update::materialize_impl(
                         candidate_type_kind::unchanged;
                     candidate.value.reset();
                     candidate.build.reset();
+
+                    if (output) {
+                        *output = handle;
+                    }
+
                     return {};
                 }
             }
@@ -2513,6 +2533,10 @@ status graph_update::materialize_impl(
             end_phase(telemetry->materialize_attach_ns);
         }
 
+        if (output) {
+            *output = slot.entity.record.type;
+        }
+
         return {};
     }
     catch (...) {
@@ -2527,17 +2551,32 @@ status graph_update::materialize(
     return materialize_impl<false>(
         id,
         name,
+        nullptr,
+        nullptr);
+}
+
+status graph_update::materialize(
+    stable_id id,
+    string_id name,
+    type_handle& type) noexcept {
+
+    return materialize_impl<false>(
+        id,
+        name,
+        &type,
         nullptr);
 }
 
 status graph_update::materialize_sampled(
     stable_id id,
     string_id name,
+    type_handle& type,
     graph_named_enum_telemetry& telemetry) noexcept {
 
     return materialize_impl<true>(
         id,
         name,
+        &type,
         &telemetry);
 }
 
@@ -2906,27 +2945,26 @@ status graph_update::add_named_enum_from_replacement(
             ? materialize_sampled(
                   id,
                   name,
+                  type,
                   *telemetry)
             : materialize(
                   id,
-                  name);
+                  name,
+                  type);
 
         if (sampled) {
             end_phase(telemetry->materialize_ns);
         }
 
-        if (!result.ok()) {
-            return failure = result;
+        if (!result.ok() || !type) {
+            return failure = result.ok()
+                ? status{status_code::initialization_failed}
+                : result;
         }
 
-        begin_phase();
-
         entity = id;
-        type = touch_entity(id.value()).entity.record.type;
 
         if (sampled) {
-            end_phase(telemetry->result_lookup_ns);
-
             telemetry->total_ns +=
                 graph_prepare_elapsed_ns(total_begin);
         }
@@ -3003,16 +3041,18 @@ status graph_update::add_named_type_from_replacement(string_id name, source_id s
 
         contributions->candidate(source)->named.push_back(contribution);
 
-        result = materialize(id, name);
+        result = materialize(
+            id,
+            name,
+            type);
 
-        if (!result.ok()) {
-            return failure = result;
+        if (!result.ok() || !type) {
+            return failure = result.ok()
+                ? status{status_code::initialization_failed}
+                : result;
         }
 
         entity = id;
-
-        type = touch_entity(id.value()) .entity.record.type;
-
         return {};
     }
     catch (...) {

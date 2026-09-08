@@ -125,8 +125,7 @@ inline constexpr std::array<metric_descriptor, metric_count> metric_descriptors{
      "frontend.g0.publish.enum_builder.graph_sample.named_type_ref.index_emplace.duration", "Sampled named TypeRef hash-index emplace duration"},
     {metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_attach_duration, metric_kind::duration,
      "frontend.g0.publish.enum_builder.graph_sample.materialize.attach.duration", "Sampled materialize candidate build-state attachment duration"},
-    {metric_id::frontend_g0_publish_enum_builder_graph_sample_result_lookup_duration, metric_kind::duration,
-     "frontend.g0.publish.enum_builder.graph_sample.result_lookup.duration", "Sampled final candidate type lookup duration"},
+
     {metric_id::frontend_g0_publish_enum_builder_graph_call_count, metric_kind::counter,
      "frontend.g0.publish.enum_builder.graph.call.count", "Named enum Graph mutation calls observed by sampled telemetry"},
     {metric_id::frontend_g0_publish_enum_builder_graph_sample_count, metric_kind::counter,

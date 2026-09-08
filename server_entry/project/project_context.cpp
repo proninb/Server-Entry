@@ -231,10 +231,7 @@ void flush_g0_frontend_metrics(
             metrics,
             metric_id::frontend_g0_publish_enum_builder_graph_sample_materialize_attach_duration,
             summary.g0_publish_enum_builder_graph_sample_materialize_attach_ns);
-        record_duration_ns(
-            metrics,
-            metric_id::frontend_g0_publish_enum_builder_graph_sample_result_lookup_duration,
-            summary.g0_publish_enum_builder_graph_sample_result_lookup_ns);
+
 
         if (summary.g0_publish_enum_builder_graph_call_count != 0) {
             metrics.increment(

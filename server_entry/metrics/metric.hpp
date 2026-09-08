@@ -74,7 +74,7 @@ enum class metric_id : std::uint16_t
     frontend_g0_publish_enum_builder_graph_sample_named_type_ref_mapping_append_duration,
     frontend_g0_publish_enum_builder_graph_sample_named_type_ref_index_emplace_duration,
     frontend_g0_publish_enum_builder_graph_sample_materialize_attach_duration,
-    frontend_g0_publish_enum_builder_graph_sample_result_lookup_duration,
+
     frontend_g0_publish_enum_builder_graph_call_count,
     frontend_g0_publish_enum_builder_graph_sample_count,
     frontend_g0_publish_enum_builder_residual_duration,

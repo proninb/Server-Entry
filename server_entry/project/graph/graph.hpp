@@ -63,7 +63,7 @@ struct graph_named_enum_telemetry {
 
     std::uint64_t materialize_attach_ns = 0;
 
-    std::uint64_t result_lookup_ns = 0;
+
 
     [[nodiscard]] bool begin_call() noexcept {
         ++calls;
@@ -622,15 +622,22 @@ private:
         stable_id id,
         string_id name) noexcept;
 
+    [[nodiscard]] status materialize(
+        stable_id id,
+        string_id name,
+        type_handle& type) noexcept;
+
     [[nodiscard]] status materialize_sampled(
         stable_id id,
         string_id name,
+        type_handle& type,
         graph_named_enum_telemetry& telemetry) noexcept;
 
     template <bool Detailed>
     [[nodiscard]] status materialize_impl(
         stable_id id,
         string_id name,
+        type_handle* type,
         graph_named_enum_telemetry* telemetry) noexcept;
 
     [[nodiscard]] status assign_type(

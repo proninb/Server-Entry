@@ -91,7 +91,7 @@ struct source_frontend_summary {
     std::uint64_t g0_publish_enum_builder_graph_sample_named_type_ref_index_emplace_ns = 0;
 
     std::uint64_t g0_publish_enum_builder_graph_sample_materialize_attach_ns = 0;
-    std::uint64_t g0_publish_enum_builder_graph_sample_result_lookup_ns = 0;
+
     std::uint64_t g0_publish_enum_builder_graph_call_count = 0;
     std::uint64_t g0_publish_enum_builder_graph_sample_count = 0;
 

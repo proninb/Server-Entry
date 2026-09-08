@@ -1778,8 +1778,7 @@ source_rebuild_result source_frontend_generation::rebuild(
 
                 current_summary.g0_publish_enum_builder_graph_sample_materialize_attach_ns +=
                     graph_sample.materialize_attach_ns;
-                current_summary.g0_publish_enum_builder_graph_sample_result_lookup_ns +=
-                    graph_sample.result_lookup_ns;
+
                 current_summary.g0_publish_enum_builder_graph_call_count +=
                     graph_sample.calls;
                 current_summary.g0_publish_enum_builder_graph_sample_count +=
