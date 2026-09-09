@@ -27,7 +27,8 @@ struct source_type_binding {
 };
 
 // Immutable semantic projection exported only when another Source depends on it.
-// Storage is dense; no hash/map database survives Parser construction.
+// Semantic records remain dense; compact exact-lookup sidecars are built once
+// with the interface and reused by every dependent Parser.
 class source_interface_storage final {
 public:
     source_interface_storage() = default;
@@ -73,6 +74,19 @@ private:
     [[nodiscard]] std::string_view spelling(
         name_range value) const noexcept;
 
+    [[nodiscard]] status build_lookup_indexes() noexcept;
+
+    [[nodiscard]] bool find_constant_local(
+        std::string_view scope,
+        std::string_view name,
+        integral_constant& output) const noexcept;
+
+    [[nodiscard]] bool find_type_local(
+        std::string_view scope,
+        std::string_view name,
+        source_entity_ref& entity,
+        std::string_view& canonical) const noexcept;
+
     [[nodiscard]] bool find_constant_recursive(
         std::string_view scope,
         std::string_view name,
@@ -87,6 +101,11 @@ private:
     std::vector<char> spellings;
     std::vector<constant_record> constants;
     std::vector<type_record> types;
+
+    // One-based record positions. These sidecars contain no semantic state.
+    std::vector<std::uint32_t> constant_index;
+    std::vector<std::uint32_t> type_index;
+
     std::vector<const source_interface_storage*> imports;
     bool initialized = false;
 };

@@ -43,6 +43,90 @@ std::uint64_t qualified_size(
         static_cast<std::uint64_t>(name.size());
 }
 
+constexpr std::size_t minimum_lookup_index_capacity = 16;
+
+std::size_t hash_append(
+    std::size_t hash,
+    std::string_view value) noexcept {
+
+    constexpr std::size_t prime =
+        sizeof(std::size_t) == 8
+            ? std::size_t{1099511628211ull}
+            : std::size_t{16777619u};
+
+    for (const auto byte : value) {
+        hash ^=
+            static_cast<unsigned char>(byte);
+
+        hash *= prime;
+    }
+
+    return hash;
+}
+
+std::size_t hash_begin() noexcept {
+    return
+        sizeof(std::size_t) == 8
+            ? std::size_t{1469598103934665603ull}
+            : std::size_t{2166136261u};
+}
+
+std::size_t hash_name(
+    std::string_view value) noexcept {
+
+    return hash_append(
+        hash_begin(),
+        value);
+}
+
+std::size_t hash_qualified(
+    std::string_view scope,
+    std::string_view name) noexcept {
+
+    auto hash = hash_begin();
+
+    if (!scope.empty()) {
+        hash =
+            hash_append(
+                hash,
+                scope);
+
+        hash =
+            hash_append(
+                hash,
+                "::");
+    }
+
+    return hash_append(
+        hash,
+        name);
+}
+
+std::size_t lookup_index_capacity(
+    std::size_t required) noexcept {
+
+    if (required == 0) {
+        return 0;
+    }
+
+    const auto maximum =
+        (std::numeric_limits<std::size_t>::max)();
+
+    auto capacity =
+        minimum_lookup_index_capacity;
+
+    while (required >
+           capacity - capacity / 4) {
+
+        if (capacity > maximum / 2) {
+            return 0;
+        }
+
+        capacity *= 2;
+    }
+
+    return capacity;
+}
 } // namespace
 
 std::string_view source_interface_storage::spelling(
@@ -63,6 +147,248 @@ std::string_view source_interface_storage::spelling(
     };
 }
 
+status source_interface_storage::build_lookup_indexes() noexcept {
+    const auto build =
+        [this](
+            const auto& records,
+            std::vector<std::uint32_t>& index) -> status {
+
+        if (records.empty()) {
+            index.clear();
+            return {};
+        }
+
+        const auto capacity =
+            lookup_index_capacity(
+                records.size());
+
+        if (capacity == 0) {
+            return {
+                status_code::initialization_failed
+            };
+        }
+
+        try {
+            std::vector<std::uint32_t> rebuilt(
+                capacity,
+                0);
+
+            const auto mask =
+                capacity - 1;
+
+            for (std::size_t position = 0;
+                 position != records.size();
+                 ++position) {
+
+                const auto key =
+                    spelling(
+                        records[position].lookup_name);
+
+                if (key.empty()) {
+                    return {
+                        status_code::configuration_failed
+                    };
+                }
+
+                auto slot =
+                    hash_name(key) &
+                    mask;
+
+                for (;;) {
+                    const auto raw =
+                        rebuilt[slot];
+
+                    if (raw == 0) {
+                        rebuilt[slot] =
+                            static_cast<std::uint32_t>(
+                                position + 1);
+
+                        break;
+                    }
+
+                    if (raw > records.size()) {
+                        return {
+                            status_code::initialization_failed
+                        };
+                    }
+
+                    if (spelling(
+                            records[
+                                raw - 1].lookup_name) ==
+                        key) {
+
+                        // Existing code searched records in reverse order.
+                        // Replacing the slot preserves latest-local-wins.
+                        rebuilt[slot] =
+                            static_cast<std::uint32_t>(
+                                position + 1);
+
+                        break;
+                    }
+
+                    slot =
+                        (slot + 1) &
+                        mask;
+                }
+            }
+
+            index.swap(rebuilt);
+            return {};
+        }
+        catch (...) {
+            return {
+                status_code::initialization_failed
+            };
+        }
+    };
+
+    auto result =
+        build(
+            constants,
+            constant_index);
+
+    if (!result.ok()) {
+        return result;
+    }
+
+    result =
+        build(
+            types,
+            type_index);
+
+    if (!result.ok()) {
+        constant_index.clear();
+        return result;
+    }
+
+    return {};
+}
+
+bool source_interface_storage::find_constant_local(
+    std::string_view scope,
+    std::string_view name,
+    integral_constant& output) const noexcept {
+
+    output = {};
+
+    if (name.empty() ||
+        constant_index.empty()) {
+        return false;
+    }
+
+    const auto mask =
+        constant_index.size() - 1;
+
+    auto slot =
+        hash_qualified(
+            scope,
+            name) &
+        mask;
+
+    for (std::size_t probe = 0;
+         probe != constant_index.size();
+         ++probe) {
+
+        const auto raw =
+            constant_index[slot];
+
+        if (raw == 0) {
+            return false;
+        }
+
+        if (raw > constants.size()) {
+            return false;
+        }
+
+        const auto& record =
+            constants[raw - 1];
+
+        if (qualified_equal(
+                spelling(record.lookup_name),
+                scope,
+                name)) {
+
+            output = record.value;
+            return true;
+        }
+
+        slot =
+            (slot + 1) &
+            mask;
+    }
+
+    return false;
+}
+
+bool source_interface_storage::find_type_local(
+    std::string_view scope,
+    std::string_view name,
+    source_entity_ref& entity,
+    std::string_view& canonical) const noexcept {
+
+    entity = {};
+    canonical = {};
+
+    if (name.empty() ||
+        type_index.empty()) {
+        return false;
+    }
+
+    const auto mask =
+        type_index.size() - 1;
+
+    auto slot =
+        hash_qualified(
+            scope,
+            name) &
+        mask;
+
+    for (std::size_t probe = 0;
+         probe != type_index.size();
+         ++probe) {
+
+        const auto raw =
+            type_index[slot];
+
+        if (raw == 0) {
+            return false;
+        }
+
+        if (raw > types.size()) {
+            return false;
+        }
+
+        const auto& record =
+            types[raw - 1];
+
+        if (!qualified_equal(
+                spelling(record.lookup_name),
+                scope,
+                name)) {
+
+            slot =
+                (slot + 1) &
+                mask;
+
+            continue;
+        }
+
+        const auto value =
+            spelling(
+                record.canonical_name);
+
+        if (value.empty() ||
+            !record.entity) {
+            return false;
+        }
+
+        entity = record.entity;
+        canonical = value;
+        return true;
+    }
+
+    return false;
+}
 status source_interface_storage::initialize(
     source_id source,
     const source_context& context,
@@ -75,6 +401,8 @@ status source_interface_storage::initialize(
     const auto reset_candidate = [&]() noexcept {
         constants.clear();
         types.clear();
+        constant_index.clear();
+        type_index.clear();
         imports.clear();
         spellings.clear();
     };
@@ -300,6 +628,14 @@ status source_interface_storage::initialize(
             }
         }
 
+        const auto index_result =
+            build_lookup_indexes();
+
+        if (!index_result.ok()) {
+            reset_candidate();
+            return index_result;
+        }
+
         initialized = true;
         return {};
     }
@@ -321,6 +657,8 @@ status source_interface_storage::initialize(
     const auto reset_candidate = [&]() noexcept {
         constants.clear();
         types.clear();
+        constant_index.clear();
+        type_index.clear();
         imports.clear();
         spellings.clear();
     };
@@ -514,6 +852,14 @@ status source_interface_storage::initialize(
             });
         }
 
+        const auto index_result =
+            build_lookup_indexes();
+
+        if (!index_result.ok()) {
+            reset_candidate();
+            return index_result;
+        }
+
         initialized = true;
         return {};
     }
@@ -528,16 +874,11 @@ bool source_interface_storage::find_constant_recursive(
     std::string_view name,
     integral_constant& output) const noexcept {
 
-    for (auto position = constants.rbegin();
-         position != constants.rend();
-         ++position) {
-        if (qualified_equal(
-                spelling(position->lookup_name),
-                scope,
-                name)) {
-            output = position->value;
-            return true;
-        }
+    if (find_constant_local(
+            scope,
+            name,
+            output)) {
+        return true;
     }
 
     for (const auto* imported : imports) {
@@ -559,29 +900,11 @@ bool source_interface_storage::find_type_recursive(
     source_entity_ref& entity,
     std::string_view& canonical) const noexcept {
 
-    entity = {};
-    canonical = {};
-
-    for (auto position = types.rbegin();
-         position != types.rend();
-         ++position) {
-        if (!qualified_equal(
-                spelling(position->lookup_name),
-                scope,
-                name)) {
-            continue;
-        }
-
-        const auto value =
-            spelling(position->canonical_name);
-
-        if (value.empty() ||
-            !position->entity) {
-            return false;
-        }
-
-        entity = position->entity;
-        canonical = value;
+    if (find_type_local(
+            scope,
+            name,
+            entity,
+            canonical)) {
         return true;
     }
 

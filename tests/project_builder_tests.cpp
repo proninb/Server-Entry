@@ -1606,6 +1606,167 @@ bool test_parser_enum_constant_index_lookup() {
     return true;
 }
 
+bool test_source_environment_indexed_lookup() {
+    const std::array base_constants{
+        source_constant_binding{
+            {},
+            "FirstConstant",
+            {
+                builtin_type::long_long_integer,
+                1
+            }
+        },
+        source_constant_binding{
+            {},
+            "LastConstant",
+            {
+                builtin_type::long_long_integer,
+                26
+            }
+        },
+        source_constant_binding{
+            {},
+            "Shadowed",
+            {
+                builtin_type::long_long_integer,
+                7
+            }
+        }
+    };
+
+    const std::array base_types{
+        source_type_binding{
+            {},
+            "FirstType",
+            "Base::FirstType"
+        },
+        source_type_binding{
+            {},
+            "LastType",
+            "Base::LastType"
+        },
+        source_type_binding{
+            {},
+            "ShadowedType",
+            "Base::ShadowedType"
+        }
+    };
+
+    source_interface_storage base;
+
+    if (!base.initialize(
+            base_constants,
+            base_types).ok()) {
+        return false;
+    }
+
+    const std::array local_constants{
+        source_constant_binding{
+            {},
+            "Shadowed",
+            {
+                builtin_type::long_long_integer,
+                11
+            }
+        }
+    };
+
+    const std::array local_types{
+        source_type_binding{
+            {},
+            "ShadowedType",
+            "Local::ShadowedType"
+        }
+    };
+
+    const std::array imports{
+        static_cast<
+            const source_interface_storage*>(
+                &base)
+    };
+
+    source_interface_storage local;
+
+    if (!local.initialize(
+            local_constants,
+            local_types,
+            imports).ok()) {
+        return false;
+    }
+
+    source_environment environment{
+        local
+    };
+
+    integral_constant value;
+
+    if (!environment.find_constant_exact(
+            {},
+            "FirstConstant",
+            value).ok() ||
+        value.bits != 1) {
+        return false;
+    }
+
+    if (!environment.find_constant_exact(
+            {},
+            "LastConstant",
+            value).ok() ||
+        value.bits != 26) {
+        return false;
+    }
+
+    if (!environment.find_constant_exact(
+            {},
+            "Shadowed",
+            value).ok() ||
+        value.bits != 11) {
+        return false;
+    }
+
+    if (environment.find_constant_exact(
+            {},
+            "MissingConstant",
+            value).ok()) {
+        return false;
+    }
+
+    std::string_view canonical;
+
+    if (!environment.find_type_exact(
+            {},
+            "FirstType",
+            canonical).ok() ||
+        canonical != "Base::FirstType") {
+        return false;
+    }
+
+    if (!environment.find_type_exact(
+            {},
+            "LastType",
+            canonical).ok() ||
+        canonical != "Base::LastType") {
+        return false;
+    }
+
+    if (!environment.find_type_exact(
+            {},
+            "ShadowedType",
+            canonical).ok() ||
+        canonical != "Local::ShadowedType") {
+        return false;
+    }
+
+    if (environment.find_type_exact(
+            {},
+            "MissingType",
+            canonical).ok()) {
+        return false;
+    }
+
+    return true;
+}
+
 bool test_parser_publisher_malformed_diagnostic() {
     graph_manager manager;
     project_builder builder;
@@ -1670,6 +1831,7 @@ int main() {
         {"Parser rejects duplicate aggregate member", test_parser_rejects_duplicate_aggregate_member},
         {"Parser rejects duplicate member after index transition", test_parser_rejects_duplicate_member_after_index_transition},
         {"Parser enum constant index lookup", test_parser_enum_constant_index_lookup},
+        {"SourceEnvironment indexed lookup", test_source_environment_indexed_lookup},
         {"Publisher malformed diagnostic", test_parser_publisher_malformed_diagnostic}
     };
 
