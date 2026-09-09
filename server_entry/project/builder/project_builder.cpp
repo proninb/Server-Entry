@@ -451,4 +451,73 @@ status project_builder::build_aggregate(
         scratch);
 }
 
+status project_builder::build_static_object(
+    graph_update::source_replacement& replacement,
+    const canonical_static_object_fact& fact,
+    project_builder_scratch& scratch,
+    std::uint32_t& object) const noexcept {
+
+    object = 0;
+
+    if ((fact.builtin && fact.user_type_entity) ||
+        (!fact.builtin && !fact.user_type_entity)) {
+        return {
+            status_code::configuration_failed
+        };
+    }
+
+    try {
+        auto& modifiers = scratch.modifiers;
+
+        modifiers.clear();
+        modifiers.reserve(
+            fact.modifiers.size());
+
+        for (const auto& modifier :
+             fact.modifiers) {
+            if (modifier.kind ==
+                    derived_type_kind::array &&
+                modifier.payload == 0) {
+                return {
+                    status_code::configuration_failed
+                };
+            }
+
+            modifiers.push_back({
+                modifier.kind,
+                modifier.payload
+            });
+        }
+
+        return replacement.add_static_object(
+            fact.builtin,
+            fact.user_type_entity,
+            modifiers,
+            object);
+    }
+    catch (...) {
+        return {
+            status_code::initialization_failed
+        };
+    }
+}
+
+status project_builder::build_construction_binding(
+    graph_update::source_replacement& replacement,
+    const canonical_construction_binding_fact& fact) const noexcept {
+
+    if (!fact.owner_type ||
+        !fact.member ||
+        !fact.static_object) {
+        return {
+            status_code::configuration_failed
+        };
+    }
+
+    return replacement.add_construction_binding(
+        fact.owner_type,
+        fact.member,
+        fact.static_object);
+}
+
 } // namespace cw::server

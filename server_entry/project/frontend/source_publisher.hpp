@@ -47,6 +47,7 @@ struct source_publish_scratch {
     std::vector<enum_value_fact> enum_values;
     std::vector<aggregate_source_fact::member_fact> members;
     std::vector<canonical_type_modifier> modifiers;
+    std::vector<std::uint32_t> static_object_bindings;
     project_builder_scratch builder;
     source_publish_telemetry telemetry;
 };

@@ -544,6 +544,227 @@ status source_context::find_type(
     return {status_code::configuration_failed};
 }
 
+status source_context::ensure_static_object_index(
+    std::size_t required) noexcept {
+
+    const auto capacity =
+        next_index_capacity(
+            static_object_index.size(),
+            required);
+
+    if (capacity == 0) {
+        return {status_code::initialization_failed};
+    }
+
+    if (capacity == static_object_index.size()) {
+        return {};
+    }
+
+    try {
+        std::vector<std::uint32_t> rebuilt(
+            capacity,
+            0);
+
+        const auto mask =
+            capacity - 1;
+
+        for (std::size_t index = 0;
+             index < static_objects.size();
+             ++index) {
+            std::string_view canonical;
+
+            auto result =
+                resolve_name(
+                    static_objects[index].canonical_name,
+                    canonical);
+
+            if (!result.ok() ||
+                canonical.empty()) {
+                return result.ok()
+                    ? status{status_code::configuration_failed}
+                    : result;
+            }
+
+            auto slot =
+                hash_name(canonical) &
+                mask;
+
+            while (rebuilt[slot] != 0) {
+                slot =
+                    (slot + 1) &
+                    mask;
+            }
+
+            rebuilt[slot] =
+                static_cast<std::uint32_t>(
+                    index + 1);
+        }
+
+        static_object_index.swap(rebuilt);
+        return {};
+    }
+    catch (...) {
+        return {status_code::initialization_failed};
+    }
+}
+
+status source_context::declare_static_object(
+    const static_object_source_fact& fact,
+    std::uint32_t& object) noexcept {
+
+    object = 0;
+
+    if (!fact.canonical_name ||
+        (fact.builtin && fact.type_entity) ||
+        (!fact.builtin && !fact.type_entity) ||
+        static_objects.size() >=
+            (std::numeric_limits<std::uint32_t>::max)()) {
+        return {status_code::configuration_failed};
+    }
+
+    std::string_view canonical;
+
+    auto result =
+        resolve_name(
+            fact.canonical_name,
+            canonical);
+
+    if (!result.ok() ||
+        canonical.empty()) {
+        return result.ok()
+            ? status{status_code::configuration_failed}
+            : result;
+    }
+
+    result =
+        ensure_static_object_index(
+            static_objects.size() + 1);
+
+    if (!result.ok()) {
+        return result;
+    }
+
+    const auto mask =
+        static_object_index.size() - 1;
+
+    auto slot =
+        hash_name(canonical) &
+        mask;
+
+    for (;;) {
+        const auto raw =
+            static_object_index[slot];
+
+        if (raw == 0) {
+            break;
+        }
+
+        if (raw > static_objects.size()) {
+            return {status_code::initialization_failed};
+        }
+
+        std::string_view existing;
+
+        result =
+            resolve_name(
+                static_objects[
+                    raw - 1].canonical_name,
+                existing);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        if (existing == canonical) {
+            return {status_code::configuration_failed};
+        }
+
+        slot =
+            (slot + 1) &
+            mask;
+    }
+
+    try {
+        static_objects.push_back(fact);
+
+        object =
+            static_cast<std::uint32_t>(
+                static_objects.size());
+
+        static_object_index[slot] = object;
+        return {};
+    }
+    catch (...) {
+        object = 0;
+        return {status_code::initialization_failed};
+    }
+}
+
+status source_context::find_static_object(
+    std::string_view scope,
+    std::string_view name,
+    std::uint32_t& object) const noexcept {
+
+    object = 0;
+
+    if (name.empty() ||
+        static_object_index.empty()) {
+        return {status_code::configuration_failed};
+    }
+
+    const auto mask =
+        static_object_index.size() - 1;
+
+    auto slot =
+        hash_qualified(
+            scope,
+            name) &
+        mask;
+
+    for (std::size_t probe = 0;
+         probe < static_object_index.size();
+         ++probe) {
+        const auto raw =
+            static_object_index[slot];
+
+        if (raw == 0) {
+            return {status_code::configuration_failed};
+        }
+
+        if (raw > static_objects.size()) {
+            return {status_code::initialization_failed};
+        }
+
+        const auto& existing =
+            static_objects[raw - 1];
+
+        std::string_view canonical;
+
+        const auto result =
+            resolve_name(
+                existing.canonical_name,
+                canonical);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        if (qualified_equal(
+                canonical,
+                scope,
+                name)) {
+            object = raw;
+            return {};
+        }
+
+        slot =
+            (slot + 1) &
+            mask;
+    }
+
+    return {status_code::configuration_failed};
+}
+
 status source_context::ensure_constant_index(
     std::size_t required) noexcept {
 
@@ -798,6 +1019,9 @@ status source_context::release_facts(
         output.modifiers = std::move(type_modifiers);
         output.members = std::move(aggregate_members);
         output.aggregates = std::move(aggregates);
+        output.static_objects = std::move(static_objects);
+        output.construction_bindings =
+            std::move(aggregate_construction_bindings);
 
         stored_name_count = 0;
         return {};
@@ -871,6 +1095,51 @@ std::span<const source_type_modifier> source_context::modifiers(
     };
 }
 
+std::span<const source_type_modifier> source_context::modifiers(
+    const static_object_source_fact& object) const noexcept {
+
+    if (object.modifier_count == 0) {
+        return {};
+    }
+
+    const auto end =
+        std::uint64_t{object.modifier_offset} +
+        object.modifier_count;
+
+    if (end > type_modifiers.size()) {
+        return {};
+    }
+
+    return {
+        type_modifiers.data() + object.modifier_offset,
+        object.modifier_count
+    };
+}
+
+std::span<const construction_binding_source_fact>
+source_context::construction_bindings(
+    const aggregate_declaration_source_fact& declaration) const noexcept {
+
+    if (declaration.construction_binding_count == 0) {
+        return {};
+    }
+
+    const auto end =
+        std::uint64_t{declaration.construction_binding_offset} +
+        declaration.construction_binding_count;
+
+    if (end >
+        aggregate_construction_bindings.size()) {
+        return {};
+    }
+
+    return {
+        aggregate_construction_bindings.data() +
+            declaration.construction_binding_offset,
+        declaration.construction_binding_count
+    };
+}
+
 void source_context::reset() noexcept {
     names.clear();
     name_hashes.clear();
@@ -886,6 +1155,9 @@ void source_context::reset() noexcept {
     aggregates.clear();
     aggregate_members.clear();
     type_modifiers.clear();
+    static_objects.clear();
+    static_object_index.clear();
+    aggregate_construction_bindings.clear();
     diagnostics.clear();
 }
 

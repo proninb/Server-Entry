@@ -317,6 +317,9 @@ status graph::initialize(abi_configuration abi) noexcept {
         identity.clear();
         member_records.clear();
         enum_value_records.clear();
+        static_object_records.clear();
+        construction_binding_records.clear();
+        construction_binding_ranges.clear();
 
         canonical_types.clear();
         canonical_types.push_back({});
@@ -453,6 +456,56 @@ member_index graph::find_member(type_handle handle, string_id name) const noexce
     }
 
     return {};
+}
+
+const static_object_record* graph::static_object(
+    std::uint32_t index) const noexcept {
+
+    return index != 0 &&
+        index <= static_object_records.size()
+        ? &static_object_records[index - 1]
+        : nullptr;
+}
+
+std::span<const construction_binding_record>
+graph::construction_bindings(
+    type_handle handle) const noexcept {
+
+    if (!handle ||
+        handle.value() >
+            construction_binding_ranges.size()) {
+        return {};
+    }
+
+    const auto range =
+        construction_binding_ranges[
+            handle.value() - 1];
+
+    if (!range) {
+        return {};
+    }
+
+    const auto begin =
+        static_cast<std::size_t>(
+            range.begin - 1);
+
+    const auto count =
+        static_cast<std::size_t>(
+            range.count);
+
+    if (begin >
+            construction_binding_records.size() ||
+        count >
+            construction_binding_records.size() -
+                begin) {
+        return {};
+    }
+
+    return {
+        construction_binding_records.data() +
+            begin,
+        count
+    };
 }
 
 canonical_type_kind graph::kind(TypeRef type) const noexcept {
@@ -608,6 +661,12 @@ status graph::rebuild_dependency_index() noexcept {
 }
 
 status graph::export_compiled(compiled_graph_state& output) const noexcept {
+    if (!static_object_records.empty() ||
+        !construction_binding_records.empty()) {
+        output = {};
+        return {status_code::configuration_failed};
+    }
+
     try {
         compiled_graph_state candidate;
         candidate.abi = abi_config;
@@ -992,6 +1051,9 @@ status graph::import_compiled(
 
         member_records.swap(imported_members);
         enum_value_records.swap(imported_enum_values);
+        static_object_records.clear();
+        construction_binding_records.clear();
+        construction_binding_ranges.clear();
         canonical_types.swap(imported_canonical_types);
         named_type_refs.swap(imported_named_type_refs);
         derived_type_index.swap(imported_derived_type_index);
@@ -1030,6 +1092,11 @@ void graph::swap_compiled(graph& other) noexcept {
     identity.swap(other.identity);
     member_records.swap(other.member_records);
     enum_value_records.swap(other.enum_value_records);
+    static_object_records.swap(other.static_object_records);
+    construction_binding_records.swap(
+        other.construction_binding_records);
+    construction_binding_ranges.swap(
+        other.construction_binding_ranges);
     canonical_types.swap(other.canonical_types);
     named_type_refs.swap(other.named_type_refs);
     derived_type_index.swap(other.derived_type_index);
@@ -1120,6 +1187,18 @@ graph_update::graph_update(graph_update&& other) noexcept
       rebuilt_type_count(other.rebuilt_type_count),
       rebuilt_member_records(std::move(other.rebuilt_member_records)),
       rebuilt_enum_value_records(std::move(other.rebuilt_enum_value_records)),
+      pending_static_objects(
+          std::move(other.pending_static_objects)),
+      pending_static_modifiers(
+          std::move(other.pending_static_modifiers)),
+      rebuilt_static_object_records(
+          std::move(other.rebuilt_static_object_records)),
+      pending_construction_bindings(
+          std::move(other.pending_construction_bindings)),
+      rebuilt_construction_binding_records(
+          std::move(other.rebuilt_construction_binding_records)),
+      rebuilt_construction_binding_ranges(
+          std::move(other.rebuilt_construction_binding_ranges)),
       rebuilt_canonical_types(std::move(other.rebuilt_canonical_types)),
       rebuilt_named_type_refs(std::move(other.rebuilt_named_type_refs)),
       rebuilt_derived_type_index(std::move(other.rebuilt_derived_type_index)),
@@ -1533,6 +1612,112 @@ TypeRef graph_update::source_replacement::builtin_type_ref(builtin_type value) c
 
     return update && raw < update->owner->canonical_types.size() ? TypeRef{raw}
             : TypeRef{};
+}
+
+status graph_update::source_replacement::add_static_object(
+    std::optional<builtin_type> builtin,
+    source_entity_ref user_type_entity,
+    std::span<const type_modifier_build> modifiers,
+    std::uint32_t& object) noexcept {
+
+    object = 0;
+
+    if (!update ||
+        !state ||
+        !update->full_reconstruction ||
+        update->prepared ||
+        update->committed ||
+        (builtin && user_type_entity) ||
+        (!builtin && !user_type_entity)) {
+        return {status_code::invalid_state};
+    }
+
+    const auto maximum =
+        static_cast<std::size_t>(
+            (std::numeric_limits<std::uint32_t>::max)());
+
+    if (update->pending_static_objects.size() >=
+            maximum ||
+        modifiers.size() >
+            maximum -
+                update->pending_static_modifiers.size()) {
+        return update->failure = {
+            status_code::initialization_failed
+        };
+    }
+
+    try {
+        const auto offset =
+            static_cast<std::uint32_t>(
+                update->pending_static_modifiers.size());
+
+        update->pending_static_modifiers.insert(
+            update->pending_static_modifiers.end(),
+            modifiers.begin(),
+            modifiers.end());
+
+        try {
+            update->pending_static_objects.push_back({
+                builtin,
+                user_type_entity,
+                offset,
+                static_cast<std::uint32_t>(
+                    modifiers.size())
+            });
+        }
+        catch (...) {
+            update->pending_static_modifiers.resize(
+                offset);
+            throw;
+        }
+
+        object =
+            static_cast<std::uint32_t>(
+                update->pending_static_objects.size());
+
+        return {};
+    }
+    catch (...) {
+        object = 0;
+        return update->failure = {
+            status_code::initialization_failed
+        };
+    }
+}
+
+status graph_update::source_replacement::add_construction_binding(
+    source_entity_ref owner_type,
+    member_index member,
+    std::uint32_t static_object) noexcept {
+
+    if (!update ||
+        !state ||
+        !update->full_reconstruction ||
+        update->prepared ||
+        update->committed ||
+        !owner_type ||
+        !member ||
+        static_object == 0 ||
+        static_object >
+            update->pending_static_objects.size()) {
+        return {status_code::invalid_state};
+    }
+
+    try {
+        update->pending_construction_bindings.push_back({
+            owner_type,
+            member,
+            static_object,
+            {}
+        });
+
+        return {};
+    }
+    catch (...) {
+        return update->failure = {
+            status_code::initialization_failed
+        };
+    }
 }
 
 status graph_update::source_replacement::resolve_type(
@@ -4058,6 +4243,370 @@ status graph_update::build_rebuild_storage() noexcept {
     }
 }
 
+status graph_update::resolve_pending_construction() noexcept {
+    if (!full_reconstruction) {
+        return {};
+    }
+
+    try {
+        rebuilt_static_object_records.clear();
+        rebuilt_static_object_records.reserve(
+            pending_static_objects.size());
+
+        for (const auto& pending :
+             pending_static_objects) {
+            if ((pending.builtin &&
+                 pending.user_type_entity) ||
+                (!pending.builtin &&
+                 !pending.user_type_entity) ||
+                pending.modifier_offset >
+                    pending_static_modifiers.size() ||
+                pending.modifier_count >
+                    pending_static_modifiers.size() -
+                        pending.modifier_offset) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            TypeRef current;
+
+            if (pending.builtin) {
+                const auto raw =
+                    static_cast<std::uint32_t>(
+                        *pending.builtin) + 1;
+
+                if (!owner ||
+                    raw >=
+                        owner->canonical_types.size()) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                current = TypeRef{raw};
+            }
+            else {
+                const auto result =
+                    resolve_source_type(
+                        pending.user_type_entity,
+                        current);
+
+                if (!result.ok() ||
+                    !current) {
+                    return failure =
+                        result.ok()
+                            ? status{
+                                status_code::configuration_failed}
+                            : result;
+                }
+            }
+
+            for (std::uint32_t index = 0;
+                 index < pending.modifier_count;
+                 ++index) {
+                const auto& modifier =
+                    pending_static_modifiers[
+                        pending.modifier_offset +
+                        index];
+
+                if (modifier.kind ==
+                        derived_type_kind::lvalue_reference ||
+                    modifier.kind ==
+                        derived_type_kind::rvalue_reference ||
+                    (modifier.kind ==
+                        derived_type_kind::array &&
+                     modifier.payload == 0)) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                TypeRef next;
+
+                const auto result =
+                    get_or_create_derived(
+                        modifier.kind,
+                        current,
+                        modifier.payload,
+                        next);
+
+                if (!result.ok() ||
+                    !next) {
+                    return failure =
+                        result.ok()
+                            ? status{
+                                status_code::configuration_failed}
+                            : result;
+                }
+
+                current = next;
+            }
+
+            rebuilt_static_object_records.push_back({
+                current
+            });
+        }
+
+        if (rebuilt_static_object_records.size() !=
+            pending_static_objects.size()) {
+            return failure = {
+                status_code::initialization_failed
+            };
+        }
+
+        for (auto& binding :
+             pending_construction_bindings) {
+            if (!binding.owner_type ||
+                !binding.member ||
+                binding.static_object == 0 ||
+                binding.static_object >
+                    rebuilt_static_object_records.size()) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            TypeRef owner_type;
+
+            const auto result =
+                resolve_source_type(
+                    binding.owner_type,
+                    owner_type);
+
+            if (!result.ok() ||
+                !owner_type) {
+                return failure =
+                    result.ok()
+                        ? status{
+                            status_code::configuration_failed}
+                        : result;
+            }
+
+            binding.resolved_owner =
+                owner_type;
+        }
+
+        return {};
+    }
+    catch (...) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+}
+
+status graph_update::build_rebuild_construction() noexcept {
+    if (!full_reconstruction) {
+        return {};
+    }
+
+    try {
+        rebuilt_construction_binding_records.clear();
+        rebuilt_construction_binding_ranges.assign(
+            rebuilt_types.size(),
+            definition_range{});
+
+        if (pending_construction_bindings.empty()) {
+            return {};
+        }
+
+        std::vector<std::uint32_t> owners(
+            pending_construction_bindings.size(),
+            0);
+
+        std::vector<std::uint32_t> counts(
+            rebuilt_types.size(),
+            0);
+
+        std::vector<std::uint8_t> seen_member(
+            rebuilt_member_records.size(),
+            0);
+
+        for (std::size_t index = 0;
+             index < pending_construction_bindings.size();
+             ++index) {
+            const auto& binding =
+                pending_construction_bindings[index];
+
+            if (!binding.resolved_owner ||
+                binding.resolved_owner.value() >=
+                    rebuilt_canonical_types.size() ||
+                !binding.member ||
+                binding.static_object == 0 ||
+                binding.static_object >
+                    rebuilt_static_object_records.size()) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto& owner_ref =
+                rebuilt_canonical_types[
+                    binding.resolved_owner.value()];
+
+            if (owner_ref.kind !=
+                    canonical_type_kind::named ||
+                !owner_ref.named ||
+                owner_ref.named.value() >
+                    rebuilt_types.size()) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto handle =
+                owner_ref.named.value();
+
+            if (!rebuilt_types[handle - 1] ||
+                rebuilt_types[handle - 1]->record.kind !=
+                    user_type_kind::aggregate ||
+                !rebuilt_types[handle - 1]->record.definition) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto definition =
+                rebuilt_types[
+                    handle - 1]->record.definition;
+
+            if (binding.member.value() >
+                definition.count) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto member_slot =
+                static_cast<std::size_t>(
+                    definition.begin - 1) +
+                binding.member.value() - 1;
+
+            if (member_slot >=
+                rebuilt_member_records.size() ||
+                seen_member[member_slot] != 0) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            seen_member[member_slot] = 1;
+
+            const auto member_type =
+                rebuilt_member_records[
+                    member_slot].type;
+
+            if (!member_type ||
+                member_type.value() >=
+                    rebuilt_canonical_types.size()) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto& reference =
+                rebuilt_canonical_types[
+                    member_type.value()];
+
+            const auto& object =
+                rebuilt_static_object_records[
+                    binding.static_object - 1];
+
+            if (reference.kind !=
+                    canonical_type_kind::derived ||
+                reference.derived.kind !=
+                    derived_type_kind::lvalue_reference ||
+                reference.derived.child !=
+                    object.type) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            if (counts[handle - 1] ==
+                (std::numeric_limits<std::uint32_t>::max)()) {
+                return failure = {
+                    status_code::initialization_failed
+                };
+            }
+
+            ++counts[handle - 1];
+            owners[index] = handle;
+        }
+
+        std::size_t total = 0;
+
+        for (std::size_t index = 0;
+             index < counts.size();
+             ++index) {
+            const auto count =
+                counts[index];
+
+            if (count == 0) {
+                continue;
+            }
+
+            if (total >
+                (std::numeric_limits<std::uint32_t>::max)() -
+                    count) {
+                return failure = {
+                    status_code::initialization_failed
+                };
+            }
+
+            rebuilt_construction_binding_ranges[index] = {
+                static_cast<std::uint32_t>(
+                    total + 1),
+                count
+            };
+
+            total += count;
+        }
+
+        rebuilt_construction_binding_records.resize(
+            total);
+
+        std::vector<std::uint32_t> cursor(
+            counts.size(),
+            0);
+
+        for (std::size_t index = 0;
+             index < pending_construction_bindings.size();
+             ++index) {
+            const auto handle =
+                owners[index];
+
+            if (handle == 0) {
+                return failure = {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto& range =
+                rebuilt_construction_binding_ranges[
+                    handle - 1];
+
+            const auto slot =
+                static_cast<std::size_t>(
+                    range.begin - 1) +
+                cursor[handle - 1]++;
+
+            rebuilt_construction_binding_records[slot] = {
+                pending_construction_bindings[index].member,
+                pending_construction_bindings[index].static_object
+            };
+        }
+
+        return {};
+    }
+    catch (...) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+}
+
 // Rebuilds the generation-local canonical TypeRef namespace for G0.
 // Existing incremental generations keep TypeRef values append-only; an explicit
 // Rebuild may compact/reindex them because no TypeRef is a persistent Project ID.
@@ -4325,6 +4874,40 @@ status graph_update::rebuild_canonical_type_table() noexcept {
             }
         }
 
+        for (auto& object :
+             rebuilt_static_object_records) {
+            TypeRef rebuilt;
+
+            const auto result =
+                remap_type(
+                    remap_type,
+                    object.type,
+                    rebuilt);
+
+            if (!result.ok()) {
+                return failure = result;
+            }
+
+            object.type = rebuilt;
+        }
+
+        for (auto& binding :
+             pending_construction_bindings) {
+            TypeRef rebuilt;
+
+            const auto result =
+                remap_type(
+                    remap_type,
+                    binding.resolved_owner,
+                    rebuilt);
+
+            if (!result.ok()) {
+                return failure = result;
+            }
+
+            binding.resolved_owner = rebuilt;
+        }
+
         return {};
     }
     catch (...) {
@@ -4430,6 +5013,12 @@ status graph_update::prepare_publish(const source_manager_update& sources,
         return failure = {status_code::invalid_state};
     }
 
+    if (!full_reconstruction &&
+        (!owner->static_object_records.empty() ||
+         !owner->construction_binding_records.empty())) {
+        return failure = {status_code::invalid_state};
+    }
+
     const auto retained_result =
         flush_retained_source_replacements();
 
@@ -4476,6 +5065,12 @@ status graph_update::prepare_publish(const source_manager_update& sources,
 
     prepare_telemetry.pending_member_resolution_ns =
         graph_prepare_elapsed_ns(phase_begin);
+
+    result = resolve_pending_construction();
+
+    if (!result.ok()) {
+        return result;
+    }
 
     phase_begin =
         std::chrono::steady_clock::now();
@@ -4721,6 +5316,11 @@ status graph_update::prepare_publish(const source_manager_update& sources,
                 return result;
             }
 
+            result = build_rebuild_construction();
+            if (!result.ok()) {
+                return result;
+            }
+
             prepare_telemetry.rebuild_storage_ns =
                 graph_prepare_elapsed_ns(phase_begin);
 
@@ -4743,6 +5343,15 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             reserve_sparse_capacity(rebuilt_types, rebuilt_types.size());
             reserve_sparse_capacity(rebuilt_member_records, rebuilt_member_records.size());
             reserve_sparse_capacity(rebuilt_enum_value_records, rebuilt_enum_value_records.size());
+            reserve_sparse_capacity(
+                rebuilt_static_object_records,
+                rebuilt_static_object_records.size());
+            reserve_sparse_capacity(
+                rebuilt_construction_binding_records,
+                rebuilt_construction_binding_records.size());
+            reserve_sparse_capacity(
+                rebuilt_construction_binding_ranges,
+                rebuilt_construction_binding_ranges.size());
             reserve_sparse_capacity(rebuilt_canonical_types, rebuilt_canonical_types.size());
             reserve_sparse_capacity(rebuilt_named_type_refs, rebuilt_named_type_refs.size());
             reserve_sparse_capacity(rebuilt_type_dependencies, rebuilt_type_dependencies.size());
@@ -4891,6 +5500,12 @@ void graph_update::publish_prepared() noexcept {
         owner->types.swap(rebuilt_types);
         owner->member_records.swap(rebuilt_member_records);
         owner->enum_value_records.swap(rebuilt_enum_value_records);
+        owner->static_object_records.swap(
+            rebuilt_static_object_records);
+        owner->construction_binding_records.swap(
+            rebuilt_construction_binding_records);
+        owner->construction_binding_ranges.swap(
+            rebuilt_construction_binding_ranges);
         owner->canonical_types.swap(rebuilt_canonical_types);
         owner->named_type_refs.swap(rebuilt_named_type_refs);
         owner->derived_type_index.swap(rebuilt_derived_type_index);

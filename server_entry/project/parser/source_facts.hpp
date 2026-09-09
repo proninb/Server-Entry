@@ -1,6 +1,7 @@
 #pragma once
 
 #include "../source_entity_ref.hpp"
+#include "../../member_index.hpp"
 #include "../graph/builtin_type.hpp"
 #include "../language/aggregate_semantics.hpp"
 #include "../language/enum_semantics.hpp"
@@ -81,6 +82,9 @@ struct aggregate_declaration_source_fact {
     std::uint32_t member_offset = 0;
     std::uint32_t member_count = 0;
 
+    std::uint32_t construction_binding_offset = 0;
+    std::uint32_t construction_binding_count = 0;
+
     source_text_range declaration_range{};
     source_text_range name_range{};
 };
@@ -116,6 +120,35 @@ struct member_declaration_source_fact {
     source_text_range type_range{};
 
     source_entity_ref type_entity{};
+};
+
+// Source-local internal-linkage storage declared by one Type Source.
+// canonical_name is Parser identity only; publication never admits it to the
+// Project-global String Registry or stable Entity namespace.
+struct static_object_source_fact {
+    source_name_ref canonical_name{};
+    source_name_ref type_name{};
+
+    std::optional<builtin_type> builtin;
+
+    std::uint32_t modifier_offset = 0;
+    std::uint32_t modifier_count = 0;
+
+    source_text_range declaration_range{};
+    source_text_range name_range{};
+    source_text_range type_range{};
+
+    source_entity_ref type_entity{};
+};
+
+// Resolved declarative default-construction binding.
+// static_object is a one-based Source-local coordinate into static_objects.
+struct construction_binding_source_fact {
+    member_index member{};
+    std::uint32_t static_object = 0;
+
+    source_text_range member_range{};
+    source_text_range object_range{};
 };
 
 class source_context;
@@ -201,6 +234,8 @@ public:
         modifiers.clear();
         members.clear();
         aggregates.clear();
+        static_objects.clear();
+        construction_bindings.clear();
     }
 
     source_id source{};
@@ -209,6 +244,8 @@ public:
     std::vector<source_type_modifier> modifiers;
     std::vector<member_declaration_source_fact> members;
     std::vector<aggregate_declaration_source_fact> aggregates;
+    std::vector<static_object_source_fact> static_objects;
+    std::vector<construction_binding_source_fact> construction_bindings;
 
 private:
     friend class source_context;

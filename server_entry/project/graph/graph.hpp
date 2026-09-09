@@ -225,6 +225,23 @@ struct member_record {
 
 static_assert(sizeof(member_record) == 8);
 
+// Canonical source-local static storage used by declarative construction.
+// It has no Project-global stable_id; the one-based arena coordinate is valid
+// only inside this committed Graph generation.
+struct static_object_record {
+    TypeRef type{};
+};
+
+static_assert(sizeof(static_object_record) == 4);
+
+// One default binding for a non-static lvalue-reference member.
+struct construction_binding_record {
+    member_index member{};
+    std::uint32_t static_object = 0;
+};
+
+static_assert(sizeof(construction_binding_record) == 8);
+
 // Builder input for one canonical TypeRef modifier.
 struct type_modifier_build {
     derived_type_kind kind = derived_type_kind::pointer;
@@ -299,6 +316,17 @@ public:
     [[nodiscard]] member_index find_member(
         type_handle handle,
         string_id name) const noexcept;
+
+    [[nodiscard]] std::span<const static_object_record>
+        static_objects() const noexcept {
+        return static_object_records;
+    }
+
+    [[nodiscard]] const static_object_record* static_object(
+        std::uint32_t index) const noexcept;
+
+    [[nodiscard]] std::span<const construction_binding_record>
+        construction_bindings(type_handle handle) const noexcept;
 
     [[nodiscard]] canonical_type_kind kind(TypeRef type) const noexcept;
     [[nodiscard]] bool builtin(TypeRef type, builtin_type& output) const noexcept;
@@ -388,6 +416,11 @@ private:
     // ranges into exactly one arena selected by TypeEntry::kind.
     std::vector<member_record> member_records;
     std::vector<enum_value_record> enum_value_records;
+
+    // Cold construction semantics kept outside hot Entity/Type records.
+    std::vector<static_object_record> static_object_records;
+    std::vector<construction_binding_record> construction_binding_records;
+    std::vector<definition_range> construction_binding_ranges;
 
     // Canonical TypeRef table; index zero is invalid/sentinel.
     std::vector<canonical_type_record> canonical_types;
@@ -500,6 +533,17 @@ public:
 
         [[nodiscard]] TypeRef builtin_type_ref(
             builtin_type value) const noexcept;
+
+        [[nodiscard]] status add_static_object(
+            std::optional<builtin_type> builtin,
+            source_entity_ref user_type_entity,
+            std::span<const type_modifier_build> modifiers,
+            std::uint32_t& object) noexcept;
+
+        [[nodiscard]] status add_construction_binding(
+            source_entity_ref owner_type,
+            member_index member,
+            std::uint32_t static_object) noexcept;
 
     private:
         friend class graph_update;
@@ -705,6 +749,8 @@ private:
     [[nodiscard]] status prepare_full_reconstruction() noexcept;
     [[nodiscard]] status rebuild_canonical_type_table() noexcept;
     [[nodiscard]] status build_rebuild_storage() noexcept;
+    [[nodiscard]] status resolve_pending_construction() noexcept;
+    [[nodiscard]] status build_rebuild_construction() noexcept;
 
     // Marks the string_id slots that must survive G0 physical String Registry
     // reclamation. Numeric string IDs are never remapped.
@@ -740,6 +786,29 @@ private:
     // reclaimed without remapping TypeEntry ranges during Gn -> Gn+1 updates.
     std::vector<member_record> rebuilt_member_records;
     std::vector<enum_value_record> rebuilt_enum_value_records;
+
+    struct pending_static_object {
+        std::optional<builtin_type> builtin;
+        source_entity_ref user_type_entity{};
+        std::uint32_t modifier_offset = 0;
+        std::uint32_t modifier_count = 0;
+    };
+
+    struct pending_construction_binding {
+        source_entity_ref owner_type{};
+        member_index member{};
+        std::uint32_t static_object = 0;
+        TypeRef resolved_owner{};
+    };
+
+    std::vector<pending_static_object> pending_static_objects;
+    std::vector<type_modifier_build> pending_static_modifiers;
+    std::vector<static_object_record> rebuilt_static_object_records;
+    std::vector<pending_construction_binding> pending_construction_bindings;
+    std::vector<construction_binding_record>
+        rebuilt_construction_binding_records;
+    std::vector<definition_range>
+        rebuilt_construction_binding_ranges;
 
     // Rebuild-only canonical TypeRef state. TypeRef is generation-local, so G0
     // may compact/reindex the table without affecting persistent Entity identity.

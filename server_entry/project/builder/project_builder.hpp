@@ -60,6 +60,16 @@ public:
         graph_update::source_replacement& replacement,
         const aggregate_source_fact& fact,
         project_builder_scratch& scratch) const noexcept;
+
+    [[nodiscard]] status build_static_object(
+        graph_update::source_replacement& replacement,
+        const canonical_static_object_fact& fact,
+        project_builder_scratch& scratch,
+        std::uint32_t& object) const noexcept;
+
+    [[nodiscard]] status build_construction_binding(
+        graph_update::source_replacement& replacement,
+        const canonical_construction_binding_fact& fact) const noexcept;
 };
 
 } // namespace cw::server

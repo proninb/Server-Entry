@@ -15,6 +15,7 @@ enum class parser_token_kind : std::uint8_t {
     keyword_enum,
     keyword_class,
     keyword_struct,
+    keyword_static,
     string_literal,
     punctuation
 };
@@ -28,6 +29,8 @@ enum class parser_punctuation : std::uint8_t {
     right_brace,
     semicolon,
     colon,
+    left_parenthesis,
+    right_parenthesis,
     comma,
     equal,
     plus,

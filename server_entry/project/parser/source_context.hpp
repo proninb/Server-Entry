@@ -49,6 +49,15 @@ public:
         source_entity_ref& entity,
         source_name_ref& canonical_name) noexcept;
 
+    [[nodiscard]] status declare_static_object(
+        const static_object_source_fact& fact,
+        std::uint32_t& object) noexcept;
+
+    [[nodiscard]] status find_static_object(
+        std::string_view scope,
+        std::string_view name,
+        std::uint32_t& object) const noexcept;
+
     [[nodiscard]] status declare_constant(
         source_name_ref scope,
         source_name_ref name,
@@ -75,6 +84,13 @@ public:
     [[nodiscard]] std::span<const source_type_modifier> modifiers(
         const member_declaration_source_fact& member) const noexcept;
 
+    [[nodiscard]] std::span<const source_type_modifier> modifiers(
+        const static_object_source_fact& object) const noexcept;
+
+    [[nodiscard]] std::span<const construction_binding_source_fact>
+        construction_bindings(
+            const aggregate_declaration_source_fact& declaration) const noexcept;
+
     void reset() noexcept;
 
     std::vector<parser_token> tokens;
@@ -84,6 +100,9 @@ public:
     std::vector<aggregate_declaration_source_fact> aggregates;
     std::vector<member_declaration_source_fact> aggregate_members;
     std::vector<source_type_modifier> type_modifiers;
+    std::vector<static_object_source_fact> static_objects;
+    std::vector<construction_binding_source_fact>
+        aggregate_construction_bindings;
     diagnostic_buffer diagnostics;
 
 private:
@@ -97,6 +116,9 @@ private:
         std::size_t required) noexcept;
 
     [[nodiscard]] status ensure_constant_index(
+        std::size_t required) noexcept;
+
+    [[nodiscard]] status ensure_static_object_index(
         std::size_t required) noexcept;
 
     // Returns either the matching slot or the empty slot for insertion.
@@ -117,6 +139,10 @@ private:
     // enum_values remains ordered payload; it is never scanned for name lookup.
     std::vector<constant_symbol> constant_symbols;
     std::vector<std::uint32_t> constant_index;
+
+    // Source-local internal-linkage object namespace. Coordinates are one-based
+    // indices into static_objects and never become project-global identity.
+    std::vector<std::uint32_t> static_object_index;
 };
 
 } // namespace cw::server

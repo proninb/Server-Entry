@@ -285,6 +285,72 @@ status prepare_source_bindings(
         }
     }
 
+    for (const auto& object : entry.static_objects) {
+        if (!object.canonical_name ||
+            (object.builtin && object.type_entity) ||
+            (!object.builtin && !object.type_entity) ||
+            object.modifier_offset >
+                entry.modifiers.size() ||
+            object.modifier_count >
+                entry.modifiers.size() -
+                    object.modifier_offset) {
+            return {
+                status_code::configuration_failed
+            };
+        }
+
+        for (std::uint32_t index = 0;
+             index < object.modifier_count;
+             ++index) {
+            const auto kind =
+                entry.modifiers[
+                    object.modifier_offset +
+                    index].kind;
+
+            if (kind ==
+                    source_type_modifier_kind::lvalue_reference ||
+                kind ==
+                    source_type_modifier_kind::rvalue_reference) {
+                return {
+                    status_code::configuration_failed
+                };
+            }
+        }
+    }
+
+    for (const auto& fact : entry.aggregates) {
+        if (fact.construction_binding_offset >
+                entry.construction_bindings.size() ||
+            fact.construction_binding_count >
+                entry.construction_bindings.size() -
+                    fact.construction_binding_offset) {
+            return {
+                status_code::configuration_failed
+            };
+        }
+
+        for (std::uint32_t index = 0;
+             index <
+                fact.construction_binding_count;
+             ++index) {
+            const auto& binding =
+                entry.construction_bindings[
+                    fact.construction_binding_offset +
+                    index];
+
+            if (!binding.member ||
+                binding.member.value() >
+                    fact.member_count ||
+                binding.static_object == 0 ||
+                binding.static_object >
+                    entry.static_objects.size()) {
+                return {
+                    status_code::configuration_failed
+                };
+            }
+        }
+    }
+
     try {
         scratch.string_binding_results.resize(
             scratch.string_bindings.size());
@@ -718,6 +784,173 @@ status publish_source_entry_impl(
                 return result.code == status_code::initialization_failed
                     ? infrastructure()
                     : abort(result);
+            }
+        }
+
+        try {
+            scratch.static_object_bindings.assign(
+                entry.static_objects.size(),
+                0);
+        }
+        catch (...) {
+            return infrastructure();
+        }
+
+        for (std::size_t object_index = 0;
+             object_index < entry.static_objects.size();
+             ++object_index) {
+            const auto& object =
+                entry.static_objects[object_index];
+
+            modifiers.clear();
+
+            if (object.modifier_offset >
+                    entry.modifiers.size() ||
+                object.modifier_count >
+                    entry.modifiers.size() -
+                        object.modifier_offset) {
+                return malformed();
+            }
+
+            for (std::uint32_t modifier_index = 0;
+                 modifier_index <
+                    object.modifier_count;
+                 ++modifier_index) {
+                const auto& modifier =
+                    entry.modifiers[
+                        object.modifier_offset +
+                        modifier_index];
+
+                derived_type_kind kind;
+
+                switch (modifier.kind) {
+                case source_type_modifier_kind::pointer:
+                    kind =
+                        derived_type_kind::pointer;
+                    break;
+
+                case source_type_modifier_kind::array:
+                    kind =
+                        derived_type_kind::array;
+                    break;
+
+                case source_type_modifier_kind::lvalue_reference:
+                case source_type_modifier_kind::rvalue_reference:
+                default:
+                    return malformed();
+                }
+
+                modifiers.push_back({
+                    kind,
+                    modifier.payload
+                });
+            }
+
+            std::uint32_t canonical_object = 0;
+
+            result =
+                builder.build_static_object(
+                    replacement,
+                    {
+                        object.builtin,
+                        object.type_entity,
+                        modifiers
+                    },
+                    scratch.builder,
+                    canonical_object);
+
+            if (!result.ok() ||
+                canonical_object == 0) {
+                if (result.code ==
+                    status_code::configuration_failed) {
+                    const auto emitted = emit(
+                        diagnostics::builder_semantic_failure,
+                        {
+                            entry.source,
+                            object.declaration_range.offset,
+                            object.declaration_range.length
+                        });
+
+                    return abort(
+                        emitted.ok()
+                            ? result
+                            : emitted);
+                }
+
+                return result.code ==
+                        status_code::initialization_failed
+                    ? infrastructure()
+                    : abort(result);
+            }
+
+            scratch.static_object_bindings[
+                object_index] =
+                    canonical_object;
+        }
+
+        for (const auto& fact : entry.aggregates) {
+            if (fact.construction_binding_offset >
+                    entry.construction_bindings.size() ||
+                fact.construction_binding_count >
+                    entry.construction_bindings.size() -
+                        fact.construction_binding_offset) {
+                return malformed();
+            }
+
+            for (std::uint32_t index = 0;
+                 index <
+                    fact.construction_binding_count;
+                 ++index) {
+                const auto& binding =
+                    entry.construction_bindings[
+                        fact.construction_binding_offset +
+                        index];
+
+                if (binding.static_object == 0 ||
+                    binding.static_object >
+                        scratch.static_object_bindings.size()) {
+                    return malformed();
+                }
+
+                const auto canonical_object =
+                    scratch.static_object_bindings[
+                        binding.static_object - 1];
+
+                if (canonical_object == 0) {
+                    return malformed();
+                }
+
+                result =
+                    builder.build_construction_binding(
+                        replacement,
+                        {
+                            fact.entity,
+                            binding.member,
+                            canonical_object
+                        });
+
+                if (!result.ok()) {
+                    if (result.code ==
+                        status_code::configuration_failed) {
+                        const auto emitted = emit(
+                            diagnostics::builder_semantic_failure,
+                            {
+                                entry.source,
+                                binding.member_range.offset,
+                                binding.member_range.length
+                            });
+
+                        return abort(
+                            emitted.ok()
+                                ? result
+                                : emitted);
+                    }
+
+                    return result.code ==
+                            status_code::initialization_failed
+                        ? infrastructure()
+                        : abort(result);
+                }
             }
         }
 

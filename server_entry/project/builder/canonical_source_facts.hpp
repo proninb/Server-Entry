@@ -1,5 +1,6 @@
 #pragma once
 
+#include "../../member_index.hpp"
 #include "../../source_id.hpp"
 #include "../../string_id.hpp"
 #include "../source_entity_ref.hpp"
@@ -58,6 +59,18 @@ struct aggregate_source_fact {
     std::span<const canonical_type_modifier> modifiers{};
 
     source_entity_ref source_entity{};
+};
+
+struct canonical_static_object_fact {
+    std::optional<builtin_type> builtin;
+    source_entity_ref user_type_entity{};
+    std::span<const canonical_type_modifier> modifiers{};
+};
+
+struct canonical_construction_binding_fact {
+    source_entity_ref owner_type{};
+    member_index member{};
+    std::uint32_t static_object = 0;
 };
 
 struct source_fact_batch {

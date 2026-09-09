@@ -2,6 +2,7 @@
 #include "../server_entry/project/frontend/source_publisher.hpp"
 #include "../server_entry/project/graph/graph_build_transaction.hpp"
 #include "../server_entry/project/graph/graph_manager.hpp"
+#include "../server_entry/project/graph/compiled_state.hpp"
 #include "../server_entry/project/parser/parser.hpp"
 #include "../server_entry/project/parser/source_context.hpp"
 #include "../server_entry/diagnostics/diagnostic_descriptor.hpp"
@@ -1767,6 +1768,141 @@ bool test_source_environment_indexed_lookup() {
     return true;
 }
 
+bool test_static_object_reference_construction() {
+    graph_manager manager;
+    project_builder builder;
+    diagnostic_buffer diagnostics;
+
+    if (!manager.initialize().ok()) {
+        return false;
+    }
+
+    auto transaction =
+        manager.begin_build(
+            graph_build_mode::rebuild);
+
+    source_id source;
+
+    if (!resolve_source(
+            transaction,
+            source_a,
+            source)) {
+        return false;
+    }
+
+    constexpr std::string_view source_text =
+        "static int sA;"
+        "struct A {"
+        " int IN;"
+        " int& OUT;"
+        " A() : OUT(sA) {}"
+        "};";
+
+    source_context context;
+    source_environment environment;
+
+    auto result =
+        parse_source(
+            {
+                source,
+                source_text
+            },
+            environment,
+            operation_id{24},
+            context);
+
+    if (!result.ok() ||
+        context.static_objects.size() != 1 ||
+        context.aggregates.size() != 1 ||
+        context.aggregate_construction_bindings.size() != 1) {
+        return false;
+    }
+
+    source_build_entry entry;
+
+    result =
+        context.release_facts(
+            source,
+            entry);
+
+    if (!result.ok() ||
+        !publish_source_entry(
+            transaction,
+            entry,
+            builder,
+            operation_id{24},
+            diagnostics).ok() ||
+        !transaction.commit().ok()) {
+        return false;
+    }
+
+#if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
+    const auto type_name =
+        manager.strings().find_for_test("A");
+
+    if (!type_name) {
+        return false;
+    }
+
+    const auto* entity =
+        manager.compiled_graph().find(
+            type_name);
+#else
+    const entity_entry* entity = nullptr;
+#endif
+
+    if (!entity ||
+        entity->kind !=
+            entity_kind::aggregate_type) {
+        return false;
+    }
+
+    const auto members =
+        manager.compiled_graph().members(
+            entity->type);
+
+    const auto objects =
+        manager.compiled_graph().static_objects();
+
+    const auto bindings =
+        manager.compiled_graph().construction_bindings(
+            entity->type);
+
+    if (members.size() != 2 ||
+        objects.size() != 1 ||
+        bindings.size() != 1 ||
+        bindings[0].member != member_index{2} ||
+        bindings[0].static_object != 1) {
+        return false;
+    }
+
+    builtin_type object_builtin;
+
+    if (!manager.compiled_graph().builtin(
+            objects[0].type,
+            object_builtin) ||
+        object_builtin != builtin_type::integer) {
+        return false;
+    }
+
+    const auto* reference =
+        manager.compiled_graph().derived(
+            members[1].type);
+
+    if (!reference ||
+        reference->kind !=
+            derived_type_kind::lvalue_reference ||
+        reference->child != objects[0].type) {
+        return false;
+    }
+
+    compiled_graph_state compiled;
+
+    return
+        !manager.compiled_graph().export_compiled(
+            compiled).ok();
+}
+
 bool test_parser_publisher_malformed_diagnostic() {
     graph_manager manager;
     project_builder builder;
@@ -1832,6 +1968,7 @@ int main() {
         {"Parser rejects duplicate member after index transition", test_parser_rejects_duplicate_member_after_index_transition},
         {"Parser enum constant index lookup", test_parser_enum_constant_index_lookup},
         {"SourceEnvironment indexed lookup", test_source_environment_indexed_lookup},
+        {"static object reference construction", test_static_object_reference_construction},
         {"Publisher malformed diagnostic", test_parser_publisher_malformed_diagnostic}
     };
 

@@ -36,6 +36,10 @@ parser_token_kind identifier_kind(std::string_view text) noexcept {
         return parser_token_kind::keyword_struct;
     }
 
+    if (text == "static") {
+        return parser_token_kind::keyword_static;
+    }
+
     return parser_token_kind::identifier;
 }
 
@@ -248,6 +252,16 @@ status lex_source(
                 case ':':
                     token.punctuation =
                         parser_punctuation::colon;
+                    break;
+
+                case '(':
+                    token.punctuation =
+                        parser_punctuation::left_parenthesis;
+                    break;
+
+                case ')':
+                    token.punctuation =
+                        parser_punctuation::right_parenthesis;
                     break;
 
                 case ',':

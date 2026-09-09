@@ -50,6 +50,9 @@ public:
                 else if (peek().kind == parser_token_kind::keyword_namespace) {
                     result = parse_namespace();
                 }
+                else if (peek().kind == parser_token_kind::keyword_static) {
+                    result = parse_static_object();
+                }
                 else {
                     return fail(
                         diagnostics::parser_invalid_source,
@@ -1103,6 +1106,518 @@ private:
         return {};
     }
 
+    struct pending_construction_binding {
+        parser_token member{};
+        parser_token object{};
+    };
+
+    [[nodiscard]] status resolve_static_object(
+        std::string_view name,
+        std::uint32_t& object) const noexcept {
+
+        object = 0;
+
+        auto current_scope =
+            std::string_view{scope};
+
+        for (;;) {
+            const auto result =
+                context.find_static_object(
+                    current_scope,
+                    name,
+                    object);
+
+            if (result.ok()) {
+                return {};
+            }
+
+            if (result.code ==
+                status_code::initialization_failed) {
+                return result;
+            }
+
+            if (current_scope.empty()) {
+                break;
+            }
+
+            const auto parent =
+                current_scope.rfind("::");
+
+            current_scope =
+                parent == std::string_view::npos
+                    ? std::string_view{}
+                    : current_scope.substr(
+                        0,
+                        parent);
+        }
+
+        return {
+            status_code::configuration_failed
+        };
+    }
+
+    [[nodiscard]] bool find_registered_member(
+        std::string_view name,
+        member_index& output) const noexcept {
+
+        output = {};
+
+        if (name.empty()) {
+            return false;
+        }
+
+        if (member_name_index.empty()) {
+            for (std::size_t index = 0;
+                 index < member_name_ranges.size();
+                 ++index) {
+                if (member_name_text(
+                        member_name_ranges[index]) ==
+                    name) {
+                    output = member_index{
+                        static_cast<std::uint32_t>(
+                            index + 1)};
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        const auto mask =
+            member_name_index.size() - 1;
+
+        auto slot =
+            static_cast<std::size_t>(
+                string_binding_hash(name)) &
+            mask;
+
+        for (std::size_t probe = 0;
+             probe < member_name_index.size();
+             ++probe) {
+            const auto raw =
+                member_name_index[slot];
+
+            if (raw == 0) {
+                return false;
+            }
+
+            if (raw <= member_name_ranges.size() &&
+                member_name_text(
+                    member_name_ranges[
+                        raw - 1]) == name) {
+                output = member_index{raw};
+                return true;
+            }
+
+            slot =
+                (slot + 1) &
+                mask;
+        }
+
+        return false;
+    }
+
+    [[nodiscard]] bool is_lvalue_reference_member(
+        const member_declaration_source_fact& member) const noexcept {
+
+        const auto modifiers =
+            context.modifiers(member);
+
+        return
+            !modifiers.empty() &&
+            modifiers.back().kind ==
+                source_type_modifier_kind::lvalue_reference;
+    }
+
+    status resolve_constructor_bindings(
+        aggregate_declaration_source_fact& fact,
+        std::span<const pending_construction_binding> pending) noexcept {
+
+        fact.construction_binding_offset =
+            static_cast<std::uint32_t>(
+                context.aggregate_construction_bindings.size());
+
+        for (const auto& item : pending) {
+            member_index member;
+
+            if (!find_registered_member(
+                    text(item.member),
+                    member) ||
+                !member ||
+                member.value() > fact.member_count) {
+                return fail(
+                    diagnostics::parser_invalid_source,
+                    item.member.offset,
+                    item.member.length);
+            }
+
+            std::uint32_t object = 0;
+
+            auto result =
+                resolve_static_object(
+                    text(item.object),
+                    object);
+
+            if (!result.ok()) {
+                if (result.code ==
+                    status_code::initialization_failed) {
+                    return result;
+                }
+
+                return fail(
+                    diagnostics::parser_invalid_source,
+                    item.object.offset,
+                    item.object.length);
+            }
+
+            if (!object ||
+                object > context.static_objects.size()) {
+                return {
+                    status_code::configuration_failed
+                };
+            }
+
+            const auto& member_fact =
+                context.aggregate_members[
+                    fact.member_offset +
+                    member.value() - 1];
+
+            if (!is_lvalue_reference_member(
+                    member_fact)) {
+                return fail(
+                    diagnostics::parser_invalid_source,
+                    item.member.offset,
+                    item.member.length);
+            }
+
+            for (std::size_t index =
+                     fact.construction_binding_offset;
+                 index <
+                     context.aggregate_construction_bindings.size();
+                 ++index) {
+                if (context.aggregate_construction_bindings[
+                        index].member == member) {
+                    return fail(
+                        diagnostics::parser_invalid_source,
+                        item.member.offset,
+                        item.member.length);
+                }
+            }
+
+            try {
+                context.aggregate_construction_bindings.push_back({
+                    member,
+                    object,
+                    {item.member.offset, item.member.length},
+                    {item.object.offset, item.object.length}
+                });
+            }
+            catch (...) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+
+            ++fact.construction_binding_count;
+        }
+
+        return {};
+    }
+
+    status parse_default_constructor(
+        const parser_token& aggregate_name,
+        std::vector<pending_construction_binding>& pending,
+        bool& seen) noexcept {
+
+        if (seen ||
+            peek().kind !=
+                parser_token_kind::identifier ||
+            text(peek()) != text(aggregate_name)) {
+            return fail(
+                diagnostics::parser_invalid_source,
+                peek().offset,
+                peek().length);
+        }
+
+        seen = true;
+        ++position;
+
+        if (!take(
+                parser_punctuation::left_parenthesis) ||
+            !take(
+                parser_punctuation::right_parenthesis)) {
+            return fail(
+                diagnostics::parser_invalid_source,
+                peek().offset,
+                peek().length);
+        }
+
+        if (take(parser_punctuation::colon)) {
+            for (;;) {
+                if (peek().kind !=
+                    parser_token_kind::identifier) {
+                    return fail(
+                        diagnostics::parser_invalid_source,
+                        peek().offset,
+                        peek().length);
+                }
+
+                const auto member = peek();
+                ++position;
+
+                if (!take(
+                        parser_punctuation::left_parenthesis) ||
+                    peek().kind !=
+                        parser_token_kind::identifier) {
+                    return fail(
+                        diagnostics::parser_invalid_source,
+                        peek().offset,
+                        peek().length);
+                }
+
+                const auto object = peek();
+                ++position;
+
+                if (!take(
+                        parser_punctuation::right_parenthesis)) {
+                    return fail(
+                        diagnostics::parser_invalid_source,
+                        peek().offset,
+                        peek().length);
+                }
+
+                try {
+                    pending.push_back({
+                        member,
+                        object
+                    });
+                }
+                catch (...) {
+                    return {
+                        status_code::initialization_failed
+                    };
+                }
+
+                if (!take(
+                        parser_punctuation::comma)) {
+                    break;
+                }
+            }
+        }
+
+        if (!take(parser_punctuation::left_brace) ||
+            !take(parser_punctuation::right_brace)) {
+            return fail(
+                diagnostics::parser_invalid_source,
+                peek().offset,
+                peek().length);
+        }
+
+        return {};
+    }
+
+    status parse_static_object() noexcept {
+        const auto declaration = peek();
+        ++position;
+
+        if (peek().kind !=
+            parser_token_kind::identifier) {
+            return fail(
+                diagnostics::parser_invalid_source,
+                peek().offset,
+                peek().length);
+        }
+
+        const auto type_token = peek();
+        ++position;
+
+        static_object_source_fact fact;
+        fact.type_range = {
+            type_token.offset,
+            type_token.length
+        };
+
+        fact.modifier_offset =
+            static_cast<std::uint32_t>(
+                context.type_modifiers.size());
+
+        status result;
+
+        if (text(type_token) == "int") {
+            fact.builtin =
+                builtin_type::integer;
+        }
+        else {
+            result =
+                resolve_type(
+                    text(type_token),
+                    type_token.offset,
+                    fact.type_entity,
+                    fact.type_name);
+
+            if (!result.ok()) {
+                if (result.code ==
+                    status_code::initialization_failed) {
+                    return result;
+                }
+
+                return fail(
+                    diagnostics::parser_invalid_source,
+                    type_token.offset,
+                    type_token.length);
+            }
+        }
+
+        while (peek().punctuation ==
+               parser_punctuation::asterisk) {
+            const auto modifier = peek();
+            ++position;
+
+            try {
+                context.type_modifiers.push_back({
+                    source_type_modifier_kind::pointer,
+                    0,
+                    {modifier.offset, modifier.length}
+                });
+            }
+            catch (...) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+
+            ++fact.modifier_count;
+            fact.type_range.length =
+                modifier.offset + modifier.length -
+                fact.type_range.offset;
+        }
+
+        if (peek().kind !=
+            parser_token_kind::identifier) {
+            return fail(
+                diagnostics::parser_invalid_source,
+                peek().offset,
+                peek().length);
+        }
+
+        const auto name = peek();
+        ++position;
+
+        result =
+            store_qualified(
+                text(name),
+                fact.canonical_name);
+
+        if (!result.ok()) {
+            return result;
+        }
+
+        fact.name_range = {
+            name.offset,
+            name.length
+        };
+
+        while (take(
+            parser_punctuation::left_bracket)) {
+            const auto open =
+                tokens[position - 1];
+
+            if (peek().kind !=
+                parser_token_kind::integer_literal) {
+                return fail(
+                    diagnostics::parser_invalid_source,
+                    peek().offset,
+                    peek().length);
+            }
+
+            const auto extent_token = peek();
+            ++position;
+
+            std::uint64_t extent = 0;
+            const auto spelling =
+                text(extent_token);
+
+            const auto conversion =
+                std::from_chars(
+                    spelling.data(),
+                    spelling.data() +
+                        spelling.size(),
+                    extent);
+
+            if (conversion.ec != std::errc{} ||
+                conversion.ptr !=
+                    spelling.data() +
+                        spelling.size() ||
+                extent == 0 ||
+                !take(
+                    parser_punctuation::right_bracket)) {
+                return fail(
+                    diagnostics::parser_invalid_source,
+                    extent_token.offset,
+                    extent_token.length);
+            }
+
+            const auto close =
+                tokens[position - 1];
+
+            try {
+                context.type_modifiers.push_back({
+                    source_type_modifier_kind::array,
+                    extent,
+                    {
+                        open.offset,
+                        close.offset + close.length -
+                            open.offset
+                    }
+                });
+            }
+            catch (...) {
+                return {
+                    status_code::initialization_failed
+                };
+            }
+
+            ++fact.modifier_count;
+        }
+
+        if (!take(
+                parser_punctuation::semicolon)) {
+            return fail(
+                diagnostics::parser_expected_semicolon,
+                peek().offset,
+                peek().length);
+        }
+
+        fact.declaration_range = {
+            declaration.offset,
+            peek().offset - declaration.offset
+        };
+
+        std::uint32_t object = 0;
+
+        result =
+            context.declare_static_object(
+                fact,
+                object);
+
+        if (!result.ok()) {
+            if (result.code ==
+                status_code::initialization_failed) {
+                return result;
+            }
+
+            return fail(
+                diagnostics::parser_invalid_source,
+                name.offset,
+                name.length);
+        }
+
+        return object
+            ? status{}
+            : status{
+                status_code::configuration_failed};
+    }
+
     status parse_struct() noexcept {
         const auto declaration = peek();
         ++position;
@@ -1170,7 +1685,30 @@ private:
 
             reset_member_name_uniqueness();
 
+            std::vector<pending_construction_binding>
+                pending_construction;
+            bool constructor_seen = false;
+
             while (!take(parser_punctuation::right_brace)) {
+                if (peek().kind ==
+                        parser_token_kind::identifier &&
+                    text(peek()) == text(name) &&
+                    position + 1 < tokens.size() &&
+                    tokens[position + 1].punctuation ==
+                        parser_punctuation::left_parenthesis) {
+                    result =
+                        parse_default_constructor(
+                            name,
+                            pending_construction,
+                            constructor_seen);
+
+                    if (!result.ok()) {
+                        return result;
+                    }
+
+                    continue;
+                }
+
                 const auto member_start = peek();
 
                 if (member_start.kind !=
@@ -1391,6 +1929,15 @@ private:
 
                 context.aggregate_members.push_back(member);
                 ++fact.member_count;
+            }
+
+            result =
+                resolve_constructor_bindings(
+                    fact,
+                    pending_construction);
+
+            if (!result.ok()) {
+                return result;
             }
 
             if (!take(parser_punctuation::semicolon)) {
