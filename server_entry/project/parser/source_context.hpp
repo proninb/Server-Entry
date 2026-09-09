@@ -5,11 +5,19 @@
 #include "../../diagnostics/diagnostic_buffer.hpp"
 
 #include <cstddef>
+#include <cstdint>
 #include <span>
 #include <string_view>
 #include <vector>
 
 namespace cw::server {
+
+// Meaningful only when the declaration operation succeeds. Existing declarations
+// keep their original value, even when a repeated declaration supplies another.
+enum class source_declaration_result : std::uint8_t {
+    inserted,
+    existing
+};
 
 // Reusable Source-local construction workspace. Parser owns lexical resolution,
 // declaration uniqueness and diagnostics here, then transfers the completed
@@ -44,7 +52,13 @@ public:
     [[nodiscard]] status declare_constant(
         source_name_ref scope,
         source_name_ref name,
-        integral_constant value) noexcept;
+        integral_constant value,
+        source_declaration_result& declaration) noexcept;
+
+    [[nodiscard]] status find_constant_exact(
+        std::string_view scope,
+        std::string_view name,
+        integral_constant& output) const noexcept;
 
     // Transfers only the semantic product. Type/constant construction indexes,
     // tokens and diagnostics remain SourceContext-local and are reset afterward.
@@ -85,6 +99,12 @@ private:
     [[nodiscard]] status ensure_constant_index(
         std::size_t required) noexcept;
 
+    // Returns either the matching slot or the empty slot for insertion.
+    [[nodiscard]] status find_constant_slot(
+        std::string_view scope,
+        std::string_view name,
+        std::size_t& slot) const noexcept;
+
     std::vector<char> names;
     std::vector<std::uint64_t> name_hashes;
     std::uint32_t stored_name_count = 0;
@@ -93,8 +113,8 @@ private:
     std::vector<std::uint32_t> type_index;
     bool type_index_active = false;
 
-    // Declaration-uniqueness index, not a reference lookup cache. It is required
-    // while declarations are accepted even when no later constant is referenced.
+    // Shared declaration-uniqueness and reference-lookup index for this Source.
+    // enum_values remains ordered payload; it is never scanned for name lookup.
     std::vector<constant_symbol> constant_symbols;
     std::vector<std::uint32_t> constant_index;
 };

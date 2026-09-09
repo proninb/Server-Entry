@@ -571,75 +571,104 @@ private:
         return {};
     }
 
-    bool find_current_enum_constant(
-        std::string_view name,
-        integral_constant& output) const noexcept {
-
-        if (name.empty() ||
-            current_enum_value_begin >
-                context.enum_values.size()) {
-            return false;
-        }
-
-        for (std::size_t index =
-                 context.enum_values.size();
-             index > current_enum_value_begin;
-             --index) {
-            const auto& value =
-                context.enum_values[index - 1];
-
-            std::string_view stored;
-
-            if (!context.resolve_name(
-                    value.name,
-                    stored).ok()) {
-                return false;
-            }
-
-            if (stored == name) {
-                output = value.value;
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    bool lookup_constant(
+    status lookup_constant_exact(
+        std::string_view lookup_scope,
         std::string_view name,
         std::uint32_t source_offset,
-        integral_constant& output) const noexcept {
+        integral_constant& output,
+        bool& found) const noexcept {
 
-        if (find_current_enum_constant(
+        found = false;
+
+        auto result =
+            context.find_constant_exact(
+                lookup_scope,
                 name,
-                output)) {
-            return true;
+                output);
+
+        if (result.ok()) {
+            found = true;
+            return {};
         }
 
-        auto current_scope = std::string_view{scope};
+        if (result.code ==
+            status_code::initialization_failed) {
+            return result;
+        }
 
-        // Name lookup walks the current namespace and then each parent scope.
+        result =
+            environment.find_constant_exact(
+                lookup_scope,
+                name,
+                source_offset,
+                output);
+
+        if (result.ok()) {
+            found = true;
+            return {};
+        }
+
+        if (result.code ==
+            status_code::initialization_failed) {
+            return result;
+        }
+
+        return {};
+    }
+
+    status lookup_constant(
+        std::string_view name,
+        std::uint32_t source_offset,
+        integral_constant& output,
+        bool& found) const noexcept {
+
+        found = false;
+
+        auto current_scope =
+            std::string_view{scope};
+
+        if (current_enum_scope) {
+            auto result =
+                context.resolve_name(
+                    current_enum_scope,
+                    current_scope);
+
+            if (!result.ok()) {
+                return result;
+            }
+        }
+
+        // Current Source and imported interfaces participate at each lexical
+        // scope before lookup proceeds to the parent namespace.
         for (;;) {
-            if (environment.find_constant_exact(
+            auto result =
+                lookup_constant_exact(
                     current_scope,
                     name,
                     source_offset,
-                    output).ok()) {
-                return true;
+                    output,
+                    found);
+
+            if (!result.ok() || found) {
+                return result;
             }
 
             if (current_scope.empty()) {
                 break;
             }
 
-            const auto parent = current_scope.rfind("::");
+            const auto parent =
+                current_scope.rfind("::");
+
             current_scope =
                 parent == std::string_view::npos
                     ? std::string_view{}
-                    : current_scope.substr(0, parent);
+                    : current_scope.substr(
+                        0,
+                        parent);
         }
 
-        return false;
+        return {};
     }
 
     status parse_primary(integral_constant& output) noexcept {
@@ -652,10 +681,20 @@ private:
             const auto token = peek();
             ++position;
 
-            if (lookup_constant(
+            bool found = false;
+
+            auto result =
+                lookup_constant(
                     text(token),
                     token.offset,
-                    output)) {
+                    output,
+                    found);
+
+            if (!result.ok()) {
+                return result;
+            }
+
+            if (found) {
                 return {};
             }
 
@@ -867,10 +906,7 @@ private:
                 peek().length);
         }
 
-        // Enumerator expression lookup is a dense scan of this enum only.
-        // Source-scope uniqueness is maintained separately by source_context.
-        current_enum_value_begin =
-            fact.enumerator_offset;
+        current_enum_scope = fact.scoped ? fact.canonical_name : fact.scope_name;
 
         integral_constant next{
             builtin_type::long_long_integer,
@@ -888,11 +924,35 @@ private:
             const auto name = peek();
             ++position;
 
-            integral_constant duplicate_value;
+            std::string_view declaration_scope;
 
-            if (find_current_enum_constant(
+            if (current_enum_scope) {
+                auto result =
+                    context.resolve_name(
+                        current_enum_scope,
+                        declaration_scope);
+
+                if (!result.ok()) {
+                    return result;
+                }
+            }
+
+            integral_constant existing_value;
+            bool existing = false;
+
+            auto result =
+                lookup_constant_exact(
+                    declaration_scope,
                     text(name),
-                    duplicate_value)) {
+                    name.offset,
+                    existing_value,
+                    existing);
+
+            if (!result.ok()) {
+                return result;
+            }
+
+            if (existing) {
                 return fail(
                     diagnostics::parser_duplicate_enumerator,
                     name.offset,
@@ -900,7 +960,8 @@ private:
             }
 
             source_name_ref stored_name;
-            auto result =
+
+            result =
                 context.store_name(
                     text(name),
                     stored_name);
@@ -930,16 +991,23 @@ private:
                 };
             }
 
+            source_declaration_result declaration_result;
             result =
                 context.declare_constant(
-                    fact.scoped
-                        ? fact.canonical_name
-                        : fact.scope_name,
+                    current_enum_scope,
                     stored_name,
-                    value);
+                    value,
+                    declaration_result);
 
             if (!result.ok()) {
                 return result;
+            }
+
+            if (declaration_result == source_declaration_result::existing) {
+                return fail(
+                    diagnostics::parser_duplicate_enumerator,
+                    name.offset,
+                    name.length);
             }
 
             context.enum_values.push_back({
@@ -987,6 +1055,7 @@ private:
             peek().offset - fact.declaration_range.offset;
 
         context.enums.push_back(fact);
+        current_enum_scope = {};
         return {};
     }
 
@@ -1349,7 +1418,7 @@ private:
     std::span<const parser_token> tokens;
     std::size_t position = 0;
     std::string scope;
-    std::uint32_t current_enum_value_begin = 0;
+    source_name_ref current_enum_scope{};
 
     // Parser-local uniqueness state; capacity is reused between aggregates.
     std::vector<source_text_range> member_name_ranges;

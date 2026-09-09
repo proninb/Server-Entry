@@ -625,7 +625,10 @@ status source_context::ensure_constant_index(
 status source_context::declare_constant(
     source_name_ref scope_ref,
     source_name_ref name_ref,
-    integral_constant value) noexcept {
+    integral_constant value,
+    source_declaration_result& declaration) noexcept {
+
+    declaration = source_declaration_result::existing;
 
     if (!name_ref ||
         !is_integral(value.type)) {
@@ -663,10 +666,40 @@ status source_context::declare_constant(
         return result;
     }
 
+    std::size_t slot = 0;
+    result = find_constant_slot(scope, name, slot);
+    if (!result.ok()) return result;
+    if (constant_index[slot] != 0) return {};
+
+    if (constant_symbols.size() >=
+        (std::numeric_limits<std::uint32_t>::max)()) {
+        return {status_code::initialization_failed};
+    }
+
+    try {
+        constant_symbols.push_back({scope_ref, name_ref, value});
+        constant_index[slot] = static_cast<std::uint32_t>(constant_symbols.size());
+        declaration = source_declaration_result::inserted;
+        return {};
+    }
+    catch (...) {
+        return {status_code::initialization_failed};
+    }
+}
+
+status source_context::find_constant_slot(
+    std::string_view scope,
+    std::string_view name,
+    std::size_t& slot) const noexcept {
+
+    if (name.empty() || constant_index.empty()) {
+        return {status_code::configuration_failed};
+    }
+
     const auto mask =
         constant_index.size() - 1;
 
-    auto slot =
+    slot =
         hash_qualified(
             scope,
             name) &
@@ -677,7 +710,7 @@ status source_context::declare_constant(
             constant_index[slot];
 
         if (raw == 0) {
-            break;
+            return {};
         }
 
         if (raw > constant_symbols.size()) {
@@ -691,7 +724,7 @@ status source_context::declare_constant(
         std::string_view existing_name;
 
         if (existing.scope) {
-            result =
+            const auto result =
                 resolve_name(
                     existing.scope,
                     existing_scope);
@@ -701,7 +734,7 @@ status source_context::declare_constant(
             }
         }
 
-        result =
+        const auto result =
             resolve_name(
                 existing.name,
                 existing_name);
@@ -712,12 +745,7 @@ status source_context::declare_constant(
 
         if (existing_scope == scope &&
             existing_name == name) {
-            return
-                existing.value.type == value.type &&
-                existing.value.bits == value.bits
-                    ? status{}
-                    : status{
-                        status_code::configuration_failed};
+            return {};
         }
 
         slot =
@@ -725,22 +753,21 @@ status source_context::declare_constant(
             mask;
     }
 
-    try {
-        constant_symbols.push_back({
-            scope_ref,
-            name_ref,
-            value
-        });
+}
 
-        constant_index[slot] =
-            static_cast<std::uint32_t>(
-                constant_symbols.size());
+status source_context::find_constant_exact(
+    std::string_view scope,
+    std::string_view name,
+    integral_constant& output) const noexcept {
 
-        return {};
-    }
-    catch (...) {
-        return {status_code::initialization_failed};
-    }
+    output = {};
+    std::size_t slot = 0;
+    const auto result = find_constant_slot(scope, name, slot);
+    if (!result.ok()) return result;
+    const auto raw = constant_index[slot];
+    if (raw == 0) return {status_code::configuration_failed};
+    output = constant_symbols[raw - 1].value;
+    return {};
 }
 
 status source_context::release_facts(

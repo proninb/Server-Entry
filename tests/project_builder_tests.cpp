@@ -1460,6 +1460,152 @@ bool test_parser_rejects_duplicate_member_after_index_transition() {
     return false;
 }
 
+bool has_duplicate_enumerator_diagnostic(
+    const source_context& context) {
+
+    for (const auto& record :
+         context.diagnostics.records()) {
+
+        if (record.id ==
+            diagnostics::parser_duplicate_enumerator.id) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool test_parser_enum_constant_index_lookup() {
+    {
+        constexpr std::string_view source_text =
+            "enum E { A = 1, B = A + 1, C = A + 2 };";
+
+        source_context context;
+        source_environment environment;
+
+        const auto result =
+            parse_source(
+                source_view{
+                    source_id{1},
+                    source_text
+                },
+                environment,
+                operation_id{20},
+                context);
+
+        if (!result.ok() ||
+            context.enum_values.size() != 3 ||
+            context.enum_values[0].value.bits != 1 ||
+            context.enum_values[1].value.bits != 2 ||
+            context.enum_values[2].value.bits != 3) {
+            return false;
+        }
+    }
+
+    {
+        constexpr std::string_view source_text =
+            "enum E { A = 1, A = Missing };";
+
+        source_context context;
+        source_environment environment;
+
+        const auto result =
+            parse_source(
+                source_view{
+                    source_id{1},
+                    source_text
+                },
+                environment,
+                operation_id{21},
+                context);
+
+        if (result.ok() ||
+            result.code !=
+                status_code::configuration_failed ||
+            !has_duplicate_enumerator_diagnostic(
+                context)) {
+            return false;
+        }
+    }
+
+    const std::array constants{
+        source_constant_binding{
+            {},
+            "A",
+            {
+                builtin_type::long_long_integer,
+                10
+            }
+        }
+    };
+
+    const std::array<source_type_binding, 0>
+        types{};
+
+    source_interface_storage storage;
+
+    if (!storage.initialize(
+            constants,
+            types).ok()) {
+        return false;
+    }
+
+    source_environment environment{
+        storage
+    };
+
+    {
+        constexpr std::string_view source_text =
+            "enum class E { A = A + 1, B = A + 2 };";
+
+        source_context context;
+
+        const auto result =
+            parse_source(
+                source_view{
+                    source_id{1},
+                    source_text
+                },
+                environment,
+                operation_id{22},
+                context);
+
+        if (!result.ok() ||
+            context.enum_values.size() != 2 ||
+            context.enum_values[0].value.bits != 11 ||
+            context.enum_values[1].value.bits != 13) {
+            return false;
+        }
+    }
+
+    {
+        constexpr std::string_view source_text =
+            "enum E { A = A + 1 };";
+
+        source_context context;
+
+        const auto result =
+            parse_source(
+                source_view{
+                    source_id{1},
+                    source_text
+                },
+                environment,
+                operation_id{23},
+                context);
+
+        if (result.ok() ||
+            result.code !=
+                status_code::configuration_failed ||
+            !has_duplicate_enumerator_diagnostic(
+                context)) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 bool test_parser_publisher_malformed_diagnostic() {
     graph_manager manager;
     project_builder builder;
@@ -1523,6 +1669,7 @@ int main() {
         {"Parser -> Publisher -> Builder boundary", test_parser_publisher_boundary},
         {"Parser rejects duplicate aggregate member", test_parser_rejects_duplicate_aggregate_member},
         {"Parser rejects duplicate member after index transition", test_parser_rejects_duplicate_member_after_index_transition},
+        {"Parser enum constant index lookup", test_parser_enum_constant_index_lookup},
         {"Publisher malformed diagnostic", test_parser_publisher_malformed_diagnostic}
     };
 
