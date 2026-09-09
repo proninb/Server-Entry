@@ -2,6 +2,7 @@
 
 #include "builder/project_builder.hpp"
 #include "frontend/source_frontend_generation.hpp"
+#include "implementation/implementation_frontend.hpp"
 #include "project_composition_resolver.hpp"
 #include "project_configuration_loader.hpp"
 #include "../diagnostics/diagnostic_descriptor.hpp"
@@ -9,8 +10,10 @@
 #include "../metrics/source_acquisition_telemetry.hpp"
 
 #include <chrono>
+#include <span>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace cw::server {
 namespace {
@@ -363,6 +366,92 @@ void flush_g0_frontend_metrics(
         summary.g0_tx_graph_publish_ns);
 }
 
+constexpr std::uint8_t project_source_role_type = 1;
+constexpr std::uint8_t project_source_role_implementation = 2;
+
+status index_project_source_roles(
+    const source_manager& sources,
+    std::vector<std::uint8_t>& output,
+    bool& has_implementation) noexcept {
+
+    output.clear();
+    has_implementation = false;
+
+    try {
+        output.assign(
+            sources.source_count() + 1,
+            0);
+
+        for (const auto root : sources.roots()) {
+            if (!root.source ||
+                root.source.value() >= output.size() ||
+                root.role == project_item_role::project) {
+                return {status_code::configuration_failed};
+            }
+
+            const auto role =
+                root.role == project_item_role::type
+                    ? project_source_role_type
+                    : project_source_role_implementation;
+
+            auto& existing = output[root.source.value()];
+
+            if (existing != 0 && existing != role) {
+                return {status_code::configuration_failed};
+            }
+
+            existing = role;
+            has_implementation =
+                has_implementation ||
+                role == project_source_role_implementation;
+        }
+
+        return {};
+    }
+    catch (...) {
+        output.clear();
+        has_implementation = false;
+        return {status_code::initialization_failed};
+    }
+}
+
+bool touches_implementation_source(
+    std::span<const source_id> sources,
+    std::span<const std::uint8_t> roles) noexcept {
+
+    for (const auto source : sources) {
+        if (source &&
+            source.value() < roles.size() &&
+            roles[source.value()] ==
+                project_source_role_implementation) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+bool only_implementation_sources(
+    std::span<const source_id> sources,
+    std::span<const std::uint8_t> roles) noexcept {
+
+    if (sources.empty()) {
+        return false;
+    }
+
+    for (const auto source : sources) {
+        if (!source ||
+            source.value() >= roles.size() ||
+            roles[source.value()] !=
+                project_source_role_implementation) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
 } // namespace
 
 status project_context::initialize(
@@ -381,7 +470,9 @@ status project_context::initialize(
     change_tracker.stop();
     active_configuration_path.clear();
     frontend_summary = {};
+    project_source_roles.clear();
     change_tracking_ready = false;
+    has_implementation_sources = false;
     runtime_attached.store(false, std::memory_order_release);
 
     log.info(
@@ -468,7 +559,9 @@ status project_context::load_project(
     change_tracker.stop();
     active_configuration_path.clear();
     frontend_summary = {};
+    project_source_roles.clear();
     change_tracking_ready = false;
+    has_implementation_sources = false;
     runtime_attached.store(false, std::memory_order_release);
 
     log.info(
@@ -545,6 +638,7 @@ status project_context::load_project(
     project_builder builder;
     source_acquisition_telemetry acquisition{metrics.mode()};
     source_frontend_generation frontend{transaction};
+    frontend.enable_project_role_routing();
 
     source_rebuild_result rebuilt;
 
@@ -574,8 +668,36 @@ status project_context::load_project(
         log.error(
             log_component::source,
             operation,
-            "project source build failed");
+            "project type build failed");
         return rebuilt.semantic;
+    }
+
+    result = index_project_source_roles(
+        graphs.sources(),
+        project_source_roles,
+        has_implementation_sources);
+
+    if (!result.ok()) {
+        return result;
+    }
+
+    implementation_frontend implementation;
+    std::vector<implementation_facts_storage> implementation_sources;
+
+    result = implementation.build(
+        graphs.sources(),
+        graphs.compiled_graph(),
+        graphs.strings(),
+        operation,
+        diagnostic_records,
+        implementation_sources);
+
+    if (!result.ok()) {
+        log.error(
+            log_component::source,
+            operation,
+            "implementation source build failed");
+        return result;
     }
 
     const auto cache_begin =
@@ -613,7 +735,8 @@ status project_context::load_project(
         };
 
         result = runtime_instance.attach(
-            graphs.compiled_graph());
+            graphs.compiled_graph(),
+            std::move(implementation_sources));
     }
 
     if (!result.ok()) {
@@ -682,6 +805,137 @@ status project_context::load_project(
     return {};
 }
 
+status project_context::rebuild_implementation_sources(
+    std::span<const source_id> dirty_sources,
+    operation_id operation,
+    logger& log,
+    metrics_store& metrics) noexcept {
+
+    if (dirty_sources.empty() ||
+        !only_implementation_sources(
+            dirty_sources,
+            project_source_roles)) {
+        return {status_code::invalid_state};
+    }
+
+    runtime_attached.store(false, std::memory_order_release);
+
+    log.info(
+        log_component::project,
+        operation,
+        "sparse implementation rebuild started");
+
+    auto source_update =
+        graphs.begin_source_update();
+
+    source_acquisition_telemetry acquisition{
+        metrics.mode()};
+
+    for (const auto source : dirty_sources) {
+        const auto result =
+            source_update.acquire(
+                source,
+                acquisition);
+
+        if (!result.ok()) {
+            acquisition.flush_to(metrics);
+
+            try_emit(
+                diagnostic_records,
+                diagnostics::source_acquisition_failed,
+                operation);
+
+            log.error(
+                log_component::source,
+                operation,
+                "implementation Source acquisition failed");
+            return result;
+        }
+    }
+
+    acquisition.flush_to(metrics);
+
+    implementation_frontend implementation;
+    std::vector<implementation_facts_storage> replacements;
+
+    auto result = implementation.rebuild(
+        source_update,
+        dirty_sources,
+        graphs.compiled_graph(),
+        graphs.strings(),
+        operation,
+        diagnostic_records,
+        replacements);
+
+    if (!result.ok()) {
+        log.error(
+            log_component::source,
+            operation,
+            "sparse implementation parse failed");
+        return result;
+    }
+
+    result =
+        runtime_instance.prepare_implementation_replacements(
+            replacements);
+
+    if (!result.ok()) {
+        log.error(
+            log_component::runtime,
+            operation,
+            "implementation Runtime replacement preparation failed");
+        return result;
+    }
+
+    result = source_update.commit();
+
+    if (!result.ok()) {
+        log.error(
+            log_component::source,
+            operation,
+            "implementation Source publication failed");
+        return result;
+    }
+
+    runtime_instance.publish_implementation_replacements(
+        std::move(replacements));
+
+    frontend_summary.dirty =
+        static_cast<std::uint32_t>(
+            dirty_sources.size());
+    frontend_summary.checked =
+        frontend_summary.dirty;
+    frontend_summary.affected =
+        frontend_summary.dirty;
+
+    if (change_tracking_ready) {
+        const auto tracking_result =
+            change_tracker.synchronize(
+                graphs.sources());
+
+        if (!tracking_result.ok()) {
+            change_tracking_ready = false;
+            change_tracker.stop();
+
+            emit_tracking_warning(
+                diagnostic_records,
+                operation,
+                diagnostics::source_change_tracking_failed,
+                log,
+                "Source change tracking synchronization failed; full reconciliation fallback enabled");
+        }
+    }
+
+    runtime_attached.store(true, std::memory_order_release);
+
+    log.info(
+        log_component::project,
+        operation,
+        "sparse implementation rebuild completed");
+
+    return {};
+}
+
 status project_context::rebuild_sources(
     operation_id operation,
     logger& log,
@@ -723,8 +977,11 @@ status project_context::rebuild_sources(
                 operation,
                 "project configuration changed; full Project reload started");
 
+            const auto configuration_path =
+                active_configuration_path;
+
             return load_project(
-                active_configuration_path,
+                configuration_path,
                 operation,
                 log,
                 metrics);
@@ -734,6 +991,38 @@ status project_context::rebuild_sources(
             batch.dirty_sources.empty()) {
             return {};
         }
+    }
+
+    if (has_implementation_sources &&
+        !reconcile_all &&
+        only_implementation_sources(
+            batch.dirty_sources,
+            project_source_roles)) {
+        return rebuild_implementation_sources(
+            batch.dirty_sources,
+            operation,
+            log,
+            metrics);
+    }
+
+    if (has_implementation_sources &&
+        (reconcile_all ||
+         touches_implementation_source(
+             batch.dirty_sources,
+             project_source_roles))) {
+        const auto configuration_path =
+            active_configuration_path;
+
+        log.info(
+            log_component::project,
+            operation,
+            "mixed Type/Implementation change; staged Project reload started");
+
+        return load_project(
+            configuration_path,
+            operation,
+            log,
+            metrics);
     }
 
     runtime_attached.store(false, std::memory_order_release);
@@ -770,12 +1059,32 @@ status project_context::rebuild_sources(
         log.error(
             log_component::source,
             operation,
-            "incremental source rebuild failed");
+            "incremental type rebuild failed");
         return rebuilt.semantic;
     }
 
-    auto result = runtime_instance.attach(
-        graphs.compiled_graph());
+    implementation_frontend implementation;
+    std::vector<implementation_facts_storage> implementation_sources;
+
+    auto result = implementation.build(
+        graphs.sources(),
+        graphs.compiled_graph(),
+        graphs.strings(),
+        operation,
+        diagnostic_records,
+        implementation_sources);
+
+    if (!result.ok()) {
+        log.error(
+            log_component::source,
+            operation,
+            "implementation rebuild after type change failed");
+        return result;
+    }
+
+    result = runtime_instance.attach(
+        graphs.compiled_graph(),
+        std::move(implementation_sources));
 
     if (!result.ok()) {
         try_emit(
@@ -829,7 +1138,9 @@ status project_context::load_compiled_checkpoint(
     change_tracker.stop();
     active_configuration_path.clear();
     frontend_summary = {};
+    project_source_roles.clear();
     change_tracking_ready = false;
+    has_implementation_sources = false;
 
     auto result = graphs.load_compiled_checkpoint(path, &metrics);
 
@@ -853,7 +1164,9 @@ void project_context::shutdown() noexcept {
     change_tracker.stop();
     active_configuration_path.clear();
     frontend_summary = {};
+    project_source_roles.clear();
     change_tracking_ready = false;
+    has_implementation_sources = false;
 }
 
 const diagnostic_buffer& project_context::diagnostics() const noexcept {
@@ -898,7 +1211,9 @@ status project_context::load_source_checkpoint(
     change_tracker.stop();
     active_configuration_path.clear();
     frontend_summary = {};
+    project_source_roles.clear();
     change_tracking_ready = false;
+    has_implementation_sources = false;
 
     return graphs.load_source_checkpoint(path);
 }

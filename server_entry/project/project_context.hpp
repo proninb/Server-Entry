@@ -13,7 +13,10 @@
 #include "source/source_change_tracker.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <filesystem>
+#include <span>
+#include <vector>
 
 namespace cw::server {
 
@@ -57,6 +60,12 @@ public:
         metrics_store& metrics) noexcept;
 
 private:
+    [[nodiscard]] status rebuild_implementation_sources(
+        std::span<const source_id> dirty_sources,
+        operation_id operation,
+        logger& log,
+        metrics_store& metrics) noexcept;
+
     diagnostic_buffer diagnostic_records;
     graph_manager graphs;
     source_frontend_cache frontend_cache;
@@ -65,8 +74,10 @@ private:
     source_frontend_summary frontend_summary;
     runtime runtime_instance;
     shared_memory shared_memory_region;
+    std::vector<std::uint8_t> project_source_roles;
     std::atomic<bool> runtime_attached{false};
     bool change_tracking_ready = false;
+    bool has_implementation_sources = false;
 };
 
 } // namespace cw::server

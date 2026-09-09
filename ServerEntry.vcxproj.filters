@@ -8,6 +8,7 @@
     <Filter Include="server_entry\project\string"><UniqueIdentifier>{D3F095C0-C717-4F9D-B4A5-E79910488509}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\builder"><UniqueIdentifier>{A9680832-D98A-47DD-A953-6319263437B8}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\parser"><UniqueIdentifier>{98AE8E08-5C3E-4892-95DE-9AD7C82ED18F}</UniqueIdentifier></Filter>
+    <Filter Include="server_entry\project\implementation"><UniqueIdentifier>{F211A9D5-0E7A-4D72-9A12-55AA6D759DD1}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\construction"><UniqueIdentifier>{85E2E8A7-1CFB-49DA-9031-CC08176AA469}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\runtime"><UniqueIdentifier>{84B10D9E-26C7-4FE8-8133-034038D7D551}</UniqueIdentifier></Filter>
     <Filter Include="server_entry\project\shm"><UniqueIdentifier>{2CFA304C-CE02-44FD-9645-2B2536D3522A}</UniqueIdentifier></Filter>
@@ -42,6 +43,10 @@
     <ClCompile Include="server_entry\project\parser\source_context.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
     <ClCompile Include="server_entry\project\parser\parser.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
     <ClCompile Include="server_entry\project\parser\source_environment.cpp"><Filter>server_entry\project\parser</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_lexer.cpp"><Filter>server_entry\project\implementation</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_context.cpp"><Filter>server_entry\project\implementation</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_parser.cpp"><Filter>server_entry\project\implementation</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_frontend.cpp"><Filter>server_entry\project\implementation</Filter></ClCompile>
     <ClCompile Include="server_entry\project\frontend\source_publisher.cpp"><Filter>server_entry\project\construction</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager_persistence.cpp"><Filter>server_entry\project\source</Filter></ClCompile>
@@ -107,6 +112,12 @@
     <ClInclude Include="server_entry\project\parser\token.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
     <ClInclude Include="server_entry\project\parser\parser.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
     <ClInclude Include="server_entry\project\parser\source_environment.hpp"><Filter>server_entry\project\parser</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\implementation\implementation_token.hpp"><Filter>server_entry\project\implementation</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\implementation\implementation_lexer.hpp"><Filter>server_entry\project\implementation</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\implementation\implementation_facts.hpp"><Filter>server_entry\project\implementation</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\implementation\implementation_context.hpp"><Filter>server_entry\project\implementation</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\implementation\implementation_parser.hpp"><Filter>server_entry\project\implementation</Filter></ClInclude>
+    <ClInclude Include="server_entry\project\implementation\implementation_frontend.hpp"><Filter>server_entry\project\implementation</Filter></ClInclude>
     <ClInclude Include="server_entry\project\frontend\source_publisher.hpp"><Filter>server_entry\project\construction</Filter></ClInclude>
     <ClInclude Include="server_entry\project\runtime\runtime.hpp"><Filter>server_entry\project\runtime</Filter></ClInclude>
     <ClInclude Include="server_entry\project\shm\shared_memory.hpp"><Filter>server_entry\project\shm</Filter></ClInclude>

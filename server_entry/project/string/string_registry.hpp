@@ -48,6 +48,15 @@ public:
     [[nodiscard]] std::optional<std::string_view> get(
         string_id id) const noexcept;
 
+    // Construction-only read bridge used by the Implementation Parser after G0
+    // commit. Runtime still consumes string_id and performs no textual lookup.
+    [[nodiscard]] string_id find_for_construction(
+        std::string_view value) const noexcept {
+        return find_value(
+            value,
+            hash_value(value));
+    }
+
 #if defined(CW_GRAPH_BUILD_TRANSACTION_TESTING)
 
     // Test observer only. Production code has no text-to-ID query after the

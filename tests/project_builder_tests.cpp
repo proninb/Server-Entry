@@ -1768,6 +1768,330 @@ bool test_source_environment_indexed_lookup() {
     return true;
 }
 
+bool test_g0_abi_layout_and_incremental_dependency() {
+    graph_manager manager;
+    project_builder builder;
+    diagnostic_buffer diagnostics;
+
+    if (!manager.initialize({
+            abi_target::windows_x64,
+            8
+        }).ok()) {
+        return false;
+    }
+
+    source_id inner_source;
+    source_id outer_source;
+
+    string_id inner_name;
+    string_id outer_name;
+    string_id inner_char_name;
+    string_id inner_value_name;
+    string_id prefix_name;
+    string_id inner_member_name;
+    string_id suffix_name;
+
+    {
+        auto transaction =
+            manager.begin_build(
+                graph_build_mode::rebuild);
+
+        if (!resolve_source(
+                transaction,
+                source_a,
+                inner_source) ||
+            !resolve_source(
+                transaction,
+                source_b,
+                outer_source) ||
+            !intern(transaction, "Inner", inner_name) ||
+            !intern(transaction, "Outer", outer_name) ||
+            !intern(transaction, "c", inner_char_name) ||
+            !intern(transaction, "value", inner_value_name) ||
+            !intern(transaction, "prefix", prefix_name) ||
+            !intern(transaction, "inner", inner_member_name) ||
+            !intern(transaction, "suffix", suffix_name)) {
+            return false;
+        }
+
+        const std::array inner_members{
+            aggregate_source_fact::member_fact{
+                inner_char_name,
+                builtin_type::character,
+                {},
+                0,
+                0
+            },
+            aggregate_source_fact::member_fact{
+                inner_value_name,
+                builtin_type::integer,
+                {},
+                0,
+                0
+            }
+        };
+
+        const std::array outer_members{
+            aggregate_source_fact::member_fact{
+                prefix_name,
+                builtin_type::character,
+                {},
+                0,
+                0
+            },
+            aggregate_source_fact::member_fact{
+                inner_member_name,
+                std::nullopt,
+                inner_name,
+                0,
+                0
+            },
+            aggregate_source_fact::member_fact{
+                suffix_name,
+                builtin_type::character,
+                {},
+                0,
+                0
+            }
+        };
+
+        const std::array inner_aggregates{
+            aggregate_source_fact{
+                inner_name,
+                aggregate_definition_state::defined,
+                inner_members,
+                {}
+            }
+        };
+
+        const std::array outer_aggregates{
+            aggregate_source_fact{
+                outer_name,
+                aggregate_definition_state::defined,
+                outer_members,
+                {}
+            }
+        };
+
+        const std::array batches{
+            source_fact_batch{
+                inner_source,
+                {},
+                inner_aggregates
+            },
+            source_fact_batch{
+                outer_source,
+                {},
+                outer_aggregates
+            }
+        };
+
+        if (!build_batches(
+                builder,
+                transaction,
+                batches,
+                diagnostics,
+                25) ||
+            !transaction.commit().ok()) {
+            return false;
+        }
+    }
+
+    const auto inner_id =
+        manager.compiled_graph().find_id(
+            inner_name);
+
+    const auto outer_id =
+        manager.compiled_graph().find_id(
+            outer_name);
+
+    const auto* inner =
+        manager.compiled_graph().find(inner_id);
+
+    const auto* outer =
+        manager.compiled_graph().find(outer_id);
+
+    if (!inner || !outer) {
+        return false;
+    }
+
+    const auto* inner_layout =
+        manager.compiled_graph().layout(
+            inner->type);
+
+    const auto* outer_layout =
+        manager.compiled_graph().layout(
+            outer->type);
+
+    const auto* inner_c =
+        manager.compiled_graph().member_layout(
+            inner->type,
+            member_index{1});
+
+    const auto* inner_value =
+        manager.compiled_graph().member_layout(
+            inner->type,
+            member_index{2});
+
+    const auto* outer_prefix =
+        manager.compiled_graph().member_layout(
+            outer->type,
+            member_index{1});
+
+    const auto* outer_inner =
+        manager.compiled_graph().member_layout(
+            outer->type,
+            member_index{2});
+
+    const auto* outer_suffix =
+        manager.compiled_graph().member_layout(
+            outer->type,
+            member_index{3});
+
+    if (!inner_layout ||
+        inner_layout->size != 8 ||
+        inner_layout->alignment != 4 ||
+        !outer_layout ||
+        outer_layout->size != 16 ||
+        outer_layout->alignment != 4 ||
+        !inner_c || inner_c->offset != 0 ||
+        !inner_value || inner_value->offset != 4 ||
+        !outer_prefix || outer_prefix->offset != 0 ||
+        !outer_inner || outer_inner->offset != 4 ||
+        !outer_suffix || outer_suffix->offset != 12) {
+        return false;
+    }
+
+    type_layout_record nested_layout;
+    const auto outer_members =
+        manager.compiled_graph().members(
+            outer->type);
+
+    if (outer_members.size() != 3 ||
+        !manager.compiled_graph().layout(
+            outer_members[1].type,
+            nested_layout) ||
+        nested_layout.size != 8 ||
+        nested_layout.alignment != 4) {
+        return false;
+    }
+
+    {
+        auto transaction =
+            manager.begin_build(
+                graph_build_mode::incremental);
+
+        source_id current_source;
+
+        if (!resolve_source(
+                transaction,
+                source_a,
+                current_source) ||
+            current_source != inner_source) {
+            return false;
+        }
+
+        const std::array changed_inner_members{
+            aggregate_source_fact::member_fact{
+                inner_char_name,
+                builtin_type::character,
+                {},
+                0,
+                0
+            },
+            aggregate_source_fact::member_fact{
+                inner_value_name,
+                builtin_type::long_long_integer,
+                {},
+                0,
+                0
+            }
+        };
+
+        const std::array changed_inner_aggregates{
+            aggregate_source_fact{
+                inner_name,
+                aggregate_definition_state::defined,
+                changed_inner_members,
+                {}
+            }
+        };
+
+        const std::array batches{
+            source_fact_batch{
+                inner_source,
+                {},
+                changed_inner_aggregates
+            }
+        };
+
+        diagnostics.clear();
+
+        if (!build_batches(
+                builder,
+                transaction,
+                batches,
+                diagnostics,
+                26) ||
+            !transaction.commit().ok()) {
+            return false;
+        }
+    }
+
+    inner = manager.compiled_graph().find(inner_id);
+    outer = manager.compiled_graph().find(outer_id);
+
+    if (!inner || !outer) {
+        return false;
+    }
+
+    inner_layout =
+        manager.compiled_graph().layout(
+            inner->type);
+
+    outer_layout =
+        manager.compiled_graph().layout(
+            outer->type);
+
+    inner_c =
+        manager.compiled_graph().member_layout(
+            inner->type,
+            member_index{1});
+
+    inner_value =
+        manager.compiled_graph().member_layout(
+            inner->type,
+            member_index{2});
+
+    outer_prefix =
+        manager.compiled_graph().member_layout(
+            outer->type,
+            member_index{1});
+
+    outer_inner =
+        manager.compiled_graph().member_layout(
+            outer->type,
+            member_index{2});
+
+    outer_suffix =
+        manager.compiled_graph().member_layout(
+            outer->type,
+            member_index{3});
+
+    return
+        inner_layout &&
+        inner_layout->size == 16 &&
+        inner_layout->alignment == 8 &&
+        outer_layout &&
+        outer_layout->size == 32 &&
+        outer_layout->alignment == 8 &&
+        inner_c && inner_c->offset == 0 &&
+        inner_value && inner_value->offset == 8 &&
+        outer_prefix && outer_prefix->offset == 0 &&
+        outer_inner && outer_inner->offset == 8 &&
+        outer_suffix && outer_suffix->offset == 24;
+}
+
 bool test_static_object_reference_construction() {
     graph_manager manager;
     project_builder builder;
@@ -1968,6 +2292,7 @@ int main() {
         {"Parser rejects duplicate member after index transition", test_parser_rejects_duplicate_member_after_index_transition},
         {"Parser enum constant index lookup", test_parser_enum_constant_index_lookup},
         {"SourceEnvironment indexed lookup", test_source_environment_indexed_lookup},
+        {"G0 ABI layout and incremental dependency", test_g0_abi_layout_and_incremental_dependency},
         {"static object reference construction", test_static_object_reference_construction},
         {"Publisher malformed diagnostic", test_parser_publisher_malformed_diagnostic}
     };

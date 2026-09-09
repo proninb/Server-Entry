@@ -225,6 +225,54 @@ status source_frontend_generation::discover(
         return fail(result);
     }
 
+    bool implementation_only = false;
+    bool missing_state = false;
+
+    {
+        std::lock_guard lock{mutex};
+        const auto* state = find_state(source);
+        missing_state = state == nullptr;
+
+        if (!missing_state) {
+            implementation_only = state->implementation_only;
+        }
+    }
+
+    if (missing_state) {
+        return fail({status_code::invalid_state});
+    }
+
+    if (project_role_routing && implementation_only) {
+        result = transaction->sources().set_includes(
+            source,
+            std::span<const source_id>{});
+
+        if (!result.ok()) {
+            return fail(result);
+        }
+
+        std::lock_guard lock{mutex};
+        auto* state = find_state(source);
+
+        if (state == nullptr) {
+            if (active_discoveries != 0) {
+                --active_discoveries;
+            }
+            fail_locked({status_code::invalid_state});
+            return {status_code::invalid_state};
+        }
+
+        if (active_discoveries != 0) {
+            --active_discoveries;
+        }
+
+        state->discovery_done = true;
+        state->parse_claimed = true;
+        state->parsed = true;
+        semantic_condition.notify_all();
+        return {};
+    }
+
     std::vector<parser_token> tokens;
     std::vector<directive_span> directives;
     diagnostic_buffer local_diagnostics;
@@ -999,6 +1047,29 @@ source_rebuild_result source_frontend_generation::rebuild(
 
         for (const auto root :
              transaction->sources().roots()) {
+            if (project_role_routing) {
+                if (root.role == project_item_role::project) {
+                    return status{status_code::configuration_failed};
+                }
+
+                std::lock_guard lock{mutex};
+                auto& state = ensure(root.source);
+                const auto implementation_only =
+                    root.role == project_item_role::source;
+
+                if (state.root_role_assigned &&
+                    state.implementation_only != implementation_only) {
+                    const status invalid{
+                        status_code::configuration_failed
+                    };
+                    fail_locked(invalid);
+                    return invalid;
+                }
+
+                state.root_role_assigned = true;
+                state.implementation_only = implementation_only;
+            }
+
             const auto result =
                 enqueue(root.source);
 

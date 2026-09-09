@@ -177,6 +177,12 @@ public:
         source_frontend_cache& cache,
         language_configuration language = {}) noexcept;
 
+    // Project orchestration mode: role=type enters Declaration Parser while
+    // role=source is acquired only and is parsed after committed G0.
+    void enable_project_role_routing() noexcept {
+        project_role_routing = true;
+    }
+
     [[nodiscard]] status enqueue(source_id source) noexcept;
 
     [[nodiscard]] bool take_discovery(
@@ -259,6 +265,8 @@ private:
         bool published = false;
         bool semantic_queued = false;
         bool removed = false;
+        bool implementation_only = false;
+        bool root_role_assigned = false;
 
         std::uint32_t remaining = 0;
         source_frontend_counts counts;
@@ -290,6 +298,7 @@ private:
     const parser_backend* backend = nullptr;
     source_frontend_cache* cache = nullptr;
     language_configuration language{};
+    bool project_role_routing = false;
 
     mutable std::mutex mutex;
 

@@ -50,6 +50,12 @@ public:
     [[nodiscard]] graph_build_transaction begin_build(
         graph_build_mode mode = graph_build_mode::rebuild) noexcept;
 
+    // Starts a Source Manager-only candidate for implementation Sources. This
+    // does not enter Graph build state because canonical G is read-only here.
+    [[nodiscard]] source_manager_update begin_source_update() noexcept {
+        return source_manager_state.begin_update();
+    }
+
     [[nodiscard]] project_state state() const noexcept {
         return current_state.load(
             std::memory_order_acquire);

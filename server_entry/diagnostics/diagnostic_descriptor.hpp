@@ -123,6 +123,38 @@ inline constexpr diagnostic_descriptor parser_initialization_failed{
 inline constexpr diagnostic_descriptor parser_duplicate_member{
     diagnostic_id{4010}, diagnostic_domain::parser, diagnostic_severity::error,
     "parser.duplicate_member", "Member name is duplicated in this aggregate"};
+inline constexpr diagnostic_descriptor implementation_invalid_source{
+    diagnostic_id{4011}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.invalid_source",
+    "Implementation Source contains invalid or unsupported syntax"};
+inline constexpr diagnostic_descriptor implementation_duplicate_object{
+    diagnostic_id{4012}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.duplicate_object",
+    "Implementation object name is duplicated in this Source"};
+inline constexpr diagnostic_descriptor implementation_unknown_type{
+    diagnostic_id{4013}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.unknown_type",
+    "Implementation object type is not present in committed G0"};
+inline constexpr diagnostic_descriptor implementation_unknown_object{
+    diagnostic_id{4014}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.unknown_object",
+    "Implementation path refers to an unknown Source-local object"};
+inline constexpr diagnostic_descriptor implementation_unknown_member{
+    diagnostic_id{4015}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.unknown_member",
+    "Implementation path refers to an unknown member"};
+inline constexpr diagnostic_descriptor implementation_type_mismatch{
+    diagnostic_id{4016}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.type_mismatch",
+    "Implementation assignment or binding has incompatible canonical types"};
+inline constexpr diagnostic_descriptor implementation_index_out_of_range{
+    diagnostic_id{4017}, diagnostic_domain::parser, diagnostic_severity::error,
+    "implementation.index_out_of_range",
+    "Implementation array index is outside the declared extent"};
+inline constexpr diagnostic_descriptor implementation_initialization_failed{
+    diagnostic_id{4018}, diagnostic_domain::parser, diagnostic_severity::fatal,
+    "implementation.initialization_failed",
+    "Implementation Parser could not complete because an internal resource failed"};
 inline constexpr diagnostic_descriptor builder_invalid_source_fact{
     diagnostic_id{5002}, diagnostic_domain::builder, diagnostic_severity::error,
     "builder.invalid_source_fact", "Parser produced an invalid transient source fact"};

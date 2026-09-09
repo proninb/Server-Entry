@@ -119,6 +119,83 @@ std::uint64_t bit_mask(std::uint8_t width) noexcept {
         : (std::uint64_t{1} << width) - 1;
 }
 
+bool checked_multiply_layout(
+    std::uint64_t left,
+    std::uint64_t right,
+    std::uint64_t& output) noexcept {
+
+    if (left != 0 &&
+        right > (std::numeric_limits<std::uint64_t>::max)() / left) {
+        output = 0;
+        return false;
+    }
+
+    output = left * right;
+    return true;
+}
+
+bool align_layout_offset(
+    std::uint64_t value,
+    std::uint32_t alignment,
+    std::uint64_t& output) noexcept {
+
+    output = 0;
+
+    if (alignment == 0) {
+        return false;
+    }
+
+    const auto remainder =
+        value % alignment;
+
+    if (remainder == 0) {
+        output = value;
+        return true;
+    }
+
+    const auto padding =
+        static_cast<std::uint64_t>(alignment) -
+        remainder;
+
+    if (value >
+        (std::numeric_limits<std::uint64_t>::max)() - padding) {
+        return false;
+    }
+
+    output = value + padding;
+    return true;
+}
+
+bool builtin_storage_layout(
+    builtin_type type,
+    const abi_configuration& abi,
+    type_layout_record& output) noexcept {
+
+    output = {};
+
+    const auto bits =
+        builtin_bit_width(type, abi);
+
+    if (bits == 0 ||
+        (bits % 8) != 0) {
+        return false;
+    }
+
+    const auto size =
+        static_cast<std::uint64_t>(bits / 8);
+
+    if (size == 0 || size > 16) {
+        return false;
+    }
+
+    output.size = size;
+    output.alignment =
+        static_cast<std::uint32_t>(
+            size > 8 ? 16 : size);
+
+    return true;
+}
+
 bool fits_integral(integral_constant value, builtin_type target, const abi_configuration& abi) noexcept {
 
     const auto source_width = builtin_bit_width(value.type, abi);
@@ -301,6 +378,10 @@ struct graph::candidate_type_slot {
 
     // G0 creates this only on actual reference demand before prepare().
     TypeRef named_ref{};
+
+    // One-based coordinate into graph_update::prepared_type_layout_updates.
+    // Zero means this candidate slot has not participated in layout preparation.
+    std::uint32_t layout_update = 0;
 };
 
 graph::graph() = default;
@@ -317,6 +398,8 @@ status graph::initialize(abi_configuration abi) noexcept {
         identity.clear();
         member_records.clear();
         enum_value_records.clear();
+        type_layout_records.clear();
+        member_layout_records.clear();
         static_object_records.clear();
         construction_binding_records.clear();
         construction_binding_ranges.clear();
@@ -508,6 +591,175 @@ graph::construction_bindings(
     };
 }
 
+TypeRef graph::type_ref(
+    type_handle handle) const noexcept {
+
+    return handle &&
+        handle.value() < named_type_refs.size()
+        ? named_type_refs[handle.value()]
+        : TypeRef{};
+}
+
+TypeRef graph::type_ref(
+    builtin_type type) const noexcept {
+
+    const auto raw =
+        static_cast<std::uint32_t>(type) + 1;
+
+    if (raw >= canonical_types.size()) {
+        return {};
+    }
+
+    const auto& record =
+        canonical_types[raw];
+
+    return
+        record.kind == canonical_type_kind::builtin &&
+        record.builtin == type
+            ? TypeRef{raw}
+            : TypeRef{};
+}
+
+const type_layout_record* graph::layout(
+    type_handle handle) const noexcept {
+
+    if (!handle ||
+        handle.value() > type_layout_records.size()) {
+        return nullptr;
+    }
+
+    const auto& value =
+        type_layout_records[handle.value() - 1];
+
+    return value ? &value : nullptr;
+}
+
+bool graph::layout(
+    TypeRef type,
+    type_layout_record& output) const noexcept {
+
+    output = {};
+
+    if (!type ||
+        type.value() >= canonical_types.size()) {
+        return false;
+    }
+
+    std::uint64_t array_multiplier = 1;
+    auto current = type;
+
+    for (std::size_t depth = 0;
+         depth < canonical_types.size();
+         ++depth) {
+        if (!current ||
+            current.value() >= canonical_types.size()) {
+            return false;
+        }
+
+        const auto& record =
+            canonical_types[current.value()];
+
+        type_layout_record base;
+
+        switch (record.kind) {
+        case canonical_type_kind::builtin:
+            if (!builtin_storage_layout(
+                    record.builtin,
+                    abi_config,
+                    base)) {
+                return false;
+            }
+            break;
+
+        case canonical_type_kind::named: {
+            const auto* named_layout =
+                layout(record.named);
+
+            if (!named_layout) {
+                return false;
+            }
+
+            base = *named_layout;
+            break;
+        }
+
+        case canonical_type_kind::derived:
+            if (record.derived.kind ==
+                    derived_type_kind::array) {
+                if (record.derived.payload == 0 ||
+                    !checked_multiply_layout(
+                        array_multiplier,
+                        record.derived.payload,
+                        array_multiplier)) {
+                    return false;
+                }
+
+                current = record.derived.child;
+                continue;
+            }
+
+            if (record.derived.kind ==
+                    derived_type_kind::pointer ||
+                record.derived.kind ==
+                    derived_type_kind::lvalue_reference ||
+                record.derived.kind ==
+                    derived_type_kind::rvalue_reference) {
+                base = {8, 8};
+                break;
+            }
+
+            return false;
+
+        default:
+            return false;
+        }
+
+        if (!checked_multiply_layout(
+                base.size,
+                array_multiplier,
+                output.size)) {
+            output = {};
+            return false;
+        }
+
+        output.alignment = base.alignment;
+        return static_cast<bool>(output);
+    }
+
+    return false;
+}
+
+const member_layout_record* graph::member_layout(
+    type_handle handle,
+    member_index index) const noexcept {
+
+    if (!handle ||
+        !index ||
+        handle.value() > types.size() ||
+        !types[handle.value() - 1]) {
+        return nullptr;
+    }
+
+    const auto& type =
+        *types[handle.value() - 1];
+
+    if (type.record.kind !=
+            user_type_kind::aggregate ||
+        !type.record.definition ||
+        index.value() > type.record.definition.count) {
+        return nullptr;
+    }
+
+    const auto slot =
+        static_cast<std::size_t>(
+            type.record.definition.begin - 1) +
+        index.value() - 1;
+
+    return slot < member_layout_records.size()
+        ? &member_layout_records[slot]
+        : nullptr;
+}
+
 canonical_type_kind graph::kind(TypeRef type) const noexcept {
     return type && type.value() < canonical_types.size() ? canonical_types[type.value()].kind
             : canonical_type_kind::builtin;
@@ -547,6 +799,282 @@ const derived_type_record* graph::derived(TypeRef type) const noexcept {
 
 std::size_t graph::derived_type_count() const noexcept {
     return derived_type_index.size();
+}
+
+status graph::rebuild_layout_sidecars() noexcept {
+    try {
+        type_layout_records.assign(
+            types.size(),
+            type_layout_record{});
+
+        member_layout_records.assign(
+            member_records.size(),
+            member_layout_record{});
+
+        std::vector<std::uint8_t> state(
+            types.size(),
+            0);
+
+        const auto compute_handle =
+            [&](auto&& self,
+                std::uint32_t handle) -> status {
+                if (handle == 0 ||
+                    handle > types.size() ||
+                    !types[handle - 1]) {
+                    return {status_code::artifact_corrupt};
+                }
+
+                auto& visit = state[handle - 1];
+
+                if (visit == 2) {
+                    return {};
+                }
+
+                if (visit == 1) {
+                    return {status_code::artifact_corrupt};
+                }
+
+                visit = 1;
+
+                const auto& storage =
+                    *types[handle - 1];
+
+                if (storage.record.kind ==
+                    user_type_kind::enumeration) {
+                    type_layout_record value;
+
+                    if (!builtin_storage_layout(
+                            storage.record.enumeration.underlying,
+                            abi_config,
+                            value)) {
+                        return {status_code::artifact_corrupt};
+                    }
+
+                    type_layout_records[handle - 1] = value;
+                    visit = 2;
+                    return {};
+                }
+
+                if (storage.record.kind !=
+                    user_type_kind::aggregate) {
+                    return {status_code::artifact_corrupt};
+                }
+
+                if (!storage.record.definition) {
+                    type_layout_records[handle - 1] = {};
+                    visit = 2;
+                    return {};
+                }
+
+                const auto begin =
+                    static_cast<std::size_t>(
+                        storage.record.definition.begin - 1);
+                const auto count =
+                    static_cast<std::size_t>(
+                        storage.record.definition.count);
+
+                if (begin > member_records.size() ||
+                    count > member_records.size() - begin) {
+                    return {status_code::artifact_corrupt};
+                }
+
+                const auto resolve_type =
+                    [&](TypeRef initial,
+                        type_layout_record& output) -> status {
+                        output = {};
+
+                        if (!initial ||
+                            initial.value() >= canonical_types.size()) {
+                            return {status_code::artifact_corrupt};
+                        }
+
+                        std::uint64_t array_multiplier = 1;
+                        auto current = initial;
+
+                        for (std::size_t depth = 0;
+                             depth < canonical_types.size();
+                             ++depth) {
+                            if (!current ||
+                                current.value() >= canonical_types.size()) {
+                                return {status_code::artifact_corrupt};
+                            }
+
+                            const auto& record =
+                                canonical_types[current.value()];
+
+                            type_layout_record base;
+
+                            if (record.kind ==
+                                canonical_type_kind::builtin) {
+                                if (!builtin_storage_layout(
+                                        record.builtin,
+                                        abi_config,
+                                        base)) {
+                                    return {status_code::artifact_corrupt};
+                                }
+                            }
+                            else if (record.kind ==
+                                     canonical_type_kind::named) {
+                                const auto result =
+                                    self(
+                                        self,
+                                        record.named.value());
+
+                                if (!result.ok() ||
+                                    !record.named ||
+                                    record.named.value() >
+                                        type_layout_records.size() ||
+                                    !type_layout_records[
+                                        record.named.value() - 1]) {
+                                    return {status_code::artifact_corrupt};
+                                }
+
+                                base =
+                                    type_layout_records[
+                                        record.named.value() - 1];
+                            }
+                            else if (record.kind ==
+                                     canonical_type_kind::derived) {
+                                if (record.derived.kind ==
+                                    derived_type_kind::array) {
+                                    if (record.derived.payload == 0 ||
+                                        !checked_multiply_layout(
+                                            array_multiplier,
+                                            record.derived.payload,
+                                            array_multiplier)) {
+                                        return {status_code::artifact_corrupt};
+                                    }
+
+                                    current = record.derived.child;
+                                    continue;
+                                }
+
+                                if (record.derived.kind ==
+                                        derived_type_kind::pointer ||
+                                    record.derived.kind ==
+                                        derived_type_kind::lvalue_reference ||
+                                    record.derived.kind ==
+                                        derived_type_kind::rvalue_reference) {
+                                    base = {8, 8};
+                                }
+                                else {
+                                    return {status_code::artifact_corrupt};
+                                }
+                            }
+                            else {
+                                return {status_code::artifact_corrupt};
+                            }
+
+                            if (!checked_multiply_layout(
+                                    base.size,
+                                    array_multiplier,
+                                    output.size)) {
+                                return {status_code::artifact_corrupt};
+                            }
+
+                            output.alignment = base.alignment;
+                            return {};
+                        }
+
+                        return {status_code::artifact_corrupt};
+                    };
+
+                if (count == 0) {
+                    type_layout_records[handle - 1] = {1, 1};
+                    visit = 2;
+                    return {};
+                }
+
+                std::uint64_t offset = 0;
+                std::uint32_t aggregate_alignment = 1;
+
+                for (std::size_t index = 0;
+                     index < count;
+                     ++index) {
+                    type_layout_record member_value;
+
+                    const auto result =
+                        resolve_type(
+                            member_records[begin + index].type,
+                            member_value);
+
+                    if (!result.ok() || !member_value) {
+                        return {status_code::artifact_corrupt};
+                    }
+
+                    const auto member_alignment =
+                        (std::min)(
+                            member_value.alignment,
+                            abi_config.pack);
+
+                    std::uint64_t aligned = 0;
+
+                    if (!align_layout_offset(
+                            offset,
+                            member_alignment,
+                            aligned)) {
+                        return {status_code::artifact_corrupt};
+                    }
+
+                    member_layout_records[
+                        begin + index].offset = aligned;
+
+                    if (aligned >
+                        (std::numeric_limits<std::uint64_t>::max)() -
+                            member_value.size) {
+                        return {status_code::artifact_corrupt};
+                    }
+
+                    offset = aligned + member_value.size;
+                    aggregate_alignment =
+                        (std::max)(
+                            aggregate_alignment,
+                            member_alignment);
+                }
+
+                std::uint64_t size = 0;
+
+                if (!align_layout_offset(
+                        offset,
+                        aggregate_alignment,
+                        size) ||
+                    size == 0) {
+                    return {status_code::artifact_corrupt};
+                }
+
+                type_layout_records[handle - 1] = {
+                    size,
+                    aggregate_alignment
+                };
+
+                visit = 2;
+                return {};
+            };
+
+        for (std::uint32_t handle = 1;
+             handle <= types.size();
+             ++handle) {
+            if (!types[handle - 1]) {
+                continue;
+            }
+
+            const auto result =
+                compute_handle(
+                    compute_handle,
+                    handle);
+
+            if (!result.ok()) {
+                return result;
+            }
+        }
+
+        return {};
+    }
+    catch (...) {
+        type_layout_records.clear();
+        member_layout_records.clear();
+        return {status_code::initialization_failed};
+    }
 }
 
 status graph::rebuild_dependency_index() noexcept {
@@ -1058,11 +1586,20 @@ status graph::import_compiled(
         named_type_refs.swap(imported_named_type_refs);
         derived_type_index.swap(imported_derived_type_index);
 
+        abi_config = input.abi;
+
         const auto dependency_result =
             rebuild_dependency_index();
 
         if (!dependency_result.ok()) {
             return dependency_result;
+        }
+
+        const auto layout_result =
+            rebuild_layout_sidecars();
+
+        if (!layout_result.ok()) {
+            return layout_result;
         }
 
         candidate_identities.clear();
@@ -1092,6 +1629,8 @@ void graph::swap_compiled(graph& other) noexcept {
     identity.swap(other.identity);
     member_records.swap(other.member_records);
     enum_value_records.swap(other.enum_value_records);
+    type_layout_records.swap(other.type_layout_records);
+    member_layout_records.swap(other.member_layout_records);
     static_object_records.swap(other.static_object_records);
     construction_binding_records.swap(
         other.construction_binding_records);
@@ -1187,6 +1726,10 @@ graph_update::graph_update(graph_update&& other) noexcept
       rebuilt_type_count(other.rebuilt_type_count),
       rebuilt_member_records(std::move(other.rebuilt_member_records)),
       rebuilt_enum_value_records(std::move(other.rebuilt_enum_value_records)),
+      rebuilt_type_layout_records(
+          std::move(other.rebuilt_type_layout_records)),
+      rebuilt_member_layout_records(
+          std::move(other.rebuilt_member_layout_records)),
       pending_static_objects(
           std::move(other.pending_static_objects)),
       pending_static_modifiers(
@@ -1208,6 +1751,8 @@ graph_update::graph_update(graph_update&& other) noexcept
       added_named_type_refs(std::move(other.added_named_type_refs)),
       added_named_type_index(std::move(other.added_named_type_index)),
       added_derived_type_index(std::move(other.added_derived_type_index)),
+      prepared_type_layout_updates(
+          std::move(other.prepared_type_layout_updates)),
       prepared_type_dependency_updates(
           std::move(other.prepared_type_dependency_updates)),
       prepared_reverse_dependency_updates(
@@ -1215,6 +1760,7 @@ graph_update::graph_update(graph_update&& other) noexcept
       prepared_identity_size(other.prepared_identity_size),
       prepared_entities_size(other.prepared_entities_size),
       prepared_types_size(other.prepared_types_size),
+      prepared_type_layout_size(other.prepared_type_layout_size),
       prepared_named_type_refs_size(other.prepared_named_type_refs_size),
       prepared_type_dependencies_size(other.prepared_type_dependencies_size),
       prepared_reverse_type_dependents_size(
@@ -1299,6 +1845,7 @@ graph::candidate_type_slot& graph_update::touch_type(std::uint32_t handle) {
         slot.enum_definition_source = {};
         slot.enum_definition = {};
         slot.named_ref = {};
+        slot.layout_update = 0;
 
         changed_types.push_back(handle);
     }
@@ -4917,6 +5464,777 @@ status graph_update::rebuild_canonical_type_table() noexcept {
     }
 }
 
+status graph_update::build_rebuild_layout() noexcept {
+    if (!full_reconstruction) {
+        return {};
+    }
+
+    try {
+        rebuilt_type_layout_records.assign(
+            rebuilt_types.size(),
+            type_layout_record{});
+
+        rebuilt_member_layout_records.assign(
+            rebuilt_member_records.size(),
+            member_layout_record{});
+
+        std::vector<std::uint8_t> state(
+            rebuilt_types.size(),
+            0);
+
+        const auto compute_handle =
+            [&](auto&& self,
+                std::uint32_t handle) -> status {
+                if (handle == 0 ||
+                    handle > rebuilt_types.size() ||
+                    !rebuilt_types[handle - 1]) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                auto& visit = state[handle - 1];
+
+                if (visit == 2) {
+                    return {};
+                }
+
+                if (visit == 1) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                visit = 1;
+
+                const auto& storage =
+                    *rebuilt_types[handle - 1];
+
+                if (storage.record.kind ==
+                    user_type_kind::enumeration) {
+                    type_layout_record value;
+
+                    if (!builtin_storage_layout(
+                            storage.record.enumeration.underlying,
+                            owner->abi_config,
+                            value)) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    rebuilt_type_layout_records[handle - 1] = value;
+                    visit = 2;
+                    return {};
+                }
+
+                if (storage.record.kind !=
+                    user_type_kind::aggregate) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                if (!storage.record.definition) {
+                    rebuilt_type_layout_records[handle - 1] = {};
+                    visit = 2;
+                    return {};
+                }
+
+                const auto begin =
+                    static_cast<std::size_t>(
+                        storage.record.definition.begin - 1);
+                const auto count =
+                    static_cast<std::size_t>(
+                        storage.record.definition.count);
+
+                if (begin > rebuilt_member_records.size() ||
+                    count > rebuilt_member_records.size() - begin) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                const auto resolve_type =
+                    [&](TypeRef initial,
+                        type_layout_record& output) -> status {
+                        output = {};
+
+                        if (!initial ||
+                            initial.value() >= rebuilt_canonical_types.size()) {
+                            return {status_code::configuration_failed};
+                        }
+
+                        std::uint64_t array_multiplier = 1;
+                        auto current = initial;
+
+                        for (std::size_t depth = 0;
+                             depth < rebuilt_canonical_types.size();
+                             ++depth) {
+                            if (!current ||
+                                current.value() >= rebuilt_canonical_types.size()) {
+                                return {status_code::configuration_failed};
+                            }
+
+                            const auto& record =
+                                rebuilt_canonical_types[current.value()];
+
+                            type_layout_record base;
+
+                            if (record.kind ==
+                                canonical_type_kind::builtin) {
+                                if (!builtin_storage_layout(
+                                        record.builtin,
+                                        owner->abi_config,
+                                        base)) {
+                                    return {status_code::configuration_failed};
+                                }
+                            }
+                            else if (record.kind ==
+                                     canonical_type_kind::named) {
+                                const auto result =
+                                    self(self, record.named.value());
+
+                                if (!result.ok() ||
+                                    !record.named ||
+                                    record.named.value() >
+                                        rebuilt_type_layout_records.size() ||
+                                    !rebuilt_type_layout_records[
+                                        record.named.value() - 1]) {
+                                    return {status_code::configuration_failed};
+                                }
+
+                                base =
+                                    rebuilt_type_layout_records[
+                                        record.named.value() - 1];
+                            }
+                            else if (record.kind ==
+                                     canonical_type_kind::derived) {
+                                if (record.derived.kind ==
+                                    derived_type_kind::array) {
+                                    if (record.derived.payload == 0 ||
+                                        !checked_multiply_layout(
+                                            array_multiplier,
+                                            record.derived.payload,
+                                            array_multiplier)) {
+                                        return {status_code::configuration_failed};
+                                    }
+
+                                    current = record.derived.child;
+                                    continue;
+                                }
+
+                                if (record.derived.kind ==
+                                        derived_type_kind::pointer ||
+                                    record.derived.kind ==
+                                        derived_type_kind::lvalue_reference ||
+                                    record.derived.kind ==
+                                        derived_type_kind::rvalue_reference) {
+                                    base = {8, 8};
+                                }
+                                else {
+                                    return {status_code::configuration_failed};
+                                }
+                            }
+                            else {
+                                return {status_code::configuration_failed};
+                            }
+
+                            if (!checked_multiply_layout(
+                                    base.size,
+                                    array_multiplier,
+                                    output.size)) {
+                                return {status_code::configuration_failed};
+                            }
+
+                            output.alignment = base.alignment;
+                            return {};
+                        }
+
+                        return {status_code::configuration_failed};
+                    };
+
+                if (count == 0) {
+                    rebuilt_type_layout_records[handle - 1] = {1, 1};
+                    visit = 2;
+                    return {};
+                }
+
+                std::uint64_t offset = 0;
+                std::uint32_t aggregate_alignment = 1;
+
+                for (std::size_t index = 0;
+                     index < count;
+                     ++index) {
+                    type_layout_record member_value;
+
+                    const auto result =
+                        resolve_type(
+                            rebuilt_member_records[begin + index].type,
+                            member_value);
+
+                    if (!result.ok() || !member_value) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    const auto member_alignment =
+                        (std::min)(
+                            member_value.alignment,
+                            owner->abi_config.pack);
+
+                    std::uint64_t aligned = 0;
+
+                    if (!align_layout_offset(
+                            offset,
+                            member_alignment,
+                            aligned)) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    rebuilt_member_layout_records[
+                        begin + index].offset = aligned;
+
+                    if (aligned >
+                        (std::numeric_limits<std::uint64_t>::max)() -
+                            member_value.size) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    offset = aligned + member_value.size;
+                    aggregate_alignment =
+                        (std::max)(
+                            aggregate_alignment,
+                            member_alignment);
+                }
+
+                std::uint64_t size = 0;
+
+                if (!align_layout_offset(
+                        offset,
+                        aggregate_alignment,
+                        size) ||
+                    size == 0) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                rebuilt_type_layout_records[handle - 1] = {
+                    size,
+                    aggregate_alignment
+                };
+
+                visit = 2;
+                return {};
+            };
+
+        for (std::uint32_t handle = 1;
+             handle <= rebuilt_types.size();
+             ++handle) {
+            if (!rebuilt_types[handle - 1]) {
+                continue;
+            }
+
+            const auto result =
+                compute_handle(
+                    compute_handle,
+                    handle);
+
+            if (!result.ok()) {
+                return result;
+            }
+        }
+
+        return {};
+    }
+    catch (...) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+}
+
+status graph_update::prepare_incremental_layout_updates() noexcept {
+    if (full_reconstruction) {
+        return {};
+    }
+
+    try {
+        // A changed type can alter the ABI layout of every aggregate that embeds
+        // it by value. Reuse the existing generation-tagged candidate slots as
+        // the sparse visited set; no project-sized clear/map/sort is required.
+        for (std::size_t position = 0;
+             position < changed_types.size();
+             ++position) {
+            const auto handle =
+                changed_types[position];
+
+            if (handle == 0 ||
+                handle >= owner->reverse_type_dependents.size()) {
+                continue;
+            }
+
+            for (const auto dependent :
+                 owner->reverse_type_dependents[handle]) {
+                if (dependent != 0) {
+                    static_cast<void>(touch_type(dependent));
+                }
+            }
+        }
+
+        prepared_type_layout_updates.clear();
+        prepared_type_layout_updates.reserve(
+            changed_types.size());
+
+        const auto ensure_update =
+            [&](std::uint32_t handle) -> std::size_t {
+                auto& candidate =
+                    owner->candidate_types[handle];
+
+                if (candidate.layout_update == 0) {
+                    prepared_type_layout_updates.push_back({});
+                    candidate.layout_update =
+                        static_cast<std::uint32_t>(
+                            prepared_type_layout_updates.size());
+                    prepared_type_layout_updates.back().handle = handle;
+                }
+
+                return static_cast<std::size_t>(
+                    candidate.layout_update - 1);
+            };
+
+        const auto canonical_record =
+            [&](TypeRef type) noexcept
+                -> const graph::canonical_type_record* {
+                if (!type) {
+                    return nullptr;
+                }
+
+                const auto raw =
+                    static_cast<std::size_t>(
+                        type.value());
+
+                if (raw < owner->canonical_types.size()) {
+                    return &owner->canonical_types[raw];
+                }
+
+                const auto offset =
+                    raw - owner->canonical_types.size();
+
+                return offset < added_canonical_types.size()
+                    ? &added_canonical_types[offset]
+                    : nullptr;
+            };
+
+        const auto compute_handle =
+            [&](auto&& self,
+                std::uint32_t handle) -> status {
+                if (handle == 0 ||
+                    handle >= owner->candidate_types.size()) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                auto& candidate =
+                    owner->candidate_types[handle];
+
+                if (candidate.generation != candidate_generation) {
+                    if (handle > owner->type_layout_records.size() ||
+                        !owner->type_layout_records[handle - 1]) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    return {};
+                }
+
+                const auto update_index =
+                    ensure_update(handle);
+
+                auto state =
+                    prepared_type_layout_updates[
+                        update_index].state;
+
+                if (state == 2) {
+                    return {};
+                }
+
+                if (state == 1) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                prepared_type_layout_updates[
+                    update_index].state = 1;
+
+                if (candidate.kind ==
+                    candidate_type_kind::removed) {
+                    prepared_type_layout_updates[
+                        update_index].layout = {};
+                    prepared_type_layout_updates[
+                        update_index].members.clear();
+                    prepared_type_layout_updates[
+                        update_index].state = 2;
+                    return {};
+                }
+
+                const graph::type_storage* storage = nullptr;
+                const graph::type_build_state* build = nullptr;
+                bool replacement = false;
+
+                if (candidate.kind ==
+                    candidate_type_kind::replacement) {
+                    if (!candidate.value) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    storage = &*candidate.value;
+                    build = candidate.build.get();
+                    replacement = true;
+                }
+                else {
+                    if (handle > owner->types.size() ||
+                        !owner->types[handle - 1]) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    storage = &*owner->types[handle - 1];
+                }
+
+                if (storage->record.kind ==
+                    user_type_kind::enumeration) {
+                    type_layout_record value;
+
+                    if (!builtin_storage_layout(
+                            storage->record.enumeration.underlying,
+                            owner->abi_config,
+                            value)) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    prepared_type_layout_updates[
+                        update_index].layout = value;
+                    prepared_type_layout_updates[
+                        update_index].members.clear();
+                    prepared_type_layout_updates[
+                        update_index].state = 2;
+                    return {};
+                }
+
+                if (storage->record.kind !=
+                    user_type_kind::aggregate) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                std::span<const member_record> members;
+
+                if (replacement) {
+                    if (!build) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    if (!build->definition_pending) {
+                        prepared_type_layout_updates[
+                            update_index].layout = {};
+                        prepared_type_layout_updates[
+                            update_index].members.clear();
+                        prepared_type_layout_updates[
+                            update_index].state = 2;
+                        return {};
+                    }
+
+                    members = build->members;
+                }
+                else {
+                    if (!storage->record.definition) {
+                        prepared_type_layout_updates[
+                            update_index].layout = {};
+                        prepared_type_layout_updates[
+                            update_index].members.clear();
+                        prepared_type_layout_updates[
+                            update_index].state = 2;
+                        return {};
+                    }
+
+                    const auto begin =
+                        static_cast<std::size_t>(
+                            storage->record.definition.begin - 1);
+                    const auto count =
+                        static_cast<std::size_t>(
+                            storage->record.definition.count);
+
+                    if (begin > owner->member_records.size() ||
+                        count > owner->member_records.size() - begin) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    members = {
+                        owner->member_records.data() + begin,
+                        count
+                    };
+                }
+
+                auto& update =
+                    prepared_type_layout_updates[
+                        update_index];
+
+                update.members.assign(
+                    members.size(),
+                    member_layout_record{});
+
+                if (members.empty()) {
+                    update.layout = {1, 1};
+                    update.state = 2;
+                    return {};
+                }
+
+                const auto resolve_type =
+                    [&](TypeRef initial,
+                        type_layout_record& output) -> status {
+                        output = {};
+
+                        std::uint64_t array_multiplier = 1;
+                        auto current = initial;
+
+                        const auto canonical_limit =
+                            owner->canonical_types.size() +
+                            added_canonical_types.size();
+
+                        for (std::size_t depth = 0;
+                             depth < canonical_limit;
+                             ++depth) {
+                            const auto* record =
+                                canonical_record(current);
+
+                            if (!record) {
+                                return {status_code::configuration_failed};
+                            }
+
+                            type_layout_record base;
+
+                            if (record->kind ==
+                                canonical_type_kind::builtin) {
+                                if (!builtin_storage_layout(
+                                        record->builtin,
+                                        owner->abi_config,
+                                        base)) {
+                                    return {status_code::configuration_failed};
+                                }
+                            }
+                            else if (record->kind ==
+                                     canonical_type_kind::named) {
+                                if (!record->named) {
+                                    return {status_code::configuration_failed};
+                                }
+
+                                const auto named_handle =
+                                    record->named.value();
+
+                                if (named_handle <
+                                        owner->candidate_types.size() &&
+                                    owner->candidate_types[named_handle].generation ==
+                                        candidate_generation) {
+                                    const auto result =
+                                        self(self, named_handle);
+
+                                    if (!result.ok()) {
+                                        return result;
+                                    }
+
+                                    const auto named_update =
+                                        owner->candidate_types[
+                                            named_handle].layout_update;
+
+                                    if (named_update == 0 ||
+                                        named_update >
+                                            prepared_type_layout_updates.size() ||
+                                        !prepared_type_layout_updates[
+                                            named_update - 1].layout) {
+                                        return {status_code::configuration_failed};
+                                    }
+
+                                    base =
+                                        prepared_type_layout_updates[
+                                            named_update - 1].layout;
+                                }
+                                else {
+                                    if (named_handle == 0 ||
+                                        named_handle >
+                                            owner->type_layout_records.size() ||
+                                        !owner->type_layout_records[
+                                            named_handle - 1]) {
+                                        return {status_code::configuration_failed};
+                                    }
+
+                                    base =
+                                        owner->type_layout_records[
+                                            named_handle - 1];
+                                }
+                            }
+                            else if (record->kind ==
+                                     canonical_type_kind::derived) {
+                                if (record->derived.kind ==
+                                    derived_type_kind::array) {
+                                    if (record->derived.payload == 0 ||
+                                        !checked_multiply_layout(
+                                            array_multiplier,
+                                            record->derived.payload,
+                                            array_multiplier)) {
+                                        return {status_code::configuration_failed};
+                                    }
+
+                                    current = record->derived.child;
+                                    continue;
+                                }
+
+                                if (record->derived.kind ==
+                                        derived_type_kind::pointer ||
+                                    record->derived.kind ==
+                                        derived_type_kind::lvalue_reference ||
+                                    record->derived.kind ==
+                                        derived_type_kind::rvalue_reference) {
+                                    base = {8, 8};
+                                }
+                                else {
+                                    return {status_code::configuration_failed};
+                                }
+                            }
+                            else {
+                                return {status_code::configuration_failed};
+                            }
+
+                            if (!checked_multiply_layout(
+                                    base.size,
+                                    array_multiplier,
+                                    output.size)) {
+                                return {status_code::configuration_failed};
+                            }
+
+                            output.alignment = base.alignment;
+                            return {};
+                        }
+
+                        return {status_code::configuration_failed};
+                    };
+
+                std::uint64_t offset = 0;
+                std::uint32_t aggregate_alignment = 1;
+
+                for (std::size_t index = 0;
+                     index < members.size();
+                     ++index) {
+                    type_layout_record member_value;
+
+                    const auto result =
+                        resolve_type(
+                            members[index].type,
+                            member_value);
+
+                    if (!result.ok() || !member_value) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    const auto member_alignment =
+                        (std::min)(
+                            member_value.alignment,
+                            owner->abi_config.pack);
+
+                    std::uint64_t aligned = 0;
+
+                    if (!align_layout_offset(
+                            offset,
+                            member_alignment,
+                            aligned)) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    prepared_type_layout_updates[
+                        update_index].members[index].offset = aligned;
+
+                    if (aligned >
+                        (std::numeric_limits<std::uint64_t>::max)() -
+                            member_value.size) {
+                        return failure = {
+                            status_code::configuration_failed
+                        };
+                    }
+
+                    offset = aligned + member_value.size;
+                    aggregate_alignment =
+                        (std::max)(
+                            aggregate_alignment,
+                            member_alignment);
+                }
+
+                std::uint64_t size = 0;
+
+                if (!align_layout_offset(
+                        offset,
+                        aggregate_alignment,
+                        size) ||
+                    size == 0) {
+                    return failure = {
+                        status_code::configuration_failed
+                    };
+                }
+
+                prepared_type_layout_updates[
+                    update_index].layout = {
+                        size,
+                        aggregate_alignment
+                    };
+
+                prepared_type_layout_updates[
+                    update_index].state = 2;
+
+                return {};
+            };
+
+        for (const auto handle : changed_types) {
+            const auto result =
+                compute_handle(
+                    compute_handle,
+                    handle);
+
+            if (!result.ok()) {
+                return result;
+            }
+        }
+
+        return {};
+    }
+    catch (...) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+}
+
 status graph_update::collect_rebuild_string_retention(
     std::size_t candidate_string_slots,
     std::vector<std::uint8_t>& retained) const noexcept {
@@ -5316,6 +6634,11 @@ status graph_update::prepare_publish(const source_manager_update& sources,
                 return result;
             }
 
+            result = build_rebuild_layout();
+            if (!result.ok()) {
+                return result;
+            }
+
             result = build_rebuild_construction();
             if (!result.ok()) {
                 return result;
@@ -5344,6 +6667,12 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             reserve_sparse_capacity(rebuilt_member_records, rebuilt_member_records.size());
             reserve_sparse_capacity(rebuilt_enum_value_records, rebuilt_enum_value_records.size());
             reserve_sparse_capacity(
+                rebuilt_type_layout_records,
+                rebuilt_type_layout_records.size());
+            reserve_sparse_capacity(
+                rebuilt_member_layout_records,
+                rebuilt_member_layout_records.size());
+            reserve_sparse_capacity(
                 rebuilt_static_object_records,
                 rebuilt_static_object_records.size());
             reserve_sparse_capacity(
@@ -5371,9 +6700,25 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             if (!result.ok()) {
                 return result;
             }
+
+            result = prepare_incremental_layout_updates();
+
+            if (!result.ok()) {
+                return result;
+            }
+
+            if (owner->member_layout_records.size() !=
+                owner->member_records.size()) {
+                return failure = {
+                    status_code::invalid_state
+                };
+            }
+
             prepared_identity_size = owner->identity.size();
             prepared_entities_size = owner->entities.size();
             prepared_types_size = owner->types.size();
+            prepared_type_layout_size =
+                owner->type_layout_records.size();
             prepared_named_type_refs_size = owner->named_type_refs.size();
             prepared_type_dependencies_size = owner->type_dependencies.size();
             prepared_reverse_type_dependents_size =
@@ -5408,6 +6753,14 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             const auto needed_types = next_type_slot - 1;
 
             grow_sparse_vector(owner->types, needed_types);
+            grow_sparse_vector(
+                owner->type_layout_records,
+                needed_types);
+
+            ensure_sparse_capacity(
+                owner->member_layout_records,
+                owner->member_layout_records.size() +
+                    added_member_count);
 
             ensure_sparse_capacity(
                 owner->member_records,
@@ -5500,6 +6853,10 @@ void graph_update::publish_prepared() noexcept {
         owner->types.swap(rebuilt_types);
         owner->member_records.swap(rebuilt_member_records);
         owner->enum_value_records.swap(rebuilt_enum_value_records);
+        owner->type_layout_records.swap(
+            rebuilt_type_layout_records);
+        owner->member_layout_records.swap(
+            rebuilt_member_layout_records);
         owner->static_object_records.swap(
             rebuilt_static_object_records);
         owner->construction_binding_records.swap(
@@ -5582,6 +6939,11 @@ void graph_update::publish_prepared() noexcept {
                             candidate.build->members.begin()),
                         std::make_move_iterator(
                             candidate.build->members.end()));
+
+                    owner->member_layout_records.insert(
+                        owner->member_layout_records.end(),
+                        candidate.value->record.definition.count,
+                        member_layout_record{});
                 }
             }
             else if (candidate.enum_definition) {
@@ -5633,6 +6995,56 @@ void graph_update::publish_prepared() noexcept {
         }
     }
 
+    for (const auto& update :
+         prepared_type_layout_updates) {
+        if (update.handle == 0 ||
+            update.handle > owner->type_layout_records.size()) {
+            assert(false);
+            continue;
+        }
+
+        owner->type_layout_records[
+            update.handle - 1] = update.layout;
+
+        if (update.members.empty()) {
+            continue;
+        }
+
+        if (update.handle > owner->types.size() ||
+            !owner->types[update.handle - 1]) {
+            assert(false);
+            continue;
+        }
+
+        const auto& type =
+            *owner->types[update.handle - 1];
+
+        if (type.record.kind !=
+                user_type_kind::aggregate ||
+            !type.record.definition ||
+            type.record.definition.count !=
+                update.members.size()) {
+            assert(false);
+            continue;
+        }
+
+        const auto begin =
+            static_cast<std::size_t>(
+                type.record.definition.begin - 1);
+
+        if (begin > owner->member_layout_records.size() ||
+            update.members.size() >
+                owner->member_layout_records.size() - begin) {
+            assert(false);
+            continue;
+        }
+
+        std::copy(
+            update.members.begin(),
+            update.members.end(),
+            owner->member_layout_records.begin() + begin);
+    }
+
     owner->canonical_types.insert(
             owner->canonical_types.end(),
             added_canonical_types.begin(),
@@ -5678,6 +7090,12 @@ void graph_update::rollback_prepared_owner_growth() noexcept {
 
     if (owner->types.size() > prepared_types_size) {
         owner->types.resize(prepared_types_size);
+    }
+
+    if (owner->type_layout_records.size() >
+        prepared_type_layout_size) {
+        owner->type_layout_records.resize(
+            prepared_type_layout_size);
     }
 
     if (owner->named_type_refs.size() >

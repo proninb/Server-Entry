@@ -225,6 +225,31 @@ struct member_record {
 
 static_assert(sizeof(member_record) == 8);
 
+// Cold ABI layout for one committed user type. A zero size/alignment pair is
+// the only unavailable-layout state and is valid for incomplete aggregates.
+struct type_layout_record {
+    std::uint64_t size = 0;
+    std::uint32_t alignment = 0;
+
+    [[nodiscard]] constexpr bool valid() const noexcept {
+        return size != 0 && alignment != 0;
+    }
+
+    [[nodiscard]] constexpr explicit operator bool() const noexcept {
+        return valid();
+    }
+};
+
+static_assert(sizeof(type_layout_record) == 16);
+
+// Cold byte offset parallel to member_record. Offsets are 64-bit because array
+// extents and aggregate sizes are already represented with 64-bit quantities.
+struct member_layout_record {
+    std::uint64_t offset = 0;
+};
+
+static_assert(sizeof(member_layout_record) == 8);
+
 // Canonical source-local static storage used by declarative construction.
 // It has no Project-global stable_id; the one-based arena coordinate is valid
 // only inside this committed Graph generation.
@@ -328,6 +353,22 @@ public:
     [[nodiscard]] std::span<const construction_binding_record>
         construction_bindings(type_handle handle) const noexcept;
 
+    // Returns the canonical generation-local TypeRef for an already committed
+    // type. These are read-only semantic queries for post-G0 construction.
+    [[nodiscard]] TypeRef type_ref(type_handle handle) const noexcept;
+    [[nodiscard]] TypeRef type_ref(builtin_type type) const noexcept;
+
+    [[nodiscard]] const type_layout_record* layout(
+        type_handle handle) const noexcept;
+
+    [[nodiscard]] bool layout(
+        TypeRef type,
+        type_layout_record& output) const noexcept;
+
+    [[nodiscard]] const member_layout_record* member_layout(
+        type_handle handle,
+        member_index index) const noexcept;
+
     [[nodiscard]] canonical_type_kind kind(TypeRef type) const noexcept;
     [[nodiscard]] bool builtin(TypeRef type, builtin_type& output) const noexcept;
     [[nodiscard]] bool named(TypeRef type, type_handle& output) const noexcept;
@@ -397,6 +438,7 @@ private:
     };
 
     [[nodiscard]] status rebuild_dependency_index() noexcept;
+    [[nodiscard]] status rebuild_layout_sidecars() noexcept;
 
     friend class graph_update;
     friend class graph_build_transaction_test_access;
@@ -416,6 +458,11 @@ private:
     // ranges into exactly one arena selected by TypeEntry::kind.
     std::vector<member_record> member_records;
     std::vector<enum_value_record> enum_value_records;
+
+    // Reconstructable ABI layout sidecars. Type layout is indexed directly by
+    // type_handle - 1; member layout is parallel to the append-only member arena.
+    std::vector<type_layout_record> type_layout_records;
+    std::vector<member_layout_record> member_layout_records;
 
     // Cold construction semantics kept outside hot Entity/Type records.
     std::vector<static_object_record> static_object_records;
@@ -749,6 +796,8 @@ private:
     [[nodiscard]] status prepare_full_reconstruction() noexcept;
     [[nodiscard]] status rebuild_canonical_type_table() noexcept;
     [[nodiscard]] status build_rebuild_storage() noexcept;
+    [[nodiscard]] status build_rebuild_layout() noexcept;
+    [[nodiscard]] status prepare_incremental_layout_updates() noexcept;
     [[nodiscard]] status resolve_pending_construction() noexcept;
     [[nodiscard]] status build_rebuild_construction() noexcept;
 
@@ -786,6 +835,8 @@ private:
     // reclaimed without remapping TypeEntry ranges during Gn -> Gn+1 updates.
     std::vector<member_record> rebuilt_member_records;
     std::vector<enum_value_record> rebuilt_enum_value_records;
+    std::vector<type_layout_record> rebuilt_type_layout_records;
+    std::vector<member_layout_record> rebuilt_member_layout_records;
 
     struct pending_static_object {
         std::optional<builtin_type> builtin;
@@ -831,6 +882,16 @@ private:
         TypeRef,
         graph::derived_type_key_hash> added_derived_type_index;
 
+    struct prepared_type_layout_update {
+        std::uint32_t handle = 0;
+        std::uint8_t state = 0;
+        type_layout_record layout{};
+        std::vector<member_layout_record> members;
+    };
+
+    std::vector<prepared_type_layout_update>
+        prepared_type_layout_updates;
+
     struct dependency_list_update {
         std::uint32_t handle = 0;
         std::vector<std::uint32_t> values;
@@ -842,6 +903,7 @@ private:
     std::size_t prepared_identity_size = 0;
     std::size_t prepared_entities_size = 0;
     std::size_t prepared_types_size = 0;
+    std::size_t prepared_type_layout_size = 0;
     std::size_t prepared_named_type_refs_size = 0;
     std::size_t prepared_type_dependencies_size = 0;
     std::size_t prepared_reverse_type_dependents_size = 0;

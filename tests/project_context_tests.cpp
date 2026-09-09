@@ -4,6 +4,8 @@
 #include "../server_entry/metrics/metrics_store.hpp"
 
 #include <chrono>
+#include <cstdint>
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
@@ -121,7 +123,7 @@ bool test_full_project_load() {
             project,
             log,
             metrics,
-            R"({"path":"main.cpp","role":"source"})",
+            R"({"path":"main.cpp","role":"type"})",
             "main.cpp",
             "enum Mode : int { Ready = 1 };",
             1)) {
@@ -173,7 +175,7 @@ bool test_parser_failure_is_fail_closed() {
 
     const auto configuration =
         project_document(
-            R"({"path":"main.cpp","role":"source"})");
+            R"({"path":"main.cpp","role":"type"})");
 
     if (!files.write("project.json", configuration) ||
         !files.write(
@@ -206,7 +208,7 @@ bool test_no_change_is_o1_frontend() {
 
     const auto configuration =
         project_document(
-            R"({"path":"a.cpp","role":"source"},{"path":"b.cpp","role":"source"})");
+            R"({"path":"a.cpp","role":"type"},{"path":"b.cpp","role":"type"})");
 
     if (!files.write("project.json", configuration) ||
         !files.write(
@@ -251,7 +253,7 @@ bool test_sparse_independent_rebuild() {
 
     const auto configuration =
         project_document(
-            R"({"path":"a.cpp","role":"source"},{"path":"b.cpp","role":"source"})");
+            R"({"path":"a.cpp","role":"type"},{"path":"b.cpp","role":"type"})");
 
     if (!files.write("project.json", configuration) ||
         !files.write("a.cpp", "enum A : int { ValueA = 1 };") ||
@@ -309,7 +311,7 @@ bool test_dependent_closure_rebuild() {
 
     const auto configuration =
         project_document(
-            R"({"path":"root.cpp","role":"source"})");
+            R"({"path":"root.cpp","role":"type"})");
 
     if (!files.write("project.json", configuration) ||
         !files.write(
@@ -513,7 +515,7 @@ bool test_failed_incremental_recovers() {
             project,
             log,
             metrics,
-            R"({"path":"a.cpp","role":"source"})",
+            R"({"path":"a.cpp","role":"type"})",
             "a.cpp",
             "enum A : int { ValueA = 1 };",
             17)) {
@@ -522,7 +524,7 @@ bool test_failed_incremental_recovers() {
 
     if (!files.write(
             "a.cpp",
-            "enum A : int { ValueA = ; };")) {
+            "enum A : int { ValueA = ; }; // broken")) {
         return false;
     }
 
@@ -536,7 +538,7 @@ bool test_failed_incremental_recovers() {
 
     if (!files.write(
             "a.cpp",
-            "enum A : int { ValueA = 2 };")) {
+            "enum A : int { ValueA = 200 };")) {
         return false;
     }
 
@@ -545,6 +547,482 @@ bool test_failed_incremental_recovers() {
         log,
         metrics,
         20);
+}
+
+
+bool test_staged_type_then_implementation_load() {
+    temporary_project files;
+    logger log;
+    metrics_store metrics;
+    project_context project;
+
+    const auto configuration =
+        project_document(
+            R"({"path":"types.hpp","role":"type"},{"path":"main.cpp","role":"source"})");
+
+    if (!files.write("project.json", configuration) ||
+        !files.write(
+            "types.hpp",
+            "static int sA;\n"
+            "struct INT {\n"
+            "    int OUT;\n"
+            "    int& IN;\n"
+            "    INT() : IN(sA) {}\n"
+            "};\n") ||
+        !files.write(
+            "main.cpp",
+            "INT A, B;\n"
+            "A.OUT = 3;\n"
+            "B.IN = A.OUT;\n") ||
+        !project.initialize(
+            operation_id{21},
+            log,
+            metrics).ok() ||
+        !project.load_project(
+            files.path("project.json"),
+            operation_id{22},
+            log,
+            metrics).ok()) {
+        return false;
+    }
+
+    const runtime* execution = nullptr;
+
+    if (!project.runtime_access(execution).ok() ||
+        execution == nullptr) {
+        return false;
+    }
+
+    const auto implementation =
+        execution->implementation_sources();
+
+    if (implementation.size() != 1) {
+        return false;
+    }
+
+    const auto& facts = implementation[0];
+
+    if (facts.objects.size() != 2 ||
+        facts.operations.size() != 2) {
+        return false;
+    }
+
+    bool value_literal = false;
+    bool binding = false;
+
+    for (const auto& operation : facts.operations) {
+        value_literal =
+            value_literal ||
+            operation.kind ==
+                implementation_operation_kind::value_literal;
+
+        binding =
+            binding ||
+            operation.kind ==
+                implementation_operation_kind::binding;
+    }
+
+    return value_literal && binding;
+}
+
+bool test_implementation_failure_is_fail_closed() {
+    temporary_project files;
+    logger log;
+    metrics_store metrics;
+    project_context project;
+
+    const auto configuration =
+        project_document(
+            R"({"path":"types.hpp","role":"type"},{"path":"main.cpp","role":"source"})");
+
+    if (!files.write("project.json", configuration) ||
+        !files.write(
+            "types.hpp",
+            "struct INT { int OUT; };\n") ||
+        !files.write(
+            "main.cpp",
+            "Missing A;\n") ||
+        !project.initialize(
+            operation_id{23},
+            log,
+            metrics).ok()) {
+        return false;
+    }
+
+    const auto result = project.load_project(
+        files.path("project.json"),
+        operation_id{24},
+        log,
+        metrics);
+
+    const runtime* execution = nullptr;
+
+    return
+        !result.ok() &&
+        project.state() == project_state::error &&
+        !project.diagnostics().empty() &&
+        !project.runtime_access(execution).ok() &&
+        execution == nullptr;
+}
+
+bool test_sparse_implementation_rebuild() {
+    temporary_project files;
+    logger log;
+    metrics_store metrics;
+    project_context project;
+
+    const auto configuration =
+        project_document(
+            R"({"path":"types.hpp","role":"type"},{"path":"main.cpp","role":"source"})");
+
+    if (!files.write("project.json", configuration) ||
+        !files.write(
+            "types.hpp",
+            "struct INT { int OUT; };\n") ||
+        !files.write(
+            "main.cpp",
+            "INT A;\n"
+            "A.OUT = 3;\n") ||
+        !project.initialize(
+            operation_id{25},
+            log,
+            metrics).ok() ||
+        !project.load_project(
+            files.path("project.json"),
+            operation_id{26},
+            log,
+            metrics).ok() ||
+        !files.write(
+            "main.cpp",
+            "INT A;\n"
+            "A.OUT = 7;\n" "// changed size\n")) {
+        return false;
+    }
+
+    constexpr auto attempts = 200;
+    constexpr auto retry_delay =
+        std::chrono::milliseconds{5};
+
+    for (int attempt = 0;
+         attempt < attempts;
+         ++attempt) {
+        const auto result =
+            project.rebuild_sources(
+                operation_id{27},
+                log,
+                metrics);
+
+        if (!result.ok()) {
+            return false;
+        }
+
+        const auto summary =
+            project.last_frontend_summary();
+
+        if (summary.dirty == 1) {
+            const runtime* execution = nullptr;
+
+            if (!project.runtime_access(execution).ok() ||
+                execution == nullptr ||
+                summary.checked != 1 ||
+                summary.affected != 1 ||
+                summary.g0_commit_ns != 0) {
+                return false;
+            }
+
+            const auto sources =
+                execution->implementation_sources();
+
+            if (sources.size() != 1) {
+                return false;
+            }
+
+            for (const auto& literal :
+                 sources[0].literals) {
+                if (literal.kind ==
+                        implementation_literal_kind::integer &&
+                    literal.bits == 7) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        std::this_thread::sleep_for(retry_delay);
+    }
+
+    return false;
+}
+
+bool test_failed_sparse_implementation_rebuild_recovers() {
+    temporary_project files;
+    logger log;
+    metrics_store metrics;
+    project_context project;
+
+    const auto configuration =
+        project_document(
+            R"({"path":"types.hpp","role":"type"},{"path":"main.cpp","role":"source"})");
+
+    if (!files.write("project.json", configuration) ||
+        !files.write(
+            "types.hpp",
+            "struct INT { int OUT; };\n") ||
+        !files.write(
+            "main.cpp",
+            "INT A;\n"
+            "A.OUT = 1;\n") ||
+        !project.initialize(
+            operation_id{28},
+            log,
+            metrics).ok() ||
+        !project.load_project(
+            files.path("project.json"),
+            operation_id{29},
+            log,
+            metrics).ok() ||
+        !files.write(
+            "main.cpp",
+            "INT A;\n"
+            "A.BAD = 2;\n" "// broken implementation\n")) {
+        return false;
+    }
+
+    if (!wait_for_failed_incremental_rebuild(
+            project,
+            log,
+            metrics,
+            30)) {
+        return false;
+    }
+
+    if (!files.write(
+            "main.cpp",
+            "INT A;\n"
+            "A.OUT = 9;\n" "// recovered\n")) {
+        return false;
+    }
+
+    if (!wait_for_recovered_incremental_rebuild(
+            project,
+            log,
+            metrics,
+            31)) {
+        return false;
+    }
+
+    const runtime* execution = nullptr;
+
+    if (!project.runtime_access(execution).ok() ||
+        execution == nullptr) {
+        return false;
+    }
+
+    const auto sources =
+        execution->implementation_sources();
+
+    if (sources.size() != 1) {
+        return false;
+    }
+
+    for (const auto& literal : sources[0].literals) {
+        if (literal.kind ==
+                implementation_literal_kind::integer &&
+            literal.bits == 9) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+
+bool test_runtime_materialization_and_reference_binding() {
+    temporary_project files;
+    logger log;
+    metrics_store metrics;
+    project_context project;
+
+    const auto configuration =
+        project_document(
+            R"({"path":"types.hpp","role":"type"},{"path":"main.cpp","role":"source"})");
+
+    if (!files.write("project.json", configuration) ||
+        !files.write(
+            "types.hpp",
+            "static int sDefault;\n"
+            "struct INT {\n"
+            "    int& IN;\n"
+            "    int OUT;\n"
+            "    INT() : IN(sDefault) {}\n"
+            "};\n") ||
+        !files.write(
+            "main.cpp",
+            "INT A, B, C;\n"
+            "A.OUT = 3;\n"
+            "B.IN = A.OUT;\n") ||
+        !project.initialize(
+            operation_id{40},
+            log,
+            metrics).ok() ||
+        !project.load_project(
+            files.path("project.json"),
+            operation_id{41},
+            log,
+            metrics).ok()) {
+        return false;
+    }
+
+    const runtime* execution = nullptr;
+
+    if (!project.runtime_access(execution).ok() ||
+        execution == nullptr) {
+        return false;
+    }
+
+    const auto implementation =
+        execution->implementation_sources();
+
+    if (implementation.size() != 1 ||
+        implementation[0].objects.size() != 3) {
+        return false;
+    }
+
+    const auto source =
+        implementation[0].source;
+
+    runtime_storage_view a;
+    runtime_storage_view b;
+    runtime_storage_view c;
+    runtime_storage_view defaults;
+
+    if (!execution->object(source, 1, a).ok() ||
+        !execution->object(source, 2, b).ok() ||
+        !execution->object(source, 3, c).ok() ||
+        !execution->static_object(1, defaults).ok() ||
+        a.bytes.size() != 16 ||
+        b.bytes.size() != 16 ||
+        c.bytes.size() != 16 ||
+        defaults.bytes.size() != 4) {
+        return false;
+    }
+
+    std::int32_t value = 0;
+    std::uintptr_t bound = 0;
+    std::uintptr_t default_bound = 0;
+
+    std::memcpy(
+        &value,
+        a.bytes.data() + 8,
+        sizeof(value));
+
+    std::memcpy(
+        &bound,
+        b.bytes.data(),
+        sizeof(bound));
+
+    std::memcpy(
+        &default_bound,
+        c.bytes.data(),
+        sizeof(default_bound));
+
+    const auto expected_bound =
+        reinterpret_cast<std::uintptr_t>(
+            a.bytes.data() + 8);
+
+    const auto expected_default =
+        reinterpret_cast<std::uintptr_t>(
+            defaults.bytes.data());
+
+    if (value != 3 ||
+        bound != expected_bound ||
+        default_bound != expected_default ||
+        bound == expected_default) {
+        return false;
+    }
+
+    const auto* static_address =
+        defaults.bytes.data();
+
+    if (!files.write(
+            "main.cpp",
+            "INT A, B, C;\n"
+            "A.OUT = 7007; // force size-changing sparse rebuild\n"
+            "B.IN = A.OUT;\n")) {
+        return false;
+    }
+
+    constexpr auto attempts = 200;
+    constexpr auto retry_delay =
+        std::chrono::milliseconds{5};
+
+    for (int attempt = 0;
+         attempt < attempts;
+         ++attempt) {
+        const auto result =
+            project.rebuild_sources(
+                operation_id{42},
+                log,
+                metrics);
+
+        if (!result.ok()) {
+            return false;
+        }
+
+        const auto summary =
+            project.last_frontend_summary();
+
+        if (summary.dirty == 0) {
+            std::this_thread::sleep_for(
+                retry_delay);
+            continue;
+        }
+
+        if (summary.dirty != 1 ||
+            summary.checked != 1 ||
+            summary.affected != 1 ||
+            summary.g0_commit_ns != 0 ||
+            !project.runtime_access(execution).ok() ||
+            execution == nullptr ||
+            !execution->object(source, 1, a).ok() ||
+            !execution->object(source, 2, b).ok() ||
+            !execution->object(source, 3, c).ok() ||
+            !execution->static_object(1, defaults).ok()) {
+            return false;
+        }
+
+        value = 0;
+        bound = 0;
+        default_bound = 0;
+
+        std::memcpy(
+            &value,
+            a.bytes.data() + 8,
+            sizeof(value));
+
+        std::memcpy(
+            &bound,
+            b.bytes.data(),
+            sizeof(bound));
+
+        std::memcpy(
+            &default_bound,
+            c.bytes.data(),
+            sizeof(default_bound));
+
+        return
+            value == 7007 &&
+            bound ==
+                reinterpret_cast<std::uintptr_t>(
+                    a.bytes.data() + 8) &&
+            default_bound ==
+                reinterpret_cast<std::uintptr_t>(
+                    defaults.bytes.data()) &&
+            defaults.bytes.data() == static_address;
+    }
+
+    return false;
 }
 
 } // namespace
@@ -560,7 +1038,12 @@ int main() {
         {"no-change rebuild touches zero Sources", test_no_change_is_o1_frontend},
         {"dirty independent Source rebuild is O(K)", test_sparse_independent_rebuild},
         {"dirty Source dependent closure rebuild", test_dependent_closure_rebuild},
-        {"failed incremental Parser generation recovers", test_failed_incremental_recovers}
+        {"failed incremental Parser generation recovers", test_failed_incremental_recovers},
+        {"staged Type G0 then Implementation load", test_staged_type_then_implementation_load},
+        {"Implementation failure fail-closed", test_implementation_failure_is_fail_closed},
+        {"sparse Implementation rebuild keeps G0", test_sparse_implementation_rebuild},
+        {"failed sparse Implementation rebuild recovers", test_failed_sparse_implementation_rebuild_recovers},
+        {"Runtime materializes ABI storage and native reference bindings", test_runtime_materialization_and_reference_binding}
     };
 
     for (const auto& test : tests) {
