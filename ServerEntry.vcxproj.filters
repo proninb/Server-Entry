@@ -60,7 +60,7 @@
     <ClInclude Include="server_entry\operation.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\source_id.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\string_id.hpp"><Filter>server_entry</Filter></ClInclude>
-    <ClInclude Include="server_entry\stable_id.hpp"><Filter>server_entry</Filter></ClInclude>
+    <ClInclude Include="server_entry\type_id.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\type_handle.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\status.hpp"><Filter>server_entry</Filter></ClInclude>
     <ClInclude Include="server_entry\server_context.hpp"><Filter>server_entry</Filter></ClInclude>

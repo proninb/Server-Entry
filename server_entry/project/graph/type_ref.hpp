@@ -7,6 +7,7 @@ namespace cw::server {
 
 class graph;
 class graph_update;
+class graph_type_view;
 
 // Identifies one entry in the canonical TypeRef table of a committed Graph
 // generation. TypeRef is compact and generation-local; it is not stable Entity
@@ -44,6 +45,7 @@ private:
 
     friend class graph;
     friend class graph_update;
+    friend class graph_type_view;
 };
 
 static_assert(sizeof(TypeRef) == 4);

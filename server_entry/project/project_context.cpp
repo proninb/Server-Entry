@@ -686,7 +686,7 @@ status project_context::load_project(
 
     result = implementation.build(
         graphs.sources(),
-        graphs.compiled_graph(),
+        graphs.compiled_graph().type_view(),
         graphs.strings(),
         operation,
         diagnostic_records,
@@ -861,7 +861,7 @@ status project_context::rebuild_implementation_sources(
     auto result = implementation.rebuild(
         source_update,
         dirty_sources,
-        graphs.compiled_graph(),
+        graphs.compiled_graph().type_view(),
         graphs.strings(),
         operation,
         diagnostic_records,
@@ -1068,7 +1068,7 @@ status project_context::rebuild_sources(
 
     auto result = implementation.build(
         graphs.sources(),
-        graphs.compiled_graph(),
+        graphs.compiled_graph().type_view(),
         graphs.strings(),
         operation,
         diagnostic_records,

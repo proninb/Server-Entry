@@ -23,12 +23,12 @@ class implementation_parser final {
 public:
     implementation_parser(
         source_view source_value,
-        const graph& graph_value,
+        const graph_type_view& types_value,
         const string_registry& strings_value,
         operation_id operation_value,
         implementation_context& context_value) noexcept
         : source(source_value),
-          graph_state(graph_value),
+          types(types_value),
           strings(strings_value),
           operation(operation_value),
           context(context_value) {}
@@ -230,7 +230,7 @@ private:
                 qualified,
                 builtin)) {
             output =
-                graph_state.type_ref(builtin);
+                types.type_ref(builtin);
 
             return output
                 ? status{}
@@ -245,7 +245,7 @@ private:
 
         const auto* entity =
             name
-                ? graph_state.find(name)
+                ? types.find(name)
                 : nullptr;
 
         if (!entity) {
@@ -255,7 +255,7 @@ private:
         }
 
         output =
-            graph_state.type_ref(
+            types.type_ref(
                 entity->type);
 
         return output
@@ -309,7 +309,7 @@ private:
              depth != 64 && type;
              ++depth) {
             const auto* derived =
-                graph_state.derived(type);
+                types.derived(type);
 
             if (!derived ||
                 (derived->kind !=
@@ -336,24 +336,24 @@ private:
 
         builtin_type builtin;
 
-        if (graph_state.builtin(type, builtin)) {
+        if (types.builtin(type, builtin)) {
             return builtin != builtin_type::void_type;
         }
 
         if (const auto* derived =
-                graph_state.derived(type)) {
+                types.derived(type)) {
             return derived->kind ==
                 derived_type_kind::pointer;
         }
 
         type_handle named;
 
-        if (!graph_state.named(type, named)) {
+        if (!types.named(type, named)) {
             return false;
         }
 
         const auto* entry =
-            graph_state.find(named);
+            types.find(named);
 
         return entry &&
             entry->kind == user_type_kind::enumeration;
@@ -519,7 +519,7 @@ private:
                         value_type(current_type);
 
                     const auto* derived =
-                        graph_state.derived(
+                        types.derived(
                             indexed_type);
 
                     if (!derived ||
@@ -572,7 +572,7 @@ private:
                 type_handle owner;
 
                 if (!owner_type ||
-                    !graph_state.named(
+                    !types.named(
                         owner_type,
                         owner)) {
                     return fail(
@@ -581,7 +581,7 @@ private:
                 }
 
                 const auto* owner_entry =
-                    graph_state.find(owner);
+                    types.find(owner);
 
                 if (!owner_entry ||
                     owner_entry->kind !=
@@ -597,14 +597,14 @@ private:
 
                 const auto member =
                     member_name
-                        ? graph_state.find_member(
+                        ? types.find_member(
                               owner,
                               member_name)
                         : member_index{};
 
                 const auto* member_record =
                     member
-                        ? graph_state.member(
+                        ? types.member(
                               owner,
                               member)
                         : nullptr;
@@ -906,7 +906,7 @@ private:
 
             builtin_type builtin;
 
-            if (!graph_state.builtin(
+            if (!types.builtin(
                     value_type(path.type),
                     builtin) ||
                 builtin !=
@@ -924,7 +924,7 @@ private:
             value_type(path.type);
 
         const auto* derived =
-            graph_state.derived(
+            types.derived(
                 array_type);
 
         if (!derived ||
@@ -935,7 +935,7 @@ private:
 
         builtin_type builtin;
 
-        if (!graph_state.builtin(
+        if (!types.builtin(
                 value_type(derived->child),
                 builtin) ||
             builtin !=
@@ -970,14 +970,14 @@ private:
             value_type(target.type);
 
         if (!target_type ||
-            graph_state.derived(target_type)) {
+            types.derived(target_type)) {
             return false;
         }
 
         builtin_type builtin;
 
         return
-            graph_state.builtin(
+            types.builtin(
                 target_type,
                 builtin) &&
             is_integral(builtin);
@@ -1001,7 +1001,7 @@ private:
 
         const auto* target_derived =
             target.remaining_object_dimensions == 0
-                ? graph_state.derived(
+                ? types.derived(
                       target.type)
                 : nullptr;
 
@@ -1138,7 +1138,7 @@ private:
 
         builtin_type builtin;
 
-        if (graph_state.builtin(type, builtin) &&
+        if (types.builtin(type, builtin) &&
             builtin == builtin_type::void_type) {
             return fail(
                 diagnostics::implementation_type_mismatch,
@@ -1352,7 +1352,7 @@ private:
     }
 
     source_view source;
-    const graph& graph_state;
+    const graph_type_view& types;
     const string_registry& strings;
     operation_id operation;
     implementation_context& context;
@@ -1388,7 +1388,7 @@ status emit_initialization_failure(
 
 status parse_implementation_source(
     source_view source,
-    const graph& graph,
+    const graph_type_view& types,
     const string_registry& strings,
     operation_id operation,
     implementation_context& context) noexcept {
@@ -1415,7 +1415,7 @@ status parse_implementation_source(
     try {
         implementation_parser parser{
             source,
-            graph,
+            types,
             strings,
             operation,
             context

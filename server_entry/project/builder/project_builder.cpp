@@ -49,7 +49,7 @@ status build_enum_impl(
                     type);
         }
         else {
-            stable_id entity;
+            type_id entity;
 
             if constexpr (Detailed) {
                 result =
@@ -109,7 +109,7 @@ status build_aggregate_impl(
     const aggregate_source_fact& fact,
     project_builder_scratch& scratch) noexcept {
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     auto result =
@@ -340,7 +340,7 @@ status project_builder::build(
                             type);
                 }
                 else {
-                    stable_id entity{};
+                    type_id entity{};
 
                     result =
                         replacement.add_named_enum(

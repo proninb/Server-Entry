@@ -12,7 +12,7 @@ void add_defined_type(
     graph_build_transaction& tx,
     source_id source,
     string_id name,
-    stable_id& entity,
+    type_id& entity,
     type_handle& type) {
 
     graph_update::source_replacement replacement;
@@ -37,9 +37,9 @@ int main() {
     string_id name_b;
     string_id name_c;
 
-    stable_id a_id;
-    stable_id b_id;
-    stable_id c_id;
+    type_id a_id;
+    type_id b_id;
+    type_id c_id;
 
     {
         auto tx = manager.begin_build(graph_build_mode::rebuild);
@@ -101,8 +101,8 @@ int main() {
         auto tx = manager.begin_build(graph_build_mode::rebuild);
 
         assert(tx.strings().bind("C", name_c).ok());
-        stable_id rebuilt_a;
-        stable_id rebuilt_c;
+        type_id rebuilt_a;
+        type_id rebuilt_c;
         type_handle a_type;
         type_handle c_type;
 

@@ -117,7 +117,7 @@
     <ClInclude Include="server_entry\operation.hpp" />
     <ClInclude Include="server_entry\source_id.hpp" />
     <ClInclude Include="server_entry\string_id.hpp" />
-    <ClInclude Include="server_entry\stable_id.hpp" />
+    <ClInclude Include="server_entry\type_id.hpp" />
     <ClInclude Include="server_entry\type_handle.hpp" />
     <ClInclude Include="server_entry\status.hpp" />
     <ClInclude Include="server_entry\diagnostics\diagnostic.hpp" />

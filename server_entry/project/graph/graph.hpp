@@ -2,7 +2,7 @@
 
 #include "../../member_index.hpp"
 #include "../../source_id.hpp"
-#include "../../stable_id.hpp"
+#include "../../type_id.hpp"
 #include "../../status.hpp"
 #include "../../string_id.hpp"
 #include "../../type_handle.hpp"
@@ -165,7 +165,7 @@ enum class graph_build_mode : std::uint8_t {
     incremental
 };
 
-// Classifies the canonical Entity represented by one stable_id.
+// Classifies the canonical Entity represented by one type_id.
 enum class entity_kind : std::uint8_t {
     aggregate_type,
     enum_type
@@ -177,8 +177,8 @@ enum class user_type_kind : std::uint8_t {
     enumeration
 };
 
-// Canonical hot entry addressed directly by stable_id in the Project Entity namespace.
-// The stable_id is intentionally not duplicated inside the entry; an empty name
+// Canonical hot entry addressed directly by type_id in the Project Entity namespace.
+// The type_id is intentionally not duplicated inside the entry; an empty name
 // is the single tombstone state for an unoccupied historical identity slot.
 struct entity_entry {
     entity_kind kind = entity_kind::aggregate_type;
@@ -251,7 +251,7 @@ struct member_layout_record {
 static_assert(sizeof(member_layout_record) == 8);
 
 // Canonical source-local static storage used by declarative construction.
-// It has no Project-global stable_id; the one-based arena coordinate is valid
+// It has no Project-global type_id; the one-based arena coordinate is valid
 // only inside this committed Graph generation.
 struct static_object_record {
     TypeRef type{};
@@ -299,6 +299,74 @@ struct type_entry {
     definition_range definition{};
 };
 
+
+class graph;
+
+// Read-only capability over one complete canonical Type domain.
+// A candidate view is valid only after graph_update::seal_types() and before
+// final transaction preparation/publication. It never exposes Graph mutation.
+class graph_type_view final {
+public:
+    graph_type_view() noexcept = default;
+
+    [[nodiscard]] explicit operator bool() const noexcept;
+
+    [[nodiscard]] const entity_entry* find(string_id name) const noexcept;
+    [[nodiscard]] const entity_entry* find(type_id id) const noexcept;
+    [[nodiscard]] type_id find_id(string_id name) const noexcept;
+    [[nodiscard]] const type_entry* find(type_handle handle) const noexcept;
+
+    [[nodiscard]] std::span<const enum_value_record> enum_values(
+        type_handle handle) const noexcept;
+
+    [[nodiscard]] std::span<const member_record> members(
+        type_handle handle) const noexcept;
+
+    [[nodiscard]] const member_record* member(
+        type_handle handle,
+        member_index index) const noexcept;
+
+    [[nodiscard]] member_index find_member(
+        type_handle handle,
+        string_id name) const noexcept;
+
+    [[nodiscard]] TypeRef type_ref(type_handle handle) const noexcept;
+    [[nodiscard]] TypeRef type_ref(builtin_type type) const noexcept;
+
+    [[nodiscard]] bool builtin(
+        TypeRef type,
+        builtin_type& output) const noexcept;
+
+    [[nodiscard]] bool named(
+        TypeRef type,
+        type_handle& output) const noexcept;
+
+    [[nodiscard]] const derived_type_record* derived(
+        TypeRef type) const noexcept;
+
+    [[nodiscard]] const type_layout_record* layout(
+        type_handle handle) const noexcept;
+
+    [[nodiscard]] const member_layout_record* member_layout(
+        type_handle handle,
+        member_index index) const noexcept;
+
+private:
+    friend class graph;
+    friend class graph_update;
+
+    explicit graph_type_view(const graph& value) noexcept
+        : committed(&value) {}
+
+    explicit graph_type_view(const graph_update& value) noexcept
+        : candidate(&value) {}
+
+    [[nodiscard]] bool candidate_ready() const noexcept;
+
+    const graph* committed = nullptr;
+    const graph_update* candidate = nullptr;
+};
+
 // Owns the authoritative canonical compiled state G for one Project generation.
 // Graph owns stable Entity identity, generation-local type slots, canonical
 // TypeRefs and ABI-dependent canonical materialization. Build-side Source
@@ -319,9 +387,13 @@ public:
         graph_build_mode mode,
         source_contribution_cache_update& contributions) noexcept;
 
+    [[nodiscard]] graph_type_view type_view() const noexcept {
+        return graph_type_view{*this};
+    }
+
     [[nodiscard]] const entity_entry* find(string_id name) const noexcept;
-    [[nodiscard]] const entity_entry* find(stable_id id) const noexcept;
-    [[nodiscard]] stable_id find_id(string_id name) const noexcept;
+    [[nodiscard]] const entity_entry* find(type_id id) const noexcept;
+    [[nodiscard]] type_id find_id(string_id name) const noexcept;
     [[nodiscard]] const type_entry* find(type_handle handle) const noexcept;
 
     [[nodiscard]] std::span<const enum_value_record> enum_values(
@@ -441,6 +513,7 @@ private:
     [[nodiscard]] status rebuild_layout_sidecars() noexcept;
 
     friend class graph_update;
+    friend class graph_type_view;
     friend class graph_build_transaction_test_access;
 
     // type_handle is one-based; slot N addresses types[N - 1]. Incremental
@@ -448,11 +521,11 @@ private:
     // Thus old named/derived TypeRefs cannot acquire a different meaning.
     std::vector<std::optional<type_storage>> types;
 
-    // stable_id values directly index entities; slot zero is not a live Entity.
+    // type_id values directly index entities; slot zero is not a live Entity.
     std::vector<entity_slot> entities;
 
-    // Dense string_id -> stable_id identity index.
-    std::vector<stable_id> identity;
+    // Dense string_id -> type_id identity index.
+    std::vector<type_id> identity;
 
     // Append-only definition arenas. TypeEntry::definition stores one-based
     // ranges into exactly one arena selected by TypeEntry::kind.
@@ -482,7 +555,7 @@ private:
 
     std::size_t entity_count_value = 0;
     std::size_t user_type_count_value = 0;
-    std::uint32_t next_stable_id = 1;
+    std::uint32_t next_type_id = 1;
     // Generation is relative to the latest explicit Build/Rebuild: G0 is zero,
     // each incremental commit advances Gn -> Gn+1.
     std::uint64_t generation = 0;
@@ -523,13 +596,13 @@ public:
         [[nodiscard]] status add_named_enum(
             string_id name,
             const enum_build_data& data,
-            stable_id& entity,
+            type_id& entity,
             type_handle& type) noexcept;
 
         [[nodiscard]] status add_named_enum(
             string_id name,
             const enum_build_data& data,
-            stable_id& entity,
+            type_id& entity,
             type_handle& type,
             graph_named_enum_telemetry* telemetry) noexcept;
 
@@ -540,7 +613,7 @@ public:
         [[nodiscard]] status add_named_type(
             string_id name,
             aggregate_definition_state state,
-            stable_id& entity,
+            type_id& entity,
             type_handle& type) noexcept;
 
         [[nodiscard]] status define_members(
@@ -550,7 +623,7 @@ public:
 
         [[nodiscard]] status bind_source_entity(
             source_entity_ref reference,
-            stable_id entity) noexcept;
+            type_id entity) noexcept;
 
         [[nodiscard]] status resolve_type(
             source_entity_ref reference,
@@ -626,9 +699,23 @@ public:
         source_id source,
         source_replacement& replacement) noexcept;
 
+    // Finalizes the complete G0 Type domain without publishing Graph.
+    // After success all Type identities, TypeRefs, members and ABI layout
+    // are immutable and readable only through graph_type_view.
+    [[nodiscard]] status seal_types(
+        const source_manager_update& sources,
+        const string_registry_update& strings) noexcept;
+
+    [[nodiscard]] graph_type_view type_view() const noexcept {
+        return types_sealed && full_reconstruction &&
+               !prepared && !committed
+            ? graph_type_view{*this}
+            : graph_type_view{};
+    }
+
     [[nodiscard]] const entity_entry* find(string_id name) noexcept;
-    [[nodiscard]] const entity_entry* find(stable_id id) noexcept;
-    [[nodiscard]] stable_id find_id(string_id name) const noexcept;
+    [[nodiscard]] const entity_entry* find(type_id id) noexcept;
+    [[nodiscard]] type_id find_id(string_id name) const noexcept;
     [[nodiscard]] const type_entry* find(type_handle handle) noexcept;
 
     [[nodiscard]] std::span<const enum_value_record> enum_values(
@@ -641,6 +728,7 @@ public:
 
 private:
     friend class graph;
+    friend class graph_type_view;
     friend class graph_build_transaction;
     friend class graph_build_transaction_test_access;
 
@@ -658,7 +746,7 @@ private:
         source_id source,
         source_contribution_state& source_state,
         const enum_build_data& data,
-        stable_id& entity,
+        type_id& entity,
         type_handle& type,
         graph_named_enum_telemetry* telemetry = nullptr) noexcept;
 
@@ -667,7 +755,7 @@ private:
         source_id source,
         source_contribution_state& source_state,
         aggregate_definition_state state,
-        stable_id& entity,
+        type_id& entity,
         type_handle& type) noexcept;
 
     [[nodiscard]] status add_anonymous_enum_from_replacement(
@@ -683,6 +771,8 @@ private:
     [[nodiscard]] status prepare_publish(
         const source_manager_update& sources,
         const string_registry_update& strings) noexcept;
+
+    [[nodiscard]] status prepare_sealed_rebuild_publish() noexcept;
 
     graph_prepare_phase_telemetry prepare_telemetry{};
 
@@ -704,7 +794,7 @@ private:
         const source_contribution_record& contribution,
         bool& reconciled) noexcept;
 
-    [[nodiscard]] status remove_named_entity_for_testing(stable_id id) noexcept;
+    [[nodiscard]] status remove_named_entity_for_testing(type_id id) noexcept;
 
     [[nodiscard]] status build_contribution(
         source_contribution_state& state,
@@ -713,7 +803,7 @@ private:
 
     [[nodiscard]] status add_delta(
         source_id source,
-        stable_id id,
+        type_id id,
         const source_contribution_record& contribution) noexcept;
 
     [[nodiscard]] status remove_delta(
@@ -721,41 +811,41 @@ private:
         const source_contribution_record& contribution) noexcept;
 
     [[nodiscard]] status materialize(
-        stable_id id,
+        type_id id,
         string_id name) noexcept;
 
     [[nodiscard]] status materialize(
-        stable_id id,
+        type_id id,
         string_id name,
         type_handle& type) noexcept;
 
     [[nodiscard]] status materialize_sampled(
-        stable_id id,
+        type_id id,
         string_id name,
         type_handle& type,
         graph_named_enum_telemetry& telemetry) noexcept;
 
     template <bool Detailed>
     [[nodiscard]] status materialize_impl(
-        stable_id id,
+        type_id id,
         string_id name,
         type_handle* type,
         graph_named_enum_telemetry* telemetry) noexcept;
 
     [[nodiscard]] status assign_type(
-        stable_id id,
+        type_id id,
         graph::entity_slot& entity,
         graph::type_storage type) noexcept;
 
     [[nodiscard]] status assign_type_sampled(
-        stable_id id,
+        type_id id,
         graph::entity_slot& entity,
         graph::type_storage type,
         graph_named_enum_telemetry& telemetry) noexcept;
 
     template <bool Detailed>
     [[nodiscard]] status assign_type_impl(
-        stable_id id,
+        type_id id,
         graph::entity_slot& entity,
         graph::type_storage type,
         graph_named_enum_telemetry* telemetry) noexcept;
@@ -824,7 +914,7 @@ private:
     // Rebuild-only complete canonical storage. G0 is materialized into detached
     // arrays and publication swaps them into Graph in one operation; sparse
     // changed_* overlays remain an incremental Gn -> Gn+1 implementation detail.
-    std::vector<stable_id> rebuilt_identity;
+    std::vector<type_id> rebuilt_identity;
     std::vector<graph::entity_slot> rebuilt_entities;
     std::vector<std::optional<graph::type_storage>> rebuilt_types;
     std::size_t rebuilt_entity_count = 0;
@@ -909,7 +999,7 @@ private:
     std::size_t prepared_reverse_type_dependents_size = 0;
     bool prepared_owner_growth = false;
 
-    std::uint32_t next_stable_id = 1;
+    std::uint32_t next_type_id = 1;
     std::uint32_t next_type_slot = 1;
     std::uint64_t base_generation = 0;
     std::uint64_t candidate_generation = 0;
@@ -921,6 +1011,8 @@ private:
     bool retained_replacements_flushed = false;
 
     status failure{};
+    bool sealing_types = false;
+    bool types_sealed = false;
     bool prepared = false;
     bool committed = false;
 

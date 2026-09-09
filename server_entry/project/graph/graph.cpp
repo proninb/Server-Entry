@@ -335,6 +335,7 @@ std::size_t graph::derived_type_key_hash::operator()(const derived_type_key& key
 }
 
 
+
 // Transaction-local construction payload for one candidate type. This state is
 // discarded after publication and is never persisted or exposed to Runtime.
 struct graph::type_build_state {
@@ -350,7 +351,7 @@ struct graph::entity_slot {
 
 struct graph::candidate_identity_slot {
     std::uint64_t generation = 0;
-    stable_id value{};
+    type_id value{};
 };
 
 struct graph::candidate_entity_slot {
@@ -383,6 +384,305 @@ struct graph::candidate_type_slot {
     // Zero means this candidate slot has not participated in layout preparation.
     std::uint32_t layout_update = 0;
 };
+
+bool graph_type_view::candidate_ready() const noexcept {
+    return candidate &&
+        candidate->types_sealed &&
+        candidate->full_reconstruction &&
+        !candidate->prepared &&
+        !candidate->committed;
+}
+
+graph_type_view::operator bool() const noexcept {
+    return committed != nullptr || candidate_ready();
+}
+
+const entity_entry* graph_type_view::find(string_id name) const noexcept {
+    if (committed) {
+        return committed->find(name);
+    }
+
+    if (!candidate_ready() ||
+        !name ||
+        name.value() >= candidate->rebuilt_identity.size()) {
+        return nullptr;
+    }
+
+    return find(candidate->rebuilt_identity[name.value()]);
+}
+
+const entity_entry* graph_type_view::find(type_id id) const noexcept {
+    if (committed) {
+        return committed->find(id);
+    }
+
+    if (!candidate_ready() ||
+        !id ||
+        id.value() >= candidate->rebuilt_entities.size()) {
+        return nullptr;
+    }
+
+    const auto& entry =
+        candidate->rebuilt_entities[id.value()].record;
+
+    return entry.live() ? &entry : nullptr;
+}
+
+type_id graph_type_view::find_id(string_id name) const noexcept {
+    if (committed) {
+        return committed->find_id(name);
+    }
+
+    return candidate_ready() &&
+           name &&
+           name.value() < candidate->rebuilt_identity.size()
+        ? candidate->rebuilt_identity[name.value()]
+        : type_id{};
+}
+
+const type_entry* graph_type_view::find(type_handle handle) const noexcept {
+    if (committed) {
+        return committed->find(handle);
+    }
+
+    return candidate_ready() &&
+           handle &&
+           handle.value() <= candidate->rebuilt_types.size() &&
+           candidate->rebuilt_types[handle.value() - 1]
+        ? &candidate->rebuilt_types[handle.value() - 1]->record
+        : nullptr;
+}
+
+std::span<const enum_value_record> graph_type_view::enum_values(
+    type_handle handle) const noexcept {
+
+    if (committed) {
+        return committed->enum_values(handle);
+    }
+
+    const auto* type = find(handle);
+
+    if (!type ||
+        type->kind != user_type_kind::enumeration ||
+        !type->definition) {
+        return {};
+    }
+
+    const auto begin =
+        static_cast<std::size_t>(type->definition.begin - 1);
+    const auto count =
+        static_cast<std::size_t>(type->definition.count);
+
+    if (begin > candidate->rebuilt_enum_value_records.size() ||
+        count > candidate->rebuilt_enum_value_records.size() - begin) {
+        return {};
+    }
+
+    return {
+        candidate->rebuilt_enum_value_records.data() + begin,
+        count
+    };
+}
+
+std::span<const member_record> graph_type_view::members(
+    type_handle handle) const noexcept {
+
+    if (committed) {
+        return committed->members(handle);
+    }
+
+    const auto* type = find(handle);
+
+    if (!type ||
+        type->kind != user_type_kind::aggregate ||
+        !type->definition) {
+        return {};
+    }
+
+    const auto begin =
+        static_cast<std::size_t>(type->definition.begin - 1);
+    const auto count =
+        static_cast<std::size_t>(type->definition.count);
+
+    if (begin > candidate->rebuilt_member_records.size() ||
+        count > candidate->rebuilt_member_records.size() - begin) {
+        return {};
+    }
+
+    return {
+        candidate->rebuilt_member_records.data() + begin,
+        count
+    };
+}
+
+const member_record* graph_type_view::member(
+    type_handle handle,
+    member_index index) const noexcept {
+
+    const auto values = members(handle);
+
+    return index && index.value() <= values.size()
+        ? &values[index.value() - 1]
+        : nullptr;
+}
+
+member_index graph_type_view::find_member(
+    type_handle handle,
+    string_id name) const noexcept {
+
+    const auto values = members(handle);
+
+    for (std::uint32_t index = 0;
+         index < values.size();
+         ++index) {
+        if (values[index].name == name) {
+            return member_index{index + 1};
+        }
+    }
+
+    return {};
+}
+
+TypeRef graph_type_view::type_ref(type_handle handle) const noexcept {
+    if (committed) {
+        return committed->type_ref(handle);
+    }
+
+    return candidate_ready() &&
+           handle &&
+           handle.value() < candidate->rebuilt_named_type_refs.size()
+        ? candidate->rebuilt_named_type_refs[handle.value()]
+        : TypeRef{};
+}
+
+TypeRef graph_type_view::type_ref(builtin_type type) const noexcept {
+    if (committed) {
+        return committed->type_ref(type);
+    }
+
+    const auto raw =
+        static_cast<std::uint32_t>(type) + 1;
+
+    return candidate_ready() &&
+           raw < candidate->rebuilt_canonical_types.size()
+        ? TypeRef{raw}
+        : TypeRef{};
+}
+
+bool graph_type_view::builtin(
+    TypeRef type,
+    builtin_type& output) const noexcept {
+
+    if (committed) {
+        return committed->builtin(type, output);
+    }
+
+    if (!candidate_ready() ||
+        !type ||
+        type.value() >= candidate->rebuilt_canonical_types.size()) {
+        return false;
+    }
+
+    const auto& record =
+        candidate->rebuilt_canonical_types[type.value()];
+
+    if (record.kind != canonical_type_kind::builtin) {
+        return false;
+    }
+
+    output = record.builtin;
+    return true;
+}
+
+bool graph_type_view::named(
+    TypeRef type,
+    type_handle& output) const noexcept {
+
+    output = {};
+
+    if (committed) {
+        return committed->named(type, output);
+    }
+
+    if (!candidate_ready() ||
+        !type ||
+        type.value() >= candidate->rebuilt_canonical_types.size()) {
+        return false;
+    }
+
+    const auto& record =
+        candidate->rebuilt_canonical_types[type.value()];
+
+    if (record.kind != canonical_type_kind::named ||
+        !record.named) {
+        return false;
+    }
+
+    output = record.named;
+    return true;
+}
+
+const derived_type_record* graph_type_view::derived(
+    TypeRef type) const noexcept {
+
+    if (committed) {
+        return committed->derived(type);
+    }
+
+    if (!candidate_ready() ||
+        !type ||
+        type.value() >= candidate->rebuilt_canonical_types.size()) {
+        return nullptr;
+    }
+
+    const auto& record =
+        candidate->rebuilt_canonical_types[type.value()];
+
+    return record.kind == canonical_type_kind::derived
+        ? &record.derived
+        : nullptr;
+}
+
+const type_layout_record* graph_type_view::layout(
+    type_handle handle) const noexcept {
+
+    if (committed) {
+        return committed->layout(handle);
+    }
+
+    return candidate_ready() &&
+           handle &&
+           handle.value() <= candidate->rebuilt_type_layout_records.size()
+        ? &candidate->rebuilt_type_layout_records[handle.value() - 1]
+        : nullptr;
+}
+
+const member_layout_record* graph_type_view::member_layout(
+    type_handle handle,
+    member_index index) const noexcept {
+
+    if (committed) {
+        return committed->member_layout(handle, index);
+    }
+
+    const auto* type = find(handle);
+
+    if (!type ||
+        type->kind != user_type_kind::aggregate ||
+        !type->definition ||
+        !index ||
+        index.value() > type->definition.count) {
+        return nullptr;
+    }
+
+    const auto slot =
+        static_cast<std::size_t>(type->definition.begin - 1) +
+        index.value() - 1;
+
+    return slot < candidate->rebuilt_member_layout_records.size()
+        ? &candidate->rebuilt_member_layout_records[slot]
+        : nullptr;
+}
 
 graph::graph() = default;
 graph::~graph() = default;
@@ -428,7 +728,7 @@ status graph::initialize(abi_configuration abi) noexcept {
 
         entity_count_value = 0;
         user_type_count_value = 0;
-        next_stable_id = 1;
+        next_type_id = 1;
         next_candidate_generation = 1;
         abi_config = abi;
         generation = 0;
@@ -462,14 +762,14 @@ const entity_entry* graph::find(string_id name) const noexcept {
     return name && name.value() < identity.size() ? find(identity[name.value()]) : nullptr;
 }
 
-const entity_entry* graph::find(stable_id id) const noexcept {
+const entity_entry* graph::find(type_id id) const noexcept {
     return id && id.value() < entities.size() && entities[id.value()].record.live()
             ? &entities[id.value()].record
             : nullptr;
 }
 
-stable_id graph::find_id(string_id name) const noexcept {
-    return name && name.value() < identity.size() ? identity[name.value()] : stable_id{};
+type_id graph::find_id(string_id name) const noexcept {
+    return name && name.value() < identity.size() ? identity[name.value()] : type_id{};
 }
 
 const type_entry* graph::find(type_handle handle) const noexcept {
@@ -1395,7 +1695,7 @@ status graph::import_compiled(
             ++imported_entity_count;
         }
 
-        std::vector<stable_id> imported_identities;
+        std::vector<type_id> imported_identities;
         imported_identities.reserve(input.identities.size());
         std::vector<std::uint32_t> identity_owner(input.entities.size(), 0);
 
@@ -1419,7 +1719,7 @@ status graph::import_compiled(
                 }
             }
 
-            imported_identities.push_back(stable_id{raw});
+            imported_identities.push_back(type_id{raw});
         }
 
         std::vector<canonical_type_record> imported_canonical_types;
@@ -1608,9 +1908,9 @@ status graph::import_compiled(
 
         entity_count_value = imported_entity_count;
         user_type_count_value = imported_type_count;
-        next_stable_id = static_cast<std::uint32_t>(entities.size());
-        if (next_stable_id == 0) {
-            next_stable_id = 1;
+        next_type_id = static_cast<std::uint32_t>(entities.size());
+        if (next_type_id == 0) {
+            next_type_id = 1;
         }
 
         next_candidate_generation = 1;
@@ -1650,7 +1950,7 @@ void graph::swap_compiled(graph& other) noexcept {
 
     std::swap(user_type_count_value, other.user_type_count_value);
 
-    std::swap(next_stable_id, other.next_stable_id);
+    std::swap(next_type_id, other.next_type_id);
 
     std::swap(generation, other.generation);
 
@@ -1701,7 +2001,7 @@ graph_update::graph_update(
     bool reconstruct_all_sources) noexcept
     : owner(&graph_owner),
       contributions(&contribution_update),
-      next_stable_id(graph_owner.next_stable_id),
+      next_type_id(graph_owner.next_type_id),
       next_type_slot(reconstruct_all_sources
           ? 1u
           : static_cast<std::uint32_t>(graph_owner.types.size() + 1)),
@@ -1766,7 +2066,7 @@ graph_update::graph_update(graph_update&& other) noexcept
       prepared_reverse_type_dependents_size(
           other.prepared_reverse_type_dependents_size),
       prepared_owner_growth(other.prepared_owner_growth),
-      next_stable_id(other.next_stable_id),
+      next_type_id(other.next_type_id),
       next_type_slot(other.next_type_slot),
       base_generation(other.base_generation),
       candidate_generation(other.candidate_generation),
@@ -1793,7 +2093,7 @@ graph::candidate_identity_slot& graph_update::touch_identity(std::uint32_t name)
     if (slot.generation != candidate_generation) {
         slot.generation = candidate_generation;
 
-        slot.value = name < owner->identity.size() ? owner->identity[name] : stable_id{};
+        slot.value = name < owner->identity.size() ? owner->identity[name] : type_id{};
 
         changed_identities.push_back(name);
     }
@@ -1861,6 +2161,7 @@ status graph_update::reserve_rebuild(
 
     if (!owner ||
         !contributions ||
+        types_sealed ||
         prepared ||
         committed ||
         !full_reconstruction) {
@@ -1874,7 +2175,7 @@ status graph_update::reserve_rebuild(
 
         if (owner->identity.size() >= maximum ||
             name_slots > maximum - owner->identity.size() - 1 ||
-            static_cast<std::size_t>(next_stable_id) >
+            static_cast<std::size_t>(next_type_id) >
                 maximum - entity_count ||
             static_cast<std::size_t>(next_type_slot) >
                 maximum - type_count) {
@@ -1888,7 +2189,7 @@ status graph_update::reserve_rebuild(
             1;
 
         const auto entity_target =
-            static_cast<std::size_t>(next_stable_id) +
+            static_cast<std::size_t>(next_type_id) +
             entity_count;
 
         const auto type_target =
@@ -1937,7 +2238,7 @@ status graph_update::replace_source(source_id source, source_replacement& replac
         return failure;
     }
 
-    if (!owner || prepared || committed || !source) {
+    if (!owner || types_sealed || prepared || committed || !source) {
         return failure = {status_code::invalid_state};
     }
 
@@ -1974,7 +2275,7 @@ status graph_update::source_replacement::reserve(
     std::size_t anonymous_count,
     std::size_t enum_value_count) noexcept {
 
-    if (!update || !source || !state) {
+    if (!update || update->types_sealed || !source || !state) {
         return {status_code::invalid_state};
     }
 
@@ -1992,7 +2293,7 @@ status graph_update::source_replacement::reserve(
 }
 status graph_update::source_replacement::bind_source_entity(
     source_entity_ref reference,
-    stable_id entity) noexcept {
+    type_id entity) noexcept {
 
     if (!update ||
         !source ||
@@ -2032,7 +2333,7 @@ status graph_update::source_replacement::bind_source_entity(
 }
 
 status graph_update::source_replacement::add_named_enum(string_id name, const enum_build_data& data,
-    stable_id& entity, type_handle& type) noexcept {
+    type_id& entity, type_handle& type) noexcept {
 
     return update && state
         ? update->add_named_enum_from_replacement(
@@ -2049,7 +2350,7 @@ status graph_update::source_replacement::add_named_enum(string_id name, const en
 status graph_update::source_replacement::add_named_enum(
     string_id name,
     const enum_build_data& data,
-    stable_id& entity,
+    type_id& entity,
     type_handle& type,
     graph_named_enum_telemetry* telemetry) noexcept {
 
@@ -2078,7 +2379,7 @@ status graph_update::source_replacement::add_anonymous_enum(const enum_build_dat
 }
 
 status graph_update::source_replacement::add_named_type(string_id name, aggregate_definition_state state,
-    stable_id& entity, type_handle& type) noexcept {
+    type_id& entity, type_handle& type) noexcept {
 
     return update && this->state
         ? update->add_named_type_from_replacement(
@@ -2096,7 +2397,7 @@ status graph_update::source_replacement::define_members(
     std::span<const member_build> input,
     std::span<const type_modifier_build> modifiers) noexcept {
 
-    if (!update || !type) {
+    if (!update || update->types_sealed || !type) {
         return {status_code::invalid_state};
     }
 
@@ -2172,6 +2473,7 @@ status graph_update::source_replacement::add_static_object(
     if (!update ||
         !state ||
         !update->full_reconstruction ||
+        update->types_sealed ||
         update->prepared ||
         update->committed ||
         (builtin && user_type_entity) ||
@@ -2240,6 +2542,7 @@ status graph_update::source_replacement::add_construction_binding(
     if (!update ||
         !state ||
         !update->full_reconstruction ||
+        update->types_sealed ||
         update->prepared ||
         update->committed ||
         !owner_type ||
@@ -2329,6 +2632,10 @@ status graph_update::get_or_create_named_type_ref_impl(
     graph_named_enum_telemetry* telemetry) noexcept {
 
     output = {};
+
+    if (types_sealed) {
+        return {status_code::invalid_state};
+    }
 
     if (!handle) {
         return {status_code::configuration_failed};
@@ -2551,6 +2858,10 @@ status graph_update::get_or_create_derived(derived_type_kind kind, TypeRef child
 
     output = {};
 
+    if (types_sealed) {
+        return {status_code::invalid_state};
+    }
+
     if (!child || (kind != derived_type_kind::array && payload != 0) || (kind == derived_type_kind::array &&
          payload == 0)) {
         return failure = {status_code::configuration_failed};
@@ -2724,7 +3035,7 @@ status graph_update::build_contribution(
     }
 }
 
-status graph_update::add_delta(source_id source, stable_id id,
+status graph_update::add_delta(source_id source, type_id id,
     const source_contribution_record& contribution) noexcept {
 
     try {
@@ -2874,7 +3185,7 @@ status graph_update::remove_delta(source_id source, const source_contribution_re
 
 template <bool Detailed>
 status graph_update::assign_type_impl(
-    stable_id id,
+    type_id id,
     graph::entity_slot& entity,
     graph::type_storage type,
     graph_named_enum_telemetry* telemetry) noexcept {
@@ -2979,7 +3290,7 @@ status graph_update::assign_type_impl(
 }
 
 status graph_update::assign_type(
-    stable_id id,
+    type_id id,
     graph::entity_slot& entity,
     graph::type_storage type) noexcept {
 
@@ -2991,7 +3302,7 @@ status graph_update::assign_type(
 }
 
 status graph_update::assign_type_sampled(
-    stable_id id,
+    type_id id,
     graph::entity_slot& entity,
     graph::type_storage type,
     graph_named_enum_telemetry& telemetry) noexcept {
@@ -3005,7 +3316,7 @@ status graph_update::assign_type_sampled(
 
 template <bool Detailed>
 status graph_update::materialize_impl(
-    stable_id id,
+    type_id id,
     string_id name,
     type_handle* output,
     graph_named_enum_telemetry* telemetry) noexcept {
@@ -3280,7 +3591,7 @@ status graph_update::materialize_impl(
 }
 
 status graph_update::materialize(
-    stable_id id,
+    type_id id,
     string_id name) noexcept {
 
     return materialize_impl<false>(
@@ -3291,7 +3602,7 @@ status graph_update::materialize(
 }
 
 status graph_update::materialize(
-    stable_id id,
+    type_id id,
     string_id name,
     type_handle& type) noexcept {
 
@@ -3303,7 +3614,7 @@ status graph_update::materialize(
 }
 
 status graph_update::materialize_sampled(
-    stable_id id,
+    type_id id,
     string_id name,
     type_handle& type,
     graph_named_enum_telemetry& telemetry) noexcept {
@@ -3499,7 +3810,7 @@ status graph_update::add_named_enum_from_replacement(
     source_id source,
     source_contribution_state& source_state,
     const enum_build_data& data,
-    stable_id& entity,
+    type_id& entity,
     type_handle& type,
     graph_named_enum_telemetry* telemetry) noexcept {
 
@@ -3544,7 +3855,7 @@ status graph_update::add_named_enum_from_replacement(
 
         begin_phase();
 
-        stable_id id;
+        type_id id;
 
         if (name.value() < owner->candidate_identities.size()) {
             const auto& candidate_identity =
@@ -3561,11 +3872,11 @@ status graph_update::add_named_enum_from_replacement(
         }
 
         if (!id) {
-            if (!next_stable_id) {
+            if (!next_type_id) {
                 return failure = {status_code::initialization_failed};
             }
 
-            id = stable_id{next_stable_id++};
+            id = type_id{next_type_id++};
             touch_identity(name.value()).value = id;
         }
 
@@ -3706,7 +4017,7 @@ status graph_update::add_named_type_from_replacement(
     source_id source,
     source_contribution_state& source_state,
     aggregate_definition_state state,
-    stable_id& entity, type_handle& type) noexcept {
+    type_id& entity, type_handle& type) noexcept {
 
     entity = {};
     type = {};
@@ -3722,7 +4033,7 @@ status graph_update::add_named_type_from_replacement(
     try {
         status result;
 
-        stable_id id;
+        type_id id;
 
         if (name.value() < owner->candidate_identities.size()) {
             const auto& candidate_identity =
@@ -3739,11 +4050,11 @@ status graph_update::add_named_type_from_replacement(
         }
 
         if (!id) {
-            if (!next_stable_id) {
+            if (!next_type_id) {
                 return failure = {status_code::initialization_failed};
             }
 
-            id = stable_id{next_stable_id++};
+            id = type_id{next_type_id++};
             touch_identity(name.value()).value = id;
         }
 
@@ -3866,7 +4177,7 @@ status graph_update::add_anonymous_enum_from_replacement(
     }
 }
 
-const entity_entry* graph_update::find(stable_id id) noexcept {
+const entity_entry* graph_update::find(type_id id) noexcept {
 
     if (!id || !owner || prepared || committed) {
         return nullptr;
@@ -3893,7 +4204,7 @@ const entity_entry* graph_update::find(string_id name) noexcept {
         return nullptr;
     }
 
-    stable_id id;
+    type_id id;
 
     if (name.value() < owner->candidate_identities.size() &&
         owner->candidate_identities[name.value()].generation == candidate_generation) {
@@ -3985,7 +4296,7 @@ std::span<const enum_value_record> graph_update::enum_values(type_handle handle)
     return full_reconstruction ? std::span<const enum_value_record>{} : owner->enum_values(handle);
 }
 
-status graph_update::remove_named_entity_for_testing(stable_id id) noexcept {
+status graph_update::remove_named_entity_for_testing(type_id id) noexcept {
 
     if (!id || !find(id)) {
         return {status_code::invalid_state};
@@ -4688,7 +4999,7 @@ status graph_update::build_rebuild_dependency_index() noexcept {
 }
 
 status graph_update::prepare_full_reconstruction() noexcept {
-    // G0 is a detached rebuild. Historical canonical name -> stable_id mappings
+    // G0 is a detached rebuild. Historical canonical name -> type_id mappings
     // remain available through the Project identity namespace, but no committed
     // Entity, type slot, definition slice, or TypeRef participates as current
     // canonical state. Missing Sources therefore disappear naturally from G0.
@@ -4698,7 +5009,7 @@ status graph_update::prepare_full_reconstruction() noexcept {
 // Materializes the complete G0 canonical storage into detached arrays. The
 // rebuild path never edits committed Entity/Type storage in place: all current
 // live state is reconstructed from candidate Source contributions and swapped at
-// publication. Historical stable_id/name reservations remain in their Project
+// publication. Historical type_id/name reservations remain in their Project
 // namespaces, but stale committed payload is not copied into G0.
 status graph_update::build_rebuild_storage() noexcept {
     if (!full_reconstruction) {
@@ -4726,10 +5037,10 @@ status graph_update::build_rebuild_storage() noexcept {
         }
 
         rebuilt_entities.clear();
-        rebuilt_entities.resize(next_stable_id);
+        rebuilt_entities.resize(next_type_id);
         rebuilt_entity_count = 0;
 
-        for (std::uint32_t id = 1; id < next_stable_id; ++id) {
+        for (std::uint32_t id = 1; id < next_type_id; ++id) {
             if (id >= owner->candidate_entities.size()) {
                 continue;
             }
@@ -6260,7 +6571,7 @@ status graph_update::collect_rebuild_string_retention(
 
         // Historical canonical name reservations are persistent Project identity.
         // Their spelling must remain available even when the Entity is currently
-        // dead so a later reappearance can recover the same stable_id.
+        // dead so a later reappearance can recover the same type_id.
         const auto identity_slots =
             (std::max)(
                 owner->identity.size(),
@@ -6269,7 +6580,7 @@ status graph_update::collect_rebuild_string_retention(
         for (std::size_t name = 1;
              name < identity_slots;
              ++name) {
-            stable_id entity;
+            type_id entity;
 
             if (name < owner->candidate_identities.size()) {
                 const auto& candidate =
@@ -6316,10 +6627,112 @@ status graph_update::collect_rebuild_string_retention(
     }
 }
 
+
+status graph_update::seal_types(
+    const source_manager_update& sources,
+    const string_registry_update& strings) noexcept {
+
+    if (types_sealed) {
+        return {};
+    }
+
+    if (!owner ||
+        !full_reconstruction ||
+        sealing_types ||
+        prepared ||
+        committed ||
+        owner->generation != base_generation) {
+        return failure = {status_code::invalid_state};
+    }
+
+    sealing_types = true;
+
+    const auto result =
+        prepare_publish(
+            sources,
+            strings);
+
+    sealing_types = false;
+
+    if (!result.ok()) {
+        return result;
+    }
+
+    if (!types_sealed || prepared) {
+        return failure = {status_code::invalid_state};
+    }
+
+    return {};
+}
+
+status graph_update::prepare_sealed_rebuild_publish() noexcept {
+    if (!types_sealed ||
+        !full_reconstruction ||
+        !owner ||
+        prepared ||
+        committed ||
+        owner->generation != base_generation) {
+        return failure = {status_code::invalid_state};
+    }
+
+    try {
+        const auto phase_begin =
+            std::chrono::steady_clock::now();
+
+        reserve_sparse_capacity(rebuilt_identity, rebuilt_identity.size());
+        reserve_sparse_capacity(rebuilt_entities, rebuilt_entities.size());
+        reserve_sparse_capacity(rebuilt_types, rebuilt_types.size());
+        reserve_sparse_capacity(rebuilt_member_records, rebuilt_member_records.size());
+        reserve_sparse_capacity(rebuilt_enum_value_records, rebuilt_enum_value_records.size());
+        reserve_sparse_capacity(
+            rebuilt_type_layout_records,
+            rebuilt_type_layout_records.size());
+        reserve_sparse_capacity(
+            rebuilt_member_layout_records,
+            rebuilt_member_layout_records.size());
+        reserve_sparse_capacity(
+            rebuilt_static_object_records,
+            rebuilt_static_object_records.size());
+        reserve_sparse_capacity(
+            rebuilt_construction_binding_records,
+            rebuilt_construction_binding_records.size());
+        reserve_sparse_capacity(
+            rebuilt_construction_binding_ranges,
+            rebuilt_construction_binding_ranges.size());
+        reserve_sparse_capacity(
+            rebuilt_canonical_types,
+            rebuilt_canonical_types.size());
+        reserve_sparse_capacity(
+            rebuilt_named_type_refs,
+            rebuilt_named_type_refs.size());
+        reserve_sparse_capacity(
+            rebuilt_type_dependencies,
+            rebuilt_type_dependencies.size());
+        reserve_sparse_capacity(
+            rebuilt_reverse_type_dependents,
+            rebuilt_reverse_type_dependents.size());
+
+        prepare_telemetry.final_prepare_ns =
+            graph_prepare_elapsed_ns(phase_begin);
+
+        prepared = true;
+        return {};
+    }
+    catch (...) {
+        return failure = {
+            status_code::initialization_failed
+        };
+    }
+}
+
 // Performs every allocation-sensitive validation/reservation required before
 // publish_prepared() mutates the committed Graph.
 status graph_update::prepare_publish(const source_manager_update& sources,
     const string_registry_update& strings) noexcept {
+
+    if (types_sealed && !sealing_types) {
+        return prepare_sealed_rebuild_publish();
+    }
 
     prepare_telemetry = {};
 
@@ -6658,6 +7071,11 @@ status graph_update::prepare_publish(const source_manager_update& sources,
             prepare_telemetry.dependency_index_ns =
                 graph_prepare_elapsed_ns(phase_begin);
 
+            if (sealing_types) {
+                types_sealed = true;
+                return {};
+            }
+
             phase_begin =
                 std::chrono::steady_clock::now();
 
@@ -6872,7 +7290,7 @@ void graph_update::publish_prepared() noexcept {
 
         owner->entity_count_value = rebuilt_entity_count;
         owner->user_type_count_value = rebuilt_type_count;
-        owner->next_stable_id = next_stable_id;
+        owner->next_type_id = next_type_id;
         owner->generation = 0;
         committed = true;
         return;
@@ -7066,7 +7484,7 @@ void graph_update::publish_prepared() noexcept {
             update.values);
     }
 
-    owner->next_stable_id = next_stable_id;
+    owner->next_type_id = next_type_id;
     owner->generation = owner->generation + 1;
     prepared_owner_growth = false;
     committed = true;

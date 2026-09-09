@@ -305,7 +305,7 @@ const source_contribution_state* source_contribution_cache_update::candidate(
 }
 
 canonical_entity_construction_state& source_contribution_cache_update::touch_entity(
-    stable_id entity) {
+    type_id entity) {
 
     if (!owner || !entity || prepared || committed_update) {
         throw std::logic_error("invalid Source contribution entity state");
@@ -329,7 +329,7 @@ canonical_entity_construction_state& source_contribution_cache_update::touch_ent
 }
 
 const canonical_entity_construction_state* source_contribution_cache_update::candidate_entity(
-    stable_id entity) const noexcept {
+    type_id entity) const noexcept {
 
     if (!owner || !entity || entity.value() >= owner->candidate_entities.size()) {
         return nullptr;

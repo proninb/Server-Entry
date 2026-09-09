@@ -25,7 +25,7 @@ struct source_definition_range {
 // One canonical declaration/definition contributed by one Source.
 // Retained outside G only to compute sparse Source replacement deltas.
 struct source_contribution_record {
-    stable_id entity{};
+    type_id entity{};
     string_id name{};
     entity_kind kind = entity_kind::enum_type;
     enum_definition_state state = enum_definition_state::opaque;
@@ -59,8 +59,8 @@ struct canonical_entity_construction_state {
 
 // Complete incremental build contribution retained for one source_id.
 struct source_contribution_state {
-    // Direct source_declaration_id -> stable_id canonical binding.
-    std::vector<stable_id> entity_bindings;
+    // Direct source_declaration_id -> type_id canonical binding.
+    std::vector<type_id> entity_bindings;
 
     std::vector<source_contribution_record> named;
     std::vector<std::uint32_t> anonymous_types;
@@ -165,8 +165,8 @@ public:
     [[nodiscard]] source_contribution_state* candidate(source_id source) noexcept;
     [[nodiscard]] const source_contribution_state* candidate(source_id source) const noexcept;
 
-    [[nodiscard]] canonical_entity_construction_state& touch_entity(stable_id entity);
-    [[nodiscard]] const canonical_entity_construction_state* candidate_entity(stable_id entity) const noexcept;
+    [[nodiscard]] canonical_entity_construction_state& touch_entity(type_id entity);
+    [[nodiscard]] const canonical_entity_construction_state* candidate_entity(type_id entity) const noexcept;
 
     [[nodiscard]] const std::vector<std::uint32_t>& changed_sources() const noexcept {
         return changed;

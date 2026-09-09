@@ -63,7 +63,7 @@ template <typename GetView>
 status parse_selected_sources(
     std::span<const source_id> selected_sources,
     GetView&& get_view,
-    const graph& graph,
+    const graph_type_view& types,
     const string_registry& strings,
     operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -150,7 +150,7 @@ status parse_selected_sources(
                     slot.result =
                         parse_implementation_source(
                             view,
-                            graph,
+                            types,
                             strings,
                             operation,
                             context);
@@ -224,7 +224,7 @@ status parse_selected_sources(
 
 status implementation_frontend::build(
     const source_manager& sources,
-    const graph& graph,
+    const graph_type_view& types,
     const string_registry& strings,
     operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -270,7 +270,7 @@ status implementation_frontend::build(
             [&](source_id source, source_view& view) noexcept {
                 return sources.get_view(source, view);
             },
-            graph,
+            types,
             strings,
             operation,
             diagnostics,
@@ -285,7 +285,7 @@ status implementation_frontend::build(
 status implementation_frontend::rebuild(
     const source_manager_update& sources,
     std::span<const source_id> dirty_sources,
-    const graph& graph,
+    const graph_type_view& types,
     const string_registry& strings,
     operation_id operation,
     diagnostic_buffer& diagnostics,
@@ -296,7 +296,7 @@ status implementation_frontend::rebuild(
         [&](source_id source, source_view& view) noexcept {
             return sources.get_view(source, view);
         },
-        graph,
+        types,
         strings,
         operation,
         diagnostics,

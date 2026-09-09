@@ -134,7 +134,7 @@ static_assert(!has_defining_source_field<entity_entry>);
 static_assert(!has_aggregate_payload_field<type_entry>);
 static_assert(!has_definition_state_field<enum_entry>);
 static_assert(!has_graph_contribution_count<graph>);
-static_assert(!std::is_constructible_v<stable_id, std::uint32_t>);
+static_assert(!std::is_constructible_v<type_id, std::uint32_t>);
 static_assert(!std::is_constructible_v<type_handle, std::uint32_t>);
 static_assert(!std::is_copy_constructible_v<graph_manager>);
 static_assert(!std::is_move_constructible_v<graph_manager>);
@@ -244,7 +244,7 @@ bool test_transaction_move_and_rollback() {
         moved.emplace(std::move(original));
     }
     graph_update::source_replacement replacement;
-    stable_id id;
+    type_id id;
     type_handle handle;
     if (!moved->strings().bind("Moved", name).ok() ||
         !open_source(*moved, source, replacement) ||
@@ -282,7 +282,7 @@ bool test_transaction_move_and_rollback() {
 bool test_repeated_g0_identity_is_bounded() {
     graph_manager manager;
     if (!manager.initialize().ok()) return false;
-    stable_id historical;
+    type_id historical;
     std::size_t identity_size = 0;
     for (int run = 0; run != 8; ++run) {
         auto tx = manager.begin_build(graph_build_mode::rebuild);
@@ -292,7 +292,7 @@ bool test_repeated_g0_identity_is_bounded() {
             !tx.strings().bind("Same", name).ok() ||
             !tx.graph_state().reserve_rebuild(1, 1000, 1, 1).ok()) return false;
         graph_update::source_replacement replacement;
-        stable_id id;
+        type_id id;
         type_handle handle;
         if (!open_source(tx, source, replacement) ||
             !replacement.add_named_type(name, aggregate_definition_state::defined, id, handle).ok() ||
@@ -321,7 +321,7 @@ bool test_removed_type_coordinate_is_not_reused() {
         graph_update::source_replacement replacement;
         if (!open_source(tx, source, replacement)) return false;
         if (step != 1) {
-            string_id name; stable_id id;
+            string_id name; type_id id;
             auto& handle = step == 0 ? old_handle : new_handle;
             if (!tx.strings().bind(step == 0 ? "Old" : "New", name).ok() ||
                 !replacement.add_named_type(name, aggregate_definition_state::defined, id, handle).ok()) return false;
@@ -359,7 +359,7 @@ bool test_dependency_edge_deltas_match_full_reconstruction() {
                 graph_update::source_replacement bases;
                 if (!open_source(tx, bases_source, bases)) return false;
                 for (int i = 0; i != 2; ++i) {
-                    stable_id id; type_handle handle;
+                    type_id id; type_handle handle;
                     if (!tx.strings().bind(i == 0 ? "BaseA" : "BaseB", base_names[i]).ok() ||
                         !bases.add_named_type(base_names[i], aggregate_definition_state::declared, id, handle).ok()) return false;
                 }
@@ -367,7 +367,7 @@ bool test_dependency_edge_deltas_match_full_reconstruction() {
             graph_update::source_replacement holders;
             if (!open_source(tx, holders_source, holders)) return false;
             for (int i = 0; i != (pass == 5 ? 32 : 64); ++i) {
-                string_id name; stable_id id; type_handle handle;
+                string_id name; type_id id; type_handle handle;
                 if (!tx.strings().bind("Holder" + std::to_string(i), name).ok() ||
                     !holders.add_named_type(name, aggregate_definition_state::defined, id, handle).ok()) return false;
                 const member_build member{member_name, std::nullopt, base_names[(i + pass) % 2], 0, 0};
@@ -463,7 +463,7 @@ bool test_discard_and_prepared_mutation_rejection() {
         };
 
         graph_update::source_replacement replacement;
-        stable_id entity;
+        type_id entity;
         type_handle type;
 
         if (!open_source(transaction, source, replacement) ||
@@ -529,7 +529,7 @@ bool test_stale_source_generation_is_atomic() {
         builtin_type::integer,
         {}
     };
-    stable_id candidate_entity;
+    type_id candidate_entity;
     type_handle candidate_type;
 
     if (!open_source(
@@ -598,7 +598,7 @@ bool test_forced_prepare_failures_are_atomic() {
             builtin_type::integer,
             {}
         };
-        stable_id entity;
+        type_id entity;
         type_handle type;
 
         if (!open_source(transaction, source, replacement) ||
@@ -683,7 +683,7 @@ bool build_two_names(
         {}
     };
 
-    stable_id ignored_id;
+    type_id ignored_id;
     type_handle ignored_type;
 
     if (reverse) {
@@ -728,7 +728,7 @@ bool build_two_names(
         a_id != z_id;
 }
 
-bool test_stable_ids_follow_canonical_publication_order() {
+bool test_type_ids_follow_canonical_publication_order() {
     std::uint32_t a_forward = 0;
     std::uint32_t z_forward = 0;
     std::uint32_t a_reverse = 0;
@@ -760,8 +760,8 @@ bool test_retained_flush_reopens_after_source_replacement() {
     source_id second_source;
     string_id first_name;
     string_id second_name;
-    stable_id first_identity;
-    stable_id second_identity;
+    type_id first_identity;
+    type_id second_identity;
 
     {
         auto transaction =
@@ -926,7 +926,7 @@ bool test_definition_range_and_external_contributions() {
     string_id value_name;
     source_id definition_source;
     source_id declaration_source;
-    stable_id identity;
+    type_id identity;
     type_handle type;
 
     {
@@ -973,7 +973,7 @@ bool test_definition_range_and_external_contributions() {
 
         graph_update::source_replacement definition;
         graph_update::source_replacement declaration;
-        stable_id same;
+        type_id same;
         type_handle same_type;
 
         if (!open_source(
@@ -1128,7 +1128,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
 
     string_id name;
     source_id source;
-    stable_id identity;
+    type_id identity;
 
     {
         auto transaction =
@@ -1149,7 +1149,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
         };
 
         graph_update::source_replacement replacement;
-        stable_id provisional;
+        type_id provisional;
         type_handle type;
 
         if (!open_source(
@@ -1247,7 +1247,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
         };
 
         graph_update::source_replacement replacement;
-        stable_id resurrected;
+        type_id resurrected;
         type_handle resurrected_type;
 
         if (!open_source(
@@ -1298,7 +1298,7 @@ bool test_defined_empty_range_and_identity_resurrection() {
         };
 
         graph_update::source_replacement replacement;
-        stable_id new_id;
+        type_id new_id;
         type_handle new_type;
 
         if (!open_source(
@@ -1333,7 +1333,7 @@ bool test_aggregate_members_and_modifier_order() {
 
     string_id type_name;
     string_id member_name;
-    stable_id identity;
+    type_id identity;
     type_handle type;
 
     {
@@ -1490,8 +1490,8 @@ bool test_pending_named_member_and_dangling_guard() {
             return false;
         }
 
-        stable_id a_id;
-        stable_id b_id;
+        type_id a_id;
+        type_id b_id;
         type_handle a_type;
 
         if (!replacement.add_named_type(
@@ -1594,7 +1594,7 @@ bool test_pending_named_member_and_dangling_guard() {
     }
 
     graph_update::source_replacement invalid_replacement;
-    stable_id invalid_id;
+    type_id invalid_id;
     type_handle invalid_type;
 
     if (!open_source(
@@ -1643,7 +1643,7 @@ bool test_incremental_handle_and_typeref_preservation() {
     string_id type_name;
     string_id member_name;
     source_id source;
-    stable_id identity;
+    type_id identity;
     type_handle original_type;
     TypeRef original_member_type;
 
@@ -1662,7 +1662,7 @@ bool test_incremental_handle_and_typeref_preservation() {
         }
 
         graph_update::source_replacement replacement;
-        stable_id provisional;
+        type_id provisional;
 
         if (!open_source(
                 transaction,
@@ -1749,7 +1749,7 @@ bool test_incremental_handle_and_typeref_preservation() {
         }
 
         graph_update::source_replacement replacement;
-        stable_id same_identity;
+        type_id same_identity;
         type_handle same_type;
 
         if (!open_source(
@@ -1820,7 +1820,7 @@ bool test_compiled_checkpoint_roundtrip_and_fail_closed_load() {
 
     string_id name;
     string_id value_name;
-    stable_id identity;
+    type_id identity;
     type_handle type;
 
     {
@@ -1860,7 +1860,7 @@ bool test_compiled_checkpoint_roundtrip_and_fail_closed_load() {
         };
 
         graph_update::source_replacement replacement;
-        stable_id provisional;
+        type_id provisional;
 
         if (!open_source(
                 transaction,
@@ -2001,7 +2001,7 @@ int main() {
         {"discard/prepared rejection", test_discard_and_prepared_mutation_rejection},
         {"stale Source generation", test_stale_source_generation_is_atomic},
         {"forced prepare failures", test_forced_prepare_failures_are_atomic},
-        {"stable IDs follow canonical publication order", test_stable_ids_follow_canonical_publication_order},
+        {"stable IDs follow canonical publication order", test_type_ids_follow_canonical_publication_order},
         {"retained flush reopens after Source replacement", test_retained_flush_reopens_after_source_replacement},
         {"definition range/external contributions", test_definition_range_and_external_contributions},
         {"defined-empty/resurrection", test_defined_empty_range_and_identity_resurrection},

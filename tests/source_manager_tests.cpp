@@ -61,7 +61,7 @@ bool test_discard_and_replace_commit()
            manager.find(manager.roots()[0].source)->path.filename() == "second.h";
 }
 
-bool test_stable_ids_across_updates()
+bool test_type_ids_across_updates()
 {
     source_manager manager;
     source_id a, b, c;
@@ -212,7 +212,7 @@ int main()
     const std::pair<const char*, bool(*)()> tests[] = {
         {"dedup", test_dedup_order_and_roles},
         {"discard", test_discard_and_replace_commit},
-        {"stable_ids", test_stable_ids_across_updates},
+        {"type_ids", test_type_ids_across_updates},
         {"roles", test_rejects_non_source_declarations},
         {"stale", test_rejects_stale_update},
         {"move", test_move_invalidates_source_handle},

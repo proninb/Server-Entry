@@ -186,7 +186,7 @@ void replace_with_opaque_enum(
         {}
     };
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -219,7 +219,7 @@ void replace_with_opaque_enum_scoped(
         {}
     };
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -757,7 +757,7 @@ void define_empty_aggregate(
             replacement).ok(),
         "Dependency Source replacement failed");
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -1161,7 +1161,7 @@ void define_multi_root_hub(
             replacement).ok(),
         "RC-V2-05 hub Source replacement failed");
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -1532,7 +1532,7 @@ void define_edge_scaling_aggregate(
             replacement).ok(),
         "RC-V2-06 aggregate Source replacement failed");
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -1897,7 +1897,7 @@ void define_typeref_filler(
             replacement).ok(),
         "RC-V2-07 filler Source replacement failed");
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -2094,7 +2094,7 @@ row typeref_resolution_case(
             replacement).ok(),
         "RC-V2-07 target Source replacement failed");
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     require(
@@ -2809,7 +2809,7 @@ row k_modify_locality(
             {}
         };
 
-        stable_id entity;
+        type_id entity;
         type_handle type;
 
         phase_begin =

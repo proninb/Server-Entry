@@ -33,8 +33,8 @@ static void publish_types(
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
 
-    stable_id a_id;
-    stable_id b_id;
+    type_id a_id;
+    type_id b_id;
     type_handle a_type;
     type_handle b_type;
 
@@ -90,8 +90,8 @@ int main() {
         {derived_type_kind::lvalue_reference, 0}
     };
 
-    stable_id original_a;
-    stable_id original_b;
+    type_id original_a;
+    type_id original_b;
 
     {
         auto tx = manager.begin_build(graph_build_mode::rebuild);

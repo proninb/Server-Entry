@@ -62,7 +62,7 @@ int main() {
     graph_update::source_replacement replacement;
     assert(transaction.graph_state().replace_source(source, replacement).ok());
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
 
     // Incomplete aggregate: no canonical definition range.

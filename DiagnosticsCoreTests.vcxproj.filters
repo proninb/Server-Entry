@@ -12,6 +12,10 @@
     <ClCompile Include="server_entry\metrics\metrics_store.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\server_context.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\project\project_context.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_lexer.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_context.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_parser.cpp"><Filter>server_entry</Filter></ClCompile>
+    <ClCompile Include="server_entry\project\implementation\implementation_frontend.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\project\runtime\runtime.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\project\shm\shared_memory.cpp"><Filter>server_entry</Filter></ClCompile>
     <ClCompile Include="server_entry\project\source\source_manager.cpp"><Filter>server_entry</Filter></ClCompile>

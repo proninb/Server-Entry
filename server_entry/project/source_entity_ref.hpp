@@ -31,7 +31,7 @@ private:
 };
 
 // Source-language semantic identity selected by Parser name resolution.
-// This is not stable_id and is never Runtime-visible.
+// This is not type_id and is never Runtime-visible.
 struct source_entity_ref {
     source_id source{};
     source_declaration_id declaration{};

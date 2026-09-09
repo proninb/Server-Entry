@@ -10,7 +10,7 @@
 namespace cw::server {
 
 // Identifies an intrinsic source-language builtin type.
-// Builtins use language/ABI intrinsic codes and do not receive allocated stable_id
+// Builtins use language/ABI intrinsic codes and do not receive allocated type_id
 // values. Declaration order is also used by the constexpr category predicates:
 // integral types must remain contiguous through character_32 and floating types
 // must remain contiguous from floating through long_double_floating.

@@ -54,7 +54,7 @@ static void publish_definition(
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
     assert(replacement.add_named_type(
         type_name,
@@ -68,7 +68,7 @@ static void publish_definition(
     enum_data.definition_state = enum_definition_state::defined;
     enum_data.enumerators = enumerators;
 
-    stable_id enum_entity;
+    type_id enum_entity;
     type_handle enum_type;
     assert(replacement.add_named_enum(
         enum_name, enum_data, enum_entity, enum_type).ok());

@@ -229,7 +229,7 @@ bool test_resolved_implementation_semantics() {
                 source_id{100},
                 source_text
             },
-            manager.compiled_graph(),
+            manager.compiled_graph().type_view(),
             manager.strings(),
             operation_id{2},
             context);
@@ -382,7 +382,7 @@ bool expect_failure(
                 source_id{200},
                 source
             },
-            manager.compiled_graph(),
+            manager.compiled_graph().type_view(),
             manager.strings(),
             operation_id{operation},
             context);

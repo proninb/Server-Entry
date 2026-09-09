@@ -17,7 +17,7 @@ int main() {
     enum_value_build value{value_name, {builtin_type::long_double_floating, 0}};
     enum_build_data data{enum_definition_state::defined, true, std::nullopt,
                          std::span<const enum_value_build>{&value, 1}};
-    stable_id entity;
+    type_id entity;
     type_handle type;
     const auto result = replacement.add_named_enum(name, data, entity, type);
     assert(!result.ok());

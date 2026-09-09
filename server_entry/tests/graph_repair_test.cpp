@@ -27,7 +27,7 @@ static std::pair<std::uint32_t,std::uint32_t> build_order(bool reverse) {
 
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
-    stable_id e1,e2; type_handle t1,t2;
+    type_id e1,e2; type_handle t1,t2;
     if (reverse) {
         assert(replacement.add_named_type(z, aggregate_definition_state::declared, e1, t1).ok());
         assert(replacement.add_named_type(a, aggregate_definition_state::declared, e2, t2).ok());
@@ -62,7 +62,7 @@ int main() {
 
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
-    stable_id ae,be; type_handle at,bt;
+    type_id ae,be; type_handle at,bt;
     assert(replacement.add_named_type(a, aggregate_definition_state::defined, ae, at).ok());
 
     type_modifier_build mods[] {

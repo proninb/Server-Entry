@@ -26,7 +26,7 @@ int main() {
     // still allowed: A may reference canonical B before B is materialized.
     graph_update::source_replacement replacement_a;
     assert(transaction.graph_state().replace_source(roots[0].source, replacement_a).ok());
-    stable_id a_id;
+    type_id a_id;
     type_handle a_type;
     assert(replacement_a.add_named_type(
         A, aggregate_definition_state::defined, a_id, a_type).ok());
@@ -36,7 +36,7 @@ int main() {
 
     graph_update::source_replacement replacement_b;
     assert(transaction.graph_state().replace_source(roots[1].source, replacement_b).ok());
-    stable_id b_id;
+    type_id b_id;
     type_handle b_type;
     assert(replacement_b.add_named_type(
         B, aggregate_definition_state::defined, b_id, b_type).ok());
@@ -78,7 +78,7 @@ int main() {
     assert(bad_transaction.graph_state().replace_source(
         bad_transaction.sources().roots()[0].source, replacement).ok());
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
     assert(replacement.add_named_type(
         X, aggregate_definition_state::defined, entity, type).ok());

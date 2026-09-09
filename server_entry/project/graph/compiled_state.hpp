@@ -9,7 +9,7 @@
 
 namespace cw::server {
 
-// Persistence DTO for one stable_id-indexed Entity entry. The stable_id is
+// Persistence DTO for one type_id-indexed Entity entry. The type_id is
 // implicit in the vector position; liveness is likewise derived from name != 0,
 // so neither identity nor a duplicate live flag is serialized.
 struct compiled_entity_slot {

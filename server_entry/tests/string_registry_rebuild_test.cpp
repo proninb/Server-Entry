@@ -31,7 +31,7 @@ static string_id publish_member(
     graph_update::source_replacement replacement;
     assert(tx.graph_state().replace_source(source, replacement).ok());
 
-    stable_id entity;
+    type_id entity;
     type_handle type;
     assert(replacement.add_named_type(
         type_name,

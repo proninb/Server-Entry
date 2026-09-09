@@ -28,13 +28,13 @@ int main() {
 
         graph_update::source_replacement rb;
         assert(tx.graph_state().replace_source(source_b, rb).ok());
-        stable_id be;
+        type_id be;
         type_handle bt;
         assert(rb.add_named_type(B, aggregate_definition_state::declared, be, bt).ok());
 
         graph_update::source_replacement ra;
         assert(tx.graph_state().replace_source(source_a, ra).ok());
-        stable_id ae;
+        type_id ae;
         type_handle at;
         assert(ra.add_named_type(A, aggregate_definition_state::defined, ae, at).ok());
         member_build member{member_name, std::nullopt, B, 0, 0};

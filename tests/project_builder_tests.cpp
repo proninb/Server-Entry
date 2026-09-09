@@ -365,7 +365,7 @@ bool test_multi_source_definition_and_removal() {
     source_id definition_source;
     string_id name;
     string_id value_name;
-    stable_id identity;
+    type_id identity;
     type_handle type;
 
     {
@@ -572,7 +572,7 @@ bool test_identity_resurrection_through_builder() {
 
     source_id source;
     string_id name;
-    stable_id original;
+    type_id original;
 
     {
         auto transaction =
@@ -1076,7 +1076,7 @@ bool build_identity_order(
         alpha != zeta;
 }
 
-bool test_stable_ids_follow_canonical_publication_order() {
+bool test_type_ids_follow_canonical_publication_order() {
     std::uint32_t alpha_forward = 0;
     std::uint32_t zeta_forward = 0;
     std::uint32_t alpha_reverse = 0;
@@ -1110,7 +1110,7 @@ bool test_incremental_handle_and_typeref_preservation() {
     string_id target_name;
     string_id holder_name;
     string_id member_name;
-    stable_id holder_id;
+    type_id holder_id;
     type_handle holder_type;
     TypeRef member_type;
 
@@ -2285,7 +2285,7 @@ int main() {
         {"aggregate builtin member", test_aggregate_builtin_member},
         {"aggregate user lvalue reference", test_aggregate_user_lvalue_reference},
         {"invalid aggregate fail-closed", test_invalid_aggregate_member_is_fail_closed},
-        {"stable IDs follow canonical publication order", test_stable_ids_follow_canonical_publication_order},
+        {"stable IDs follow canonical publication order", test_type_ids_follow_canonical_publication_order},
         {"incremental handle/TypeRef preservation", test_incremental_handle_and_typeref_preservation},
         {"Parser -> Publisher -> Builder boundary", test_parser_publisher_boundary},
         {"Parser rejects duplicate aggregate member", test_parser_rejects_duplicate_aggregate_member},

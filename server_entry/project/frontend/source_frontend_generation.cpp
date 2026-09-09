@@ -1891,6 +1891,13 @@ source_rebuild_result source_frontend_generation::rebuild(
             }
         }
 
+        if (result.ok()) {
+            result =
+                transaction->graph_state().seal_types(
+                    transaction->sources(),
+                    transaction->strings());
+        }
+
         try {
             std::size_t additional = 0;
 

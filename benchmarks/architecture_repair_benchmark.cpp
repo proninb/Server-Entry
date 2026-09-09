@@ -48,7 +48,7 @@ static string_id bind_name(graph_build_transaction& tx, const std::string& name)
     string_id id; require(tx.strings().bind(name, id).ok()); return id;
 }
 static type_handle aggregate(graph_update::source_replacement& r, string_id name, std::span<const member_build> members, bool defined = true) {
-    stable_id id; type_handle handle;
+    type_id id; type_handle handle;
     require(r.add_named_type(name, defined ? aggregate_definition_state::defined : aggregate_definition_state::declared, id, handle).ok());
     if (defined) require(r.define_members(handle, members, {}).ok());
     return handle;
@@ -138,7 +138,7 @@ static void edges(const char* shape, std::size_t n) {
 static void churn() {
     Fixture f;
     source_id source;
-    stable_id stable;
+    type_id stable;
     for (int run = 0; run <= 503; ++run) {
         const bool rebuild = run == 0 || run > 500;
         const auto begin = Clock::now();
@@ -163,7 +163,7 @@ static void churn() {
 static void type_churn() {
     Fixture f;
     source_id source;
-    stable_id identities[8]{};
+    type_id identities[8]{};
     for (int run = 0; run <= 503; ++run) {
         const bool rebuild = run == 0 || run > 500;
         const auto begin = Clock::now();
